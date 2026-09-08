@@ -8,3 +8,4 @@ work/
 *.egg-info/
 *.db*
 *.log
+.env

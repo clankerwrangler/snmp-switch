@@ -5,8 +5,16 @@ services:
       target: runtime
     image: switchlab:0.1.0
     ports:
-      - "127.0.0.1:8000:8000/tcp"
-      - "127.0.0.1:1161:1161/udp"
+      - target: 8000
+        published: "8000"
+        host_ip: "${SWITCHLAB_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+      - target: 1161
+        published: "1161"
+        host_ip: "${SWITCHLAB_BIND_ADDRESS:-127.0.0.1}"
+        protocol: udp
+    environment:
+      SWITCHLAB_SECURE_COOKIES: "${SWITCHLAB_SECURE_COOKIES:-0}"
     volumes:
       - switchlab-data:/data
     secrets:

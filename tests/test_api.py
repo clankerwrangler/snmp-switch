@@ -1,4 +1,5 @@
 import json
+import pytest
 from fastapi.testclient import TestClient
 from switchlab.api import create_app
 from switchlab.models import initial_configuration
@@ -140,3 +141,36 @@ def test_retrying_reboot_does_not_restart_security_engine_twice(store):
         retry=c.post('/api/v1/switch/reboot',json=body,headers={'Idempotency-Key':'reboot-once'})
         assert retry.status_code==200
         assert c.get('/api/v1/snmp/status').json()['engine_boots']==boots
+
+
+@pytest.mark.parametrize("base_url,secure", [
+    ("http://192.0.2.10:8000", False),
+    ("http://switchlab.example:8000", False),
+    ("https://switchlab.example", True),
+])
+def test_lan_origin_session_and_csrf(store, monkeypatch, base_url, secure):
+    monkeypatch.setenv("SWITCHLAB_SECURE_COOKIES", "1" if secure else "0")
+    cfg = initial_configuration(4)
+    cfg.paused = True
+    with TestClient(create_app(store, cfg), base_url=base_url) as client:
+        client.headers["Origin"] = base_url
+        assert client.get("/").status_code == 200
+        assert client.get("/api/v1/state").status_code == 401
+        setup = client.post("/api/v1/auth/setup", json={
+            "setup_token": store.get("setup_token"), "password": "fixture-password-123"})
+        assert setup.status_code == 200
+        cookie = setup.headers["set-cookie"].lower()
+        assert "httponly" in cookie and "samesite=strict" in cookie
+        assert "domain=" not in cookie
+        assert ("; secure" in cookie) == secure
+        assert client.get("/api/v1/auth/status").json()["authenticated"]
+        before = revision(client)
+        assert change(client, "/clock/advance", {"duration_ms": 1000}).status_code == 403
+        client.headers["X-CSRF-Token"] = setup.json()["csrf_token"]
+        rejected = change(client, "/clock/advance", {"duration_ms": 1000},
+                          headers={"Origin": "http://other-host.example:8000"})
+        assert rejected.status_code == 403
+        assert "access-control-allow-origin" not in rejected.headers
+        assert revision(client) == before
+        assert change(client, "/clock/advance", {"duration_ms": 1000}).status_code == 200
+        assert client.get("/api/v1/state").json()["simulation_ms"] == 1000

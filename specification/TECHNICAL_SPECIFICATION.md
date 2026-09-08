@@ -318,7 +318,7 @@ Optional SNMP request tracing shows manager, operation, OIDs, view/result, snaps
 
 Ship one container and a Compose example with a persistent data volume. Run without privileged mode, host Docker socket access, or raw-packet capabilities. An unprivileged internal UDP port such as 1161 can be published as host UDP 161 or another selected port. Serve the UI on a configurable HTTP port; bind local-only by default and document deliberate LAN exposure. [R12]
 
-A private lab is still an access boundary. Require administrator setup, authenticated API mutations, protected sessions, CSRF protection for cookie-authenticated writes, and rate/size limits. Use HTTPS through a trusted reverse proxy when the web interface is accessed across a network. SNMPv2c and unprotected v3 modes require an explicit warning and restricted network exposure.
+A private lab is still an access boundary. Require administrator setup, authenticated API mutations, protected sessions, CSRF protection for cookie-authenticated writes, and rate/size limits. Plain HTTP is an explicit trusted-LAN option; it does not encrypt credentials, sessions, or application data. Use HTTPS through a trusted reverse proxy on untrusted networks. SNMPv2c and unprotected v3 modes require an explicit warning and restricted network exposure.
 
 Docker NAT can change observed source addresses. Verify reachability, notification source identity, and source-CIDR matching on the actual deployment platform; do not assume Linux host networking and Docker Desktop behave identically. Advanced per-switch source-IP fidelity and multiple switch instances are later work. [R12]
 
