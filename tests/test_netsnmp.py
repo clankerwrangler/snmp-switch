@@ -221,7 +221,14 @@ async def test_entity_inventory_with_independent_netsnmp(engine, version):
         expected.add(entity + ".1.4.1.0")
         for tool in ("snmpwalk", "snmpbulkwalk"):
             output = await command(tool, *base, entity)
-            names = [line.split(" = ", 1)[0].lstrip(".") for line in output.splitlines() if " = " in line]
+            rows = output.splitlines()
+            terminal = f".{entity}.1.4.1.0 = No more variables left in this MIB View (It is past the end of the MIB tree)"
+            # Net-SNMP can print the terminal exception after the last data row.
+            if rows and rows[-1] == terminal:
+                rows.pop()
+            entries = [row.split(" = ", 1) for row in rows]
+            assert all(len(entry) == 2 and entry[1] and not entry[1].startswith("No ") for entry in entries), output
+            names = [name.lstrip(".") for name, value in entries]
             assert len(names) == 99 and set(names) == expected, output
             assert names == sorted(names, key=lambda name: tuple(map(int, name.split("."))))
         assert "OID: .0.0" in await command("snmpget", *base, physical + ".3.1")
