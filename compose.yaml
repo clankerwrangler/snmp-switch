@@ -1,0 +1,25 @@
+services:
+  switchlab:
+    build:
+      context: .
+      target: runtime
+    image: switchlab:0.1.0
+    ports:
+      - "127.0.0.1:8000:8000/tcp"
+      - "127.0.0.1:1161:1161/udp"
+    volumes:
+      - switchlab-data:/data
+    secrets:
+      - config_key
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    restart: unless-stopped
+secrets:
+  config_key:
+    file: ./secrets/config.key
+volumes:
+  switchlab-data:

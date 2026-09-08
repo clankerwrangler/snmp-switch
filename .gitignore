@@ -1,0 +1,10 @@
+data/
+secrets/
+.venv/
+work/
+**/node_modules/
+**/__pycache__/
+.pytest_cache/
+*.egg-info/
+*.db*
+*.log

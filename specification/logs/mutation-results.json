@@ -1,0 +1,23 @@
+[
+  {
+    "mutation": "accept_obsolete_job",
+    "scenario": "ScenarioAttachmentABA",
+    "behavioral_defect_detected": true,
+    "returncode": 12,
+    "log": "logs/mutation-accept_obsolete_job.log"
+  },
+  {
+    "mutation": "flush_whole_port_on_vlan_edit",
+    "scenario": "ScenarioSelectiveAndPvid",
+    "behavioral_defect_detected": true,
+    "returncode": 12,
+    "log": "logs/mutation-flush_whole_port_on_vlan_edit.log"
+  },
+  {
+    "mutation": "omit_vlan1_admission_on_fallback",
+    "scenario": "ScenarioDeleteFallback",
+    "behavioral_defect_detected": true,
+    "returncode": 12,
+    "log": "logs/mutation-omit_vlan1_admission_on_fallback.log"
+  }
+]

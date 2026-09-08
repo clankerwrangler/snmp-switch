@@ -1,0 +1,7 @@
+# Proposed public identity fragment, not an implemented application config.
+# Keep unset in public images, deployment defaults, and first-run examples.
+# UI/API/simulation remain available; SNMP listening/sending stay disabled
+# until an operator supplies a valid full OID and completes SNMP setup.
+identity:
+  sys_descr: "Generic SNMP Switch Emulator"
+  sys_object_id: null

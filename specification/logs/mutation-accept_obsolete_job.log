@@ -1,0 +1,648 @@
+TLC2 Version 2026.08.21.155922 (rev: 9787e65)
+Warning: Please run the Java VM, which executes TLC with a throughput optimized garbage collector, by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 1024MB heap and 64MB offheap memory [pid: 2208] (Linux 6.18.35 amd64, Debian 21.0.11 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /tmp/switch-mutation-d2guzmv6/Scenarios.tla
+Parsing file /tmp/switch-mutation-d2guzmv6/TestSwitch.tla
+Parsing file /tmp/tlc-2405598695281903686/_TLCTrace.tla (jar:file:/mnt/data/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/switch-mutation-d2guzmv6/Switch.tla
+Parsing file /tmp/tlc-2405598695281903686/Naturals.tla (jar:file:/mnt/data/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-2405598695281903686/FiniteSets.tla (jar:file:/mnt/data/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-2405598695281903686/Sequences.tla (jar:file:/mnt/data/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-2405598695281903686/TLC.tla (jar:file:/mnt/data/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-2405598695281903686/TLCExt.tla (jar:file:/mnt/data/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-2405598695281903686/Integers.tla (jar:file:/mnt/data/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module TLC
+Semantic processing of module Integers
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module Scenarios
+Linting of module Switch
+Linting of module TestSwitch
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module Scenarios
+Starting... (2026-09-07 20:50:26)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-07 20:50:26.
+Error: Invariant ScenarioAssertions is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |-> <<>>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> NoSource @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> NoPort @@ e2 :> NoPort),
+  exists |-> {},
+  active |-> {},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 0 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 0 @@ e2 :> 0),
+  pgen |-> <<0, 0>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :> NoJob @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "idle" ]
+/\ pc = 0
+
+State 2: <ScenarioNext line 109, col 8 to line 122, col 46 of module Scenarios>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |-> <<>>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> [mac |-> macA, tag |-> Untagged] @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> NoPort @@ e2 :> NoPort),
+  exists |-> {e1},
+  active |-> {},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 1 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 1 @@ e2 :> 0),
+  pgen |-> <<0, 0>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :> NoJob @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "idle" ]
+/\ pc = 1
+
+State 3: <ScenarioNext line 109, col 8 to line 122, col 46 of module Scenarios>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |-> <<>>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> [mac |-> macA, tag |-> Untagged] @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> NoPort @@ e2 :> NoPort),
+  exists |-> {e1},
+  active |-> {e1},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 1 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 0 @@ e2 :> 0),
+  pgen |-> <<0, 0>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :> NoJob @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "idle" ]
+/\ pc = 2
+
+State 4: <ScenarioNext line 109, col 8 to line 122, col 46 of module Scenarios>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |->
+      << [ port |-> 1,
+           kind |-> "linkUp",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ] >>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> [mac |-> macA, tag |-> Untagged] @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> 1 @@ e2 :> NoPort),
+  exists |-> {e1},
+  active |-> {e1},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 1 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 1 @@ e2 :> 0),
+  pgen |-> <<1, 0>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :> NoJob @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "idle" ]
+/\ pc = 3
+
+State 5: <ScenarioNext line 109, col 8 to line 122, col 46 of module Scenarios>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |->
+      << [ port |-> 1,
+           kind |-> "linkUp",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ] >>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> [mac |-> macA, tag |-> Untagged] @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> 1 @@ e2 :> NoPort),
+  exists |-> {e1},
+  active |-> {e1},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 0 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 1 @@ e2 :> 0),
+  pgen |-> <<1, 0>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :> NoJob @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "drain" ]
+/\ pc = 4
+
+State 6: <ScenarioNext line 109, col 8 to line 122, col 46 of module Scenarios>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |->
+      << [ port |-> 1,
+           kind |-> "linkUp",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ] >>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> [mac |-> macA, tag |-> Untagged] @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> 1 @@ e2 :> NoPort),
+  exists |-> {e1},
+  active |-> {e1},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 1 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 1 @@ e2 :> 0),
+  pgen |-> <<1, 0>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :>
+            [ mac |-> macA,
+              port |-> 1,
+              vlan |-> 1,
+              egen |-> 1,
+              pgen |-> 1,
+              boot |-> 0 ] @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "drain" ]
+/\ pc = 5
+
+State 7: <ScenarioNext line 109, col 8 to line 122, col 46 of module Scenarios>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |->
+      << [ port |-> 1,
+           kind |-> "linkUp",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ],
+         [ port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> TRUE,
+           after |-> FALSE ],
+         [ port |-> 2,
+           kind |-> "linkUp",
+           ifIndex |-> 102,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ] >>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> [mac |-> macA, tag |-> Untagged] @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> 2 @@ e2 :> NoPort),
+  exists |-> {e1},
+  active |-> {e1},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 1 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 0 @@ e2 :> 0),
+  pgen |-> <<0, 1>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :>
+            [ mac |-> macA,
+              port |-> 1,
+              vlan |-> 1,
+              egen |-> 1,
+              pgen |-> 1,
+              boot |-> 0 ] @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "drain" ]
+/\ pc = 6
+
+State 8: <ScenarioNext line 109, col 8 to line 122, col 46 of module Scenarios>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |->
+      << [ port |-> 1,
+           kind |-> "linkUp",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ],
+         [ port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> TRUE,
+           after |-> FALSE ],
+         [ port |-> 2,
+           kind |-> "linkUp",
+           ifIndex |-> 102,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ],
+         [ port |-> 1,
+           kind |-> "linkUp",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ],
+         [ port |-> 2,
+           kind |-> "linkDown",
+           ifIndex |-> 102,
+           admin |-> TRUE,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> [mac |-> macA, tag |-> Untagged] @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> 1 @@ e2 :> NoPort),
+  exists |-> {e1},
+  active |-> {e1},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 1 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 2 @@ e2 :> 0),
+  pgen |-> <<2, 0>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :>
+            [ mac |-> macA,
+              port |-> 1,
+              vlan |-> 1,
+              egen |-> 1,
+              pgen |-> 1,
+              boot |-> 0 ] @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "drain" ]
+/\ pc = 7
+
+State 9: <ScenarioNext line 109, col 8 to line 122, col 46 of module Scenarios>
+/\ s = [ fdb |->
+      ( <<1001, macA>> :> [port |-> 1, ttl |-> 2] @@
+        <<1001, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1001, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macC>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macB>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1030, macC>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |->
+      << [ port |-> 1,
+           kind |-> "linkUp",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ],
+         [ port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> TRUE,
+           after |-> FALSE ],
+         [ port |-> 2,
+           kind |-> "linkUp",
+           ifIndex |-> 102,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ],
+         [ port |-> 1,
+           kind |-> "linkUp",
+           ifIndex |-> 101,
+           admin |-> TRUE,
+           before |-> FALSE,
+           after |-> TRUE ],
+         [ port |-> 2,
+           kind |-> "linkDown",
+           ifIndex |-> 102,
+           admin |-> TRUE,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  pvid |-> <<1, 1>>,
+  allowed |-> <<{1}, {1}>>,
+  legacy |-> 1,
+  sources |->
+      ( <<e1, 1>> :> [mac |-> macA, tag |-> Untagged] @@
+        <<e1, 2>> :> NoSource @@
+        <<e1, 3>> :> NoSource @@
+        <<e2, 1>> :> NoSource @@
+        <<e2, 2>> :> NoSource @@
+        <<e2, 3>> :> NoSource ),
+  attached |-> (e1 :> 1 @@ e2 :> NoPort),
+  exists |-> {e1},
+  active |-> {e1},
+  fault |-> <<FALSE, FALSE>>,
+  paused |-> FALSE,
+  overflow |-> FALSE,
+  mode |-> <<"direct", "direct">>,
+  partner |-> <<FALSE, FALSE>>,
+  due |->
+      ( <<e1, 1>> :> 1 @@
+        <<e1, 2>> :> 0 @@
+        <<e1, 3>> :> 0 @@
+        <<e2, 1>> :> 0 @@
+        <<e2, 2>> :> 0 @@
+        <<e2, 3>> :> 0 ),
+  vlans |-> {1},
+  admin |-> <<TRUE, TRUE>>,
+  egen |-> (e1 :> 2 @@ e2 :> 0),
+  pgen |-> <<2, 0>>,
+  boot |-> 0,
+  pending |->
+      ( <<e1, 1>> :> NoJob @@
+        <<e1, 2>> :> NoJob @@
+        <<e1, 3>> :> NoJob @@
+        <<e2, 1>> :> NoJob @@
+        <<e2, 2>> :> NoJob @@
+        <<e2, 3>> :> NoJob ),
+  phase |-> "drain" ]
+/\ pc = 8
+
+9 states generated, 9 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 9.
+Finished in 00s at (2026-09-07 20:50:26)
+Trace exploration spec path: ./Scenarios_TTrace_1788814225.tla

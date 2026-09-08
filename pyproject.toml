@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snmp-switch-lab"
+version = "0.1.0"
+description = "Vendor-neutral SNMP switch management simulator"
+requires-python = ">=3.12"
+dependencies = ["fastapi==0.141.1", "uvicorn==0.52.4", "pysnmp==7.1.29", "cryptography==50.0.1", "argon2-cffi==25.1.0"]
+
+[project.optional-dependencies]
+test = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "httpx==0.28.1", "puresnmp==2.0.1"]
+
+[tool.setuptools.packages.find]
+include = ["switchlab*"]
+
+[tool.setuptools.package-data]
+switchlab = ["static/*", "static/assets/*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+

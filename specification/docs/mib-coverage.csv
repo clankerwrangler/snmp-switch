@@ -1,0 +1,73 @@
+module,object,base_oid,syntax,mib_max_access,release_access,instance_index,value_source,formal_projection,reference
+SNMPv2-MIB,sysDescr,1.3.6.1.2.1.1.1,DisplayString (0..255 octets),read-only,read-only,0,Generic project identity and software version,outside-core,RFC3418
+SNMPv2-MIB,sysObjectID,1.3.6.1.2.1.1.2,OBJECT IDENTIFIER,read-only,read-only,0,Validated operator-configured identity.sys_object_id; public default null gates SNMP; explicit isolated-development override only,outside-core,RFC3418
+SNMPv2-MIB,sysUpTime,1.3.6.1.2.1.1.3,TimeTicks,read-only,read-only,0,Real management uptime modulo 2^32; not simulation time,outside-core,RFC3418
+SNMPv2-MIB,sysContact,1.3.6.1.2.1.1.4,DisplayString (0..255 octets),read-write,read-only,0,Saved contact,outside-core,RFC3418
+SNMPv2-MIB,sysName,1.3.6.1.2.1.1.5,DisplayString (0..255 octets),read-write,read-only,0,Saved switch name,outside-core,RFC3418
+SNMPv2-MIB,sysLocation,1.3.6.1.2.1.1.6,DisplayString (0..255 octets),read-write,read-only,0,Saved location,outside-core,RFC3418
+SNMPv2-MIB,sysServices,1.3.6.1.2.1.1.7,INTEGER (0..127),read-only,read-only,0,2: simulated layer-2 service,outside-core,RFC3418
+IF-MIB,ifNumber,1.3.6.1.2.1.2.1,Integer32,read-only,read-only,0,Configured physical interface count,outside-core,RFC2863
+IF-MIB,ifIndex,1.3.6.1.2.1.2.2.1.1,InterfaceIndex,read-only,read-only,ifIndex,Stable positive interface index,IfTable,RFC2863
+IF-MIB,ifDescr,1.3.6.1.2.1.2.2.1.2,DisplayString,read-only,read-only,ifIndex,Configured physical interface description,outside-core,RFC2863
+IF-MIB,ifType,1.3.6.1.2.1.2.2.1.3,IANAifType,read-only,read-only,ifIndex,ethernetCsmacd(6),outside-core,RFC2863
+IF-MIB,ifMtu,1.3.6.1.2.1.2.2.1.4,Integer32,read-only,read-only,ifIndex,Configured interface MTU,outside-core,RFC2863
+IF-MIB,ifSpeed,1.3.6.1.2.1.2.2.1.5,Gauge32,read-only,read-only,ifIndex,Operational speed capped at 4294967295; zero when down,outside-core,RFC2863
+IF-MIB,ifPhysAddress,1.3.6.1.2.1.2.2.1.6,PhysAddress,read-only,read-only,ifIndex,Stable simulated per-port MAC,outside-core,RFC2863
+IF-MIB,ifAdminStatus,1.3.6.1.2.1.2.2.1.7,INTEGER,read-write,read-only,ifIndex,up(1) or down(2),IfTable,RFC2863
+IF-MIB,ifOperStatus,1.3.6.1.2.1.2.2.1.8,INTEGER,read-only,read-only,ifIndex,up(1) or down(2) from modeled link state,IfTable,RFC2863
+IF-MIB,ifLastChange,1.3.6.1.2.1.2.2.1.9,TimeTicks,read-only,read-only,ifIndex,Management-uptime timestamp of last operational transition; zero at boot,outside-core,RFC2863
+IF-MIB,ifInOctets,1.3.6.1.2.1.2.2.1.10,Counter32,read-only,read-only,ifIndex,Low 32 bits of simulated ingress octets,outside-core,RFC2863
+IF-MIB,ifInUcastPkts,1.3.6.1.2.1.2.2.1.11,Counter32,read-only,read-only,ifIndex,Low 32 bits of admitted simulated ingress unicast frames,outside-core,RFC2863
+IF-MIB,ifInDiscards,1.3.6.1.2.1.2.2.1.13,Counter32,read-only,read-only,ifIndex,Simulated ingress admission drops,outside-core,RFC2863
+IF-MIB,ifInErrors,1.3.6.1.2.1.2.2.1.14,Counter32,read-only,read-only,ifIndex,Zero: no physical error generator in first release,outside-core,RFC2863
+IF-MIB,ifOutOctets,1.3.6.1.2.1.2.2.1.16,Counter32,read-only,read-only,ifIndex,Zero: no output traffic simulation,outside-core,RFC2863
+IF-MIB,ifOutUcastPkts,1.3.6.1.2.1.2.2.1.17,Counter32,read-only,read-only,ifIndex,Zero: no output traffic simulation,outside-core,RFC2863
+IF-MIB,ifOutDiscards,1.3.6.1.2.1.2.2.1.19,Counter32,read-only,read-only,ifIndex,Zero: no output traffic simulation,outside-core,RFC2863
+IF-MIB,ifOutErrors,1.3.6.1.2.1.2.2.1.20,Counter32,read-only,read-only,ifIndex,Zero: no output traffic simulation,outside-core,RFC2863
+IF-MIB,ifName,1.3.6.1.2.1.31.1.1.1.1,DisplayString,read-only,read-only,ifIndex,Stable interface name,outside-core,RFC2863
+IF-MIB,ifHCInOctets,1.3.6.1.2.1.31.1.1.1.6,Counter64,read-only,read-only,ifIndex,Simulated ingress octets,outside-core,RFC2863
+IF-MIB,ifHCInUcastPkts,1.3.6.1.2.1.31.1.1.1.7,Counter64,read-only,read-only,ifIndex,Admitted simulated ingress unicast frames,outside-core,RFC2863
+IF-MIB,ifHCOutOctets,1.3.6.1.2.1.31.1.1.1.10,Counter64,read-only,read-only,ifIndex,Zero: no output traffic simulation,outside-core,RFC2863
+IF-MIB,ifHCOutUcastPkts,1.3.6.1.2.1.31.1.1.1.11,Counter64,read-only,read-only,ifIndex,Zero: no output traffic simulation,outside-core,RFC2863
+IF-MIB,ifLinkUpDownTrapEnable,1.3.6.1.2.1.31.1.1.1.14,INTEGER,read-write,read-only,ifIndex,"enabled(1) or disabled(2), configured through API",outside-core,RFC2863
+IF-MIB,ifHighSpeed,1.3.6.1.2.1.31.1.1.1.15,Gauge32,read-only,read-only,ifIndex,Operational speed in millions of bits/second; zero when down,outside-core,RFC2863
+IF-MIB,ifConnectorPresent,1.3.6.1.2.1.31.1.1.1.17,TruthValue,read-only,read-only,ifIndex,true(1): simulated physical port,outside-core,RFC2863
+IF-MIB,ifAlias,1.3.6.1.2.1.31.1.1.1.18,DisplayString (0..64 octets),read-write,read-only,ifIndex,Saved interface alias,outside-core,RFC2863
+IF-MIB,ifCounterDiscontinuityTime,1.3.6.1.2.1.31.1.1.1.19,TimeStamp,read-only,read-only,ifIndex,Management uptime at latest counter reset; zero at boot,outside-core,RFC2863
+BRIDGE-MIB,dot1dBaseBridgeAddress,1.3.6.1.2.1.17.1.1,MacAddress,read-only,read-only,0,Configured bridge base MAC,outside-core,RFC4188
+BRIDGE-MIB,dot1dBaseNumPorts,1.3.6.1.2.1.17.1.2,Integer32,read-only,read-only,0,Configured bridge-port count,outside-core,RFC4188
+BRIDGE-MIB,dot1dBaseType,1.3.6.1.2.1.17.1.3,INTEGER,read-only,read-only,0,transparent-only(2),outside-core,RFC4188
+BRIDGE-MIB,dot1dTpLearnedEntryDiscards,1.3.6.1.2.1.17.4.1,Counter32,read-only,read-only,0,Learning-capacity rejection events since boot,outside-core,RFC4188
+BRIDGE-MIB,dot1dTpAgingTime,1.3.6.1.2.1.17.4.2,Integer32 (10..1000000),read-write,read-only,0,Configured age in simulated seconds,AgingTicks abstraction,RFC4188
+BRIDGE-MIB,dot1dBasePort,1.3.6.1.2.1.17.1.4.1.1,Integer32 (1..65535),read-only,read-only,bridgePort,Stable bridge-port number,Dot1dBasePortTable,RFC4188
+BRIDGE-MIB,dot1dBasePortIfIndex,1.3.6.1.2.1.17.1.4.1.2,InterfaceIndex,read-only,read-only,bridgePort,Explicit bridge-port to ifIndex mapping,Dot1dBasePortTable,RFC4188
+BRIDGE-MIB,dot1dTpFdbAddress,1.3.6.1.2.1.17.4.3.1.1,MacAddress,read-only,read-only,"mac[6] (fixed-length, no length prefix)",Learned MAC in selected legacy VLAN/FDB,Dot1dTpFdbTable,RFC4188
+BRIDGE-MIB,dot1dTpFdbPort,1.3.6.1.2.1.17.4.3.1.2,Integer32 (0..65535),read-only,read-only,"mac[6] (fixed-length, no length prefix)",Learned bridge port; live rows never zero in this release,Dot1dTpFdbTable,RFC4188
+BRIDGE-MIB,dot1dTpFdbStatus,1.3.6.1.2.1.17.4.3.1.3,INTEGER,read-only,read-only,"mac[6] (fixed-length, no length prefix)",learned(3),Dot1dTpFdbTable,RFC4188
+Q-BRIDGE-MIB,dot1qVlanVersionNumber,1.3.6.1.2.1.17.7.1.1.1,INTEGER,read-only,read-only,0,version1(1),outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qMaxVlanId,1.3.6.1.2.1.17.7.1.1.2,VlanId (Integer32 1..4094),read-only,read-only,0,4094,outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qMaxSupportedVlans,1.3.6.1.2.1.17.7.1.1.3,Unsigned32,read-only,read-only,0,4094,outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qNumVlans,1.3.6.1.2.1.17.7.1.1.4,Unsigned32,read-only,read-only,0,Current configured VLAN inventory count,s.vlans,RFC4363
+Q-BRIDGE-MIB,dot1qGvrpStatus,1.3.6.1.2.1.17.7.1.1.5,EnabledStatus,read-write,read-only,0,disabled(2): no dynamic registration,outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanNumDeletes,1.3.6.1.2.1.17.7.1.4.1,Counter32,read-only,read-only,0,Number of successful VLAN deletions since management boot,outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qFdbId,1.3.6.1.2.1.17.7.1.2.1.1.1,Unsigned32 (1..4294967295),not-accessible,not-readable-index,fdbId,FDB index only,Dot1qFdbTable,RFC4363
+Q-BRIDGE-MIB,dot1qFdbDynamicCount,1.3.6.1.2.1.17.7.1.2.1.1.2,Counter32,read-only,read-only,fdbId,Number of live dynamic entries in the FDB,Dot1qFdbTable,RFC4363
+Q-BRIDGE-MIB,dot1qTpFdbAddress,1.3.6.1.2.1.17.7.1.2.2.1.1,MacAddress,not-accessible,not-readable-index,"fdbId.mac[6] (fixed-length, no length prefix)",MAC part of index only,Dot1qTpFdbTable,RFC4363
+Q-BRIDGE-MIB,dot1qTpFdbPort,1.3.6.1.2.1.17.7.1.2.2.1.2,Integer32 (0..65535),read-only,read-only,"fdbId.mac[6] (fixed-length, no length prefix)",Learned bridge port; live rows never zero in this release,Dot1qTpFdbTable,RFC4363
+Q-BRIDGE-MIB,dot1qTpFdbStatus,1.3.6.1.2.1.17.7.1.2.2.1.3,INTEGER,read-only,read-only,"fdbId.mac[6] (fixed-length, no length prefix)",learned(3),Dot1qTpFdbTable,RFC4363
+Q-BRIDGE-MIB,dot1qVlanTimeMark,1.3.6.1.2.1.17.7.1.4.2.1.1,TimeFilter,not-accessible,not-readable-index,timeFilter.vid,Query filter index only; not the last-change timestamp,Dot1qVlanCurrentTable; filter/timestamps outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanIndex,1.3.6.1.2.1.17.7.1.4.2.1.2,VlanIndex,not-accessible,not-readable-index,timeFilter.vid,VID part of index only,Dot1qVlanCurrentTable; filter/timestamps outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanFdbId,1.3.6.1.2.1.17.7.1.4.2.1.3,Unsigned32,read-only,read-only,timeFilter.vid,Stable distinct VLAN-to-FDB mapping,Dot1qVlanCurrentTable; filter/timestamps outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanCurrentEgressPorts,1.3.6.1.2.1.17.7.1.4.2.1.4,PortList,read-only,read-only,timeFilter.vid,All configured memberships; do not remove down ports,Dot1qVlanCurrentTable; filter/timestamps outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanCurrentUntaggedPorts,1.3.6.1.2.1.17.7.1.4.2.1.5,PortList,read-only,read-only,timeFilter.vid,Ports whose PVID equals this VLAN,Dot1qVlanCurrentTable; filter/timestamps outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanStatus,1.3.6.1.2.1.17.7.1.4.2.1.6,INTEGER,read-only,read-only,timeFilter.vid,permanent(2),Dot1qVlanCurrentTable; filter/timestamps outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanCreationTime,1.3.6.1.2.1.17.7.1.4.2.1.7,TimeTicks,read-only,read-only,timeFilter.vid,Creation in management uptime epoch,Dot1qVlanCurrentTable; filter/timestamps outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanStaticName,1.3.6.1.2.1.17.7.1.4.3.1.1,SnmpAdminString (0..32 octets),read-create,read-only,vid,Saved VLAN name,Dot1qVlanStaticTable; name/forbidden outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanStaticEgressPorts,1.3.6.1.2.1.17.7.1.4.3.1.2,PortList,read-create,read-only,vid,Configured memberships,Dot1qVlanStaticTable; name/forbidden outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanForbiddenEgressPorts,1.3.6.1.2.1.17.7.1.4.3.1.3,PortList,read-create,read-only,vid,All-zero bitmap: no forbidden-membership setting,Dot1qVlanStaticTable; name/forbidden outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanStaticUntaggedPorts,1.3.6.1.2.1.17.7.1.4.3.1.4,PortList,read-create,read-only,vid,Ports whose PVID equals this VLAN,Dot1qVlanStaticTable; name/forbidden outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qVlanStaticRowStatus,1.3.6.1.2.1.17.7.1.4.3.1.5,RowStatus,read-create,read-only,vid,active(1),Dot1qVlanStaticTable; name/forbidden outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qPvid,1.3.6.1.2.1.17.7.1.4.5.1.1,VlanIndex,read-write,read-only,bridgePort,Configured native VLAN/PVID,Dot1qPvid,RFC4363
+Q-BRIDGE-MIB,dot1qPortAcceptableFrameTypes,1.3.6.1.2.1.17.7.1.4.5.1.2,INTEGER,read-write,read-only,bridgePort,admitAll(1); source supports untagged and one explicit VID,outside-core,RFC4363
+Q-BRIDGE-MIB,dot1qPortIngressFiltering,1.3.6.1.2.1.17.7.1.4.5.1.3,TruthValue,read-write,read-only,bridgePort,true(1): unadmitted VLAN activity is rejected,Eligible/Admitted,RFC4363
+Q-BRIDGE-MIB,dot1qPortGvrpStatus,1.3.6.1.2.1.17.7.1.4.5.1.4,EnabledStatus,read-write,read-only,bridgePort,disabled(2): no dynamic registration,outside-core,RFC4363

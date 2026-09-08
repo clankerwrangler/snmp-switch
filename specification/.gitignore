@@ -1,0 +1,9 @@
+# Local tools and checker scratch
+*.jar
+*.vsix
+states/
+__pycache__/
+*.pyc
+*.class
+*.out
+# Keep documented logs, reports and configs in source control.

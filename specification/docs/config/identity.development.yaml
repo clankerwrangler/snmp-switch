@@ -1,0 +1,7 @@
+# Proposed isolated-development override; load only by explicit selection.
+# RFC 5612 reserves 32473 for documentation and does not expect transmission.
+# This test placeholder is a deliberate exception, not an operational allocation.
+# Never bake it into public runtime defaults or auto-load it on missing config.
+# Credentials, listener enablement, and targets are configured separately.
+identity:
+  sys_object_id: "1.3.6.1.4.1.32473.1"

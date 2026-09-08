@@ -1,0 +1,12 @@
+{
+  "name": "Lab host",
+  "active": true,
+  "metadata": {
+    "note": "Example endpoint definition; attachment is a separate operation. IP metadata does not create a reachable host."
+  },
+  "sources": [
+    {"source_id": "source-a", "mac": "02:00:00:00:00:01", "tagging": {"mode": "untagged"}},
+    {"source_id": "source-b", "mac": "02:00:00:00:00:02", "tagging": {"mode": "tagged", "vid": 20}},
+    {"source_id": "source-c", "mac": "02:00:00:00:00:03", "tagging": {"mode": "tagged", "vid": 30}}
+  ]
+}

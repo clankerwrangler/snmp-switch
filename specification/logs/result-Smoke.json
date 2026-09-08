@@ -1,0 +1,32 @@
+{
+  "model": "Smoke",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 78.479,
+  "counts": {
+    "generated": 6210325,
+    "distinct": 516960,
+    "queue": 0
+  },
+  "command": [
+    "/usr/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/mnt/data/tools/tla2tools.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/mnt/data/snmp-switch-v2/states/Smoke",
+    "-config",
+    "configs/Smoke.cfg",
+    "TestSwitch.tla"
+  ],
+  "log": "logs/tlc-Smoke.log"
+}

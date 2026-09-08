@@ -1,0 +1,32 @@
+{
+  "model": "ScenarioDeleteFallback",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 1.123,
+  "counts": {
+    "generated": 27,
+    "distinct": 25,
+    "queue": 0
+  },
+  "command": [
+    "/usr/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/mnt/data/tools/tla2tools.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/mnt/data/snmp-switch-v2/states/ScenarioDeleteFallback",
+    "-config",
+    "configs/ScenarioDeleteFallback.cfg",
+    "Scenarios.tla"
+  ],
+  "log": "logs/tlc-ScenarioDeleteFallback.log"
+}

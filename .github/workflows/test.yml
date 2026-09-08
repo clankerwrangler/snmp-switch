@@ -1,0 +1,11 @@
+name: Verify Switch Lab
+on: [push, pull_request]
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target test -t switchlab-test .
+      - run: docker run --rm --cap-drop ALL --security-opt no-new-privileges switchlab-test
+      - run: docker build --target runtime -t switchlab .
+      - run: docker run --rm --network none --mount type=bind,source="$PWD/scripts/release_check.py",target=/release_check.py,readonly switchlab python /release_check.py

@@ -1,0 +1,32 @@
+{
+  "model": "ScenarioPortABA",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 0.967,
+  "counts": {
+    "generated": 15,
+    "distinct": 13,
+    "queue": 0
+  },
+  "command": [
+    "/usr/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/mnt/data/tools/tla2tools.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/mnt/data/snmp-switch-v2/states/ScenarioPortABA",
+    "-config",
+    "configs/ScenarioPortABA.cfg",
+    "Scenarios.tla"
+  ],
+  "log": "logs/tlc-ScenarioPortABA.log"
+}

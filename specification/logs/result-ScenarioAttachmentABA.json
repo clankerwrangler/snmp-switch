@@ -1,0 +1,32 @@
+{
+  "model": "ScenarioAttachmentABA",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 1.106,
+  "counts": {
+    "generated": 15,
+    "distinct": 14,
+    "queue": 0
+  },
+  "command": [
+    "/usr/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/mnt/data/tools/tla2tools.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/mnt/data/snmp-switch-v2/states/ScenarioAttachmentABA",
+    "-config",
+    "configs/ScenarioAttachmentABA.cfg",
+    "Scenarios.tla"
+  ],
+  "log": "logs/tlc-ScenarioAttachmentABA.log"
+}

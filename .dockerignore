@@ -1,0 +1,13 @@
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/*.db*
+**/*.log
+.git
+data
+secrets
+work
+development
+specification/logs
+*.zip
