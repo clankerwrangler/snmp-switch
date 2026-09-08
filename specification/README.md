@@ -9,18 +9,18 @@ Documentation revision **2.1** defines identity configuration and first-run setu
 ## Start here
 
 - [Technical specification](TECHNICAL_SPECIFICATION.md): behavior, data structures, wire protocol, API/UI, persistence, deployment, and acceptance tests.
-- [Identity setup and release policy](docs/IDENTITY_SETUP.md): development placeholder, unset public default, operator setup, and release checks.
+- [Identity setup and release checks](docs/IDENTITY_SETUP.md): development placeholder, unset public default, operator setup, and release checks.
 - [Verification report](VERIFICATION.md): actual TLC results, finite bounds, and exclusions.
 - [Core model](Switch.tla): state transitions and semantic MIB projections.
 - [Object manifest](docs/mib-coverage.csv): 72 first-release object/index definitions. This is a target manifest, not a full-MIB conformance claim.
 
-## Identity policy
+## Identity configuration
 
 Public defaults leave `identity.sys_object_id` unset. The web UI and simulation remain available, but SNMP listening and notifications stay disabled until the operator supplies a valid full numeric OID and completes normal SNMP setup. No project-owned enterprise-number registration is required to publish the application.
 
-Isolated development explicitly loads `1.3.6.1.4.1.32473.1`. This is a documentation-only placeholder, not an assigned operational identity; the public runtime must not inherit it. Any syntactically valid operator OID is accepted without ownership checks. Changing it changes advertised identity only, not supported MIBs or behavior.
+The explicit development overlay loads `1.3.6.1.4.1.32473.1`. This is a documentation-only placeholder, not an assigned operational identity. Public runtime defaults remain unset. Any syntactically valid operator OID is accepted without ownership checks. Changing it changes advertised identity only, not supported MIBs or behavior.
 
-The [setup guide](docs/IDENTITY_SETUP.md) and its cited standards distinguish the deliberate development exception from standards-conforming identification. Public defaults stay null in the source configuration; a development overlay supplies the placeholder only when explicitly selected.
+The [setup guide](docs/IDENTITY_SETUP.md) describes the placeholder and the standards for allocated identifiers. Public defaults stay null in the source configuration; a development overlay supplies the placeholder only when explicitly selected.
 
 ## Endpoint and VLAN behavior
 
@@ -62,7 +62,7 @@ python .\tests\check_mutations.py --jar C:\tools\tla2tools.jar
 
 Mutation checks operate on temporary copies. Success means the intentionally broken copies were rejected by behavioral checks; a parse failure or timeout does not count as detecting a defect.
 
-The verification report records the revision-2 model checks. Every new checker run records fresh logs and JSON outcomes; after edits, use those new results rather than treating the bundled report as evidence for changed inputs. A timeout is incomplete, never a pass. Increase the timeout or use a focused configuration when needed. `states/` is disposable local TLC scratch. The `run_tlc.py` runner uses one worker and a fixed seed; symmetry reduction is not used for liveness.
+The verification report records the revision-2 model checks for the inputs identified in that report. Each checker run records fresh logs and JSON outcomes. A timeout is an incomplete result, not a pass. Increase the timeout or use a focused configuration when needed. `states/` is disposable local TLC scratch. The `run_tlc.py` runner uses one worker and a fixed seed; symmetry reduction is not used for liveness.
 
 ## Model organization
 
@@ -79,7 +79,7 @@ The verification report records the revision-2 model checks. Every new checker r
 | `run_tlc.py` | Portable TLC runner with per-model outcome logs. |
 | `docs/make_mib_manifest.py` | Rebuild the CSV object manifest. |
 | `docs/example-endpoint.json` | Illustrative endpoint payload with untagged and tagged sources. |
-| `docs/IDENTITY_SETUP.md` | Development/public identity policy and setup behavior. |
+| `docs/IDENTITY_SETUP.md` | Development/public identity configuration and setup behavior. |
 | `docs/config/*.yaml` | Proposed identity fragments, not a working application configuration format. |
 | `DOCUMENTATION_CHANGES.md` | Revision-2.1 change summary and verification boundaries. |
 

@@ -46,8 +46,8 @@ This measures the in-memory engine and projection, excluding SQLite, HTTP, UI, a
 
 ## Boundaries
 
-- No NAC-product integration or vendor compatibility was tested or claimed.
-- Docker's isolated loopback networking and native Windows localhost were tested. Published-port NAT behavior, LAN source-CIDR policy, IPv6 deployment paths and chosen notification source addresses must be checked on the actual network.
+- NAC-product integration and vendor compatibility were not tested.
+- These runs tested Docker's isolated loopback networking and native Windows localhost. They did not cover published-port NAT behavior, LAN source-CIDR matching, IPv6 deployment paths, or notification source addresses on a deployment network.
 - Fault tests inject failed persistence and verify atomic application state. They do not exhaustively simulate filesystem/power-loss failures.
 - UDP send acknowledgment is local only. A send/record crash window may leave delivery uncertain; exactly-once notifications are not promised.
 - Imports require the same stable port inventory. Mid-timer recovery is intentionally a reboot, and scenario import does not rewind the management/security engine.
