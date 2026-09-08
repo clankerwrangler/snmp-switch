@@ -48,7 +48,7 @@ Executed on 2026-09-08. These results concern the application. The TLC reports u
 
 | Check | Result |
 |---|---|
-| Python state engine, MIB, API, wire and independent Net-SNMP suite | 56 tests; final output in `test-results.txt` |
+| Python state engine, MIB, API, wire and independent Net-SNMP suite | 56 tests |
 | TypeScript strict checking and production UI build | Passed |
 | Browser workflow in headless Microsoft Edge, 1440px desktop and 390px mobile | Passed; no page errors or mobile horizontal overflow |
 | Public Docker runtime build | Passed |

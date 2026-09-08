@@ -1,4 +1,4 @@
-# SNMP Switch Emulator: model and technical specification
+# Switch Lab models and technical specification
 
 This directory contains the current TLA+ contract, bounded TLC configurations, behavioral negative controls, and application requirements for one vendor-neutral switch-management emulator. There is no Ethernet forwarding. Original project material uses the [MIT License](../LICENSE); external tools and standards retain their terms.
 
@@ -7,7 +7,7 @@ This directory contains the current TLA+ contract, bounded TLC configurations, b
 - [Application README](../README.md): installation, essential configuration, and documentation links.
 - [Technical specification](TECHNICAL_SPECIFICATION.md): state, VLAN/SET/ENTITY behavior, API/UI, and storage recovery.
 - [Current model contract](CURRENT_MODEL.md): model ownership, selected profiles, finite bounds, and implementation boundaries.
-- [Current verification](CURRENT_VERIFICATION.md): exact checked inputs, outcomes, negative controls, and preserved failures.
+- [Current verification](CURRENT_VERIFICATION.md): checked scope, outcomes, tools, and reproduction.
 - [Object manifest](docs/mib-coverage.csv): 95 definitions, comprising 89 readable objects (seven writable) and six inaccessible indexes. Maximum MIB access and implemented access are separate.
 - [Identity setup](docs/IDENTITY_SETUP.md): explicit identity configuration and public defaults.
 - [Historical verification](VERIFICATION.md): original revision-2 evidence, with its original scope and measurements.
@@ -40,13 +40,13 @@ For selected configurations:
 python3 ./run_tlc.py --jar /path/to/tla2tools.jar --models SetResponseEntry StorageRecovery
 ```
 
-The normal catalog contains 48 configurations. Current verification joins the original and affected runs; it does not claim one combined 48-configuration rerun. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
+The normal catalog contains 51 configurations. Current verification joins separate completed checks; it does not claim one combined 51-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
 
 ```sh
 python3 ./tests/check_mutations.py --jar /path/to/tla2tools.jar
 ```
 
-Mutation checks use temporary copies. Current verification also retains the targeted lifetime, entry-association, and storage-recovery counterexamples. Historical logs describe the exact inputs recorded with each run.
+Mutation checks use temporary copies of current sources. Output under `logs/` stays local and ignored. Historical counterexamples and their exact inputs remain in Git; the current verification report explains how to inspect them. A fresh checkout does not need historical logs to run the current suite.
 
 ## Main owners
 
@@ -54,6 +54,7 @@ Mutation checks use temporary copies. Current verification also retains the targ
 |---|---|
 | `Switch.tla` | Core state, VLAN sets, stable ENTITY joins, invariants, and source progress |
 | `ReadAccess.tla` | Shared credentials and independent polling/writing/target references |
+| `GroupedAccess.tla` | Community/user/group policy, migration/conversion, sparse saves, and shared revocation |
 | `SetTransactions.tla` | Final-candidate SET, original-position errors, authorization, and generations |
 | `EntityInventory.tla` | Inventory snapshots and change-clock behavior |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original response ownership, stage-aware finalization, and pre-admission association |
