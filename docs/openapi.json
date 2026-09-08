@@ -1835,6 +1835,82 @@
         "type": "object",
         "title": "Clone"
       },
+      "CredentialAuth": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "title": "Label"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "2c",
+              "3"
+            ],
+            "title": "Version",
+            "default": "2c"
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Username",
+            "default": ""
+          },
+          "security_level": {
+            "type": "string",
+            "enum": [
+              "noAuthNoPriv",
+              "authNoPriv",
+              "authPriv"
+            ],
+            "title": "Security Level",
+            "default": "noAuthNoPriv"
+          },
+          "community": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community"
+          },
+          "auth_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Key"
+          },
+          "priv_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priv Key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "CredentialAuth"
+      },
       "CredentialWrite": {
         "properties": {
           "expected_revision": {
@@ -1861,17 +1937,6 @@
             ],
             "title": "Expected Configuration Revision"
           },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
           "label": {
             "anyOf": [
               {
@@ -1897,57 +1962,6 @@
               }
             ],
             "title": "Version"
-          },
-          "purpose": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "polling",
-                  "notification"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Purpose"
-          },
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled"
-          },
-          "view_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "View Id"
-          },
-          "networks": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Networks"
           },
           "username": {
             "anyOf": [
@@ -2008,6 +2022,38 @@
               }
             ],
             "title": "Priv Key"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "polling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PollingPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -2256,6 +2302,49 @@
           "password"
         ],
         "title": "Login"
+      },
+      "PollingPatch": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Id"
+          },
+          "networks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Networks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PollingPatch"
       },
       "PortPatch": {
         "properties": {
@@ -2820,7 +2909,14 @@
             "default": 162
           },
           "credential_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credential Id"
           },
           "enabled": {
@@ -2850,13 +2946,22 @@
               }
             ],
             "title": "Source Address"
+          },
+          "new_credential": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CredentialAuth"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "address",
-          "credential_id"
+          "address"
         ],
         "title": "TargetWrite"
       },

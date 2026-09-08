@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory() as root:
         command('/clock/advance',{'duration_ms':1000})
         assert request('/api/v1/state')['simulation_ms']>=1000
         command('/switch',{'identity':{'sys_object_id':'2.999.123'}},'PATCH')
-        command('/snmp/credentials',{'label':'release-fixture','community':'release-fixture-community'})
+        command('/snmp/credentials',{'label':'release-fixture','community':'release-fixture-community','polling':{'enabled':True}})
         command('/snmp/settings',{'enabled':True},'PATCH')
         async def read_identity():
             manager=SnmpEngine()

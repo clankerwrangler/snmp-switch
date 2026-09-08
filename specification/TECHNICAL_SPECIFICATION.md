@@ -55,8 +55,8 @@ Numeric defaults can change without changing the behavioral contract. Port count
 | Endpoint | UUID, display name, optional metadata, active/silent setting, source entries, configuration revision. An attachment is stored separately. |
 | Source entry | Stable source ID within an endpoint; unicast MAC; `untagged` or one explicit VID; activity timing. Empty endpoints are valid. |
 | Attachment | Endpoint ID, port ID, attachment generation. One attachment per endpoint. |
-| Credential | ID, label, protocol/security settings, enabled flag, allowed source networks, read-view reference, protected secret reference. |
-| Notification target | ID, address, UDP port, version, independent credential reference, enabled notification types and optional source binding. |
+| Credential | ID, label, protocol/security settings, credential-wide enabled flag, protected secrets; independent polling access with enabled flag, optional source networks, and read-view reference. |
+| Notification target | ID, address, UDP port, shared credential reference (which determines the version), enabled flag, notification types, and optional source binding. |
 
 VIDs are 1–4094. Explicit endpoint tags may refer to an unconfigured VID. VLAN 0/priority-tagged frames, stacked tags, and multiple untagged egress VLANs are outside this release. One port's PVID is also its sole untagged egress VLAN; all other admitted memberships are tagged. This is a deliberate product restriction, not a general statement about every possible VLAN implementation. [R2]
 
@@ -236,11 +236,15 @@ Management-uptime wrap invalidates the previous filter epoch. Rebuild conceptual
 
 ### 7.1 Credentials
 
-Allow multiple independently enabled communities and SNMPv3 users, with named read views and optional source CIDR restrictions. A view can include identity/interfaces only or all implemented operational objects. Protocol-required SNMPv3 discovery and reports are handled by the security library; they do not grant operational-table access. Polling, notification, and web credentials are separate. Revocation or secret rotation affects requests when they are handled, including requests previously queued. A response already completed against an authorized snapshot is not retroactively invalidated.
+Allow multiple independently enabled communities and SNMPv3 users, with named read views and optional source CIDR restrictions. A view can include identity/interfaces only or all implemented operational objects. Protocol-required SNMPv3 discovery and reports are handled by the security library; they do not grant operational-table access. SNMP credentials are reusable for polling and notification targets; web authentication remains separate. Polling requires both credential-wide enablement and polling-access enablement. A target reference does not grant polling access. Enabled polling access requires an existing read view even when the credential-wide flag is disabled. Inactive polling retains its view ID and source networks without requiring that view to exist, so trap-only credentials remain usable with no read views. Target forms select an existing version-compatible credential or create one atomically with polling disabled; incoming source networks and read views belong to polling access. Revocation or secret rotation affects requests when they are handled, including requests previously queued. A response already completed against an authorized snapshot is not retroactively invalidated.
 
 SNMPv3 supports explicitly selected `noAuthNoPriv`, `authNoPriv`, and `authPriv` configurations. Target interoperable SHA-256 authentication and AES-128 privacy; enable additional algorithms only after library support and independent tests are established. Legacy or unauthenticated modes must be visibly identified. Do not implement cryptography in the emulator state engine. [R8, R9, R10]
 
 Store web passwords using a vetted password-hashing implementation. Store SNMP secrets/key material in a protected secret store or encrypted configuration with a separately mounted key, because authentication needs more than a web-password hash. Redact secrets in APIs, logs, traces, errors, exports, and source-controlled examples. The application must be able to restart without silently resetting SNMPv3 identity.
+
+Configuration schema 2 converts legacy polling-purpose credentials to enabled polling access and notification-purpose credentials to disabled polling access. It preserves existing credential enabled states, IDs, secrets, filters, views, and target references. Scenario schema 1 remains independent and cannot replace these deployment settings. The shared-credential relationships, inline creation, and schema conversion are application behavior outside the recorded `ReadAccess.tla` verification scope.
+
+One enabled credential identifies each community or v3 username in the single SNMP engine. Shared v3 polling and traps use the same username, security level, keys, and local engine identity. Credential-wide disablement stops both uses; disabling polling alone does not stop traps.
 
 ### 7.2 Notification semantics
 

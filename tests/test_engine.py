@@ -195,7 +195,7 @@ async def test_failure_atomicity_idempotency_and_configuration_revision(engine,m
 async def test_notifications_overflow_capture_and_gate(engine):
     e=engine;p=list(e.state.cfg.ports)[0]
     await e.execute("switch-edit",{"identity":{"sys_object_id":"1.3.6.1.4.1.999.1"},"queue_limit":1})
-    c=await e.execute("credential-save",{"label":"traps","purpose":"notification","community":"fixture-trap"})
+    c=await e.execute("credential-save",{"label":"traps","community":"fixture-trap"})
     await e.execute("target-save",{"address":"127.0.0.1","credential_id":c["id"]})
     await e.execute("snmp-settings",{"enabled":True})
     a=await endpoint(e)
@@ -216,3 +216,25 @@ def test_invalid_identity(value):
 @pytest.mark.parametrize("value",["00:00:00:00:00:00","ff:ff:ff:ff:ff:ff","01:02:03:04:05:06","xyz","0200:::00000010"])
 def test_invalid_mac(value):
     with pytest.raises(ValidationError):Source(mac=value)
+
+
+async def test_inline_target_storage_failure_rolls_back(engine, store, monkeypatch):
+    import sqlite3
+    e = engine
+    before = e.state
+    persisted, events, idem = store.get("configuration"), store.events(), store.get("idempotency")
+    original_put = store.put
+    def fail_after_configuration(key, value):
+        original_put(key, value)
+        if key == "configuration":
+            raise sqlite3.OperationalError("synthetic write failure")
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "put", fail_after_configuration)
+        with pytest.raises(sqlite3.OperationalError):
+            await e.execute("target-save", {"address": "127.0.0.1", "new_credential": {
+                "label": "Atomic", "community": "synthetic-atomic"}}, key="atomic")
+    assert e.state is before and not e.idempotency
+    assert store.get("configuration") == persisted and store.events() == events and store.get("idempotency") == idem
+    result = await e.execute("target-save", {"address": "127.0.0.1", "new_credential": {
+        "label": "Atomic", "community": "synthetic-atomic"}}, key="atomic")
+    assert store.load().targets[result["id"]].credential_id == result["credential_id"]

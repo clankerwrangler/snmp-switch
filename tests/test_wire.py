@@ -26,7 +26,7 @@ def client(port,credential=None):
 
 async def start(e,**credential):
     await e.execute('switch-edit',{'identity':{'sys_object_id':'1.3.999.123'}})
-    await e.execute('credential-save',{'label':'fixture','community':'fixture-poll',**credential})
+    await e.execute('credential-save',{'label':'fixture','community':'fixture-poll','polling':{'enabled':True},**credential})
     port=free_port()
     await e.execute('snmp-settings',{'enabled':True,'port':port})
     a=SnmpAdapter(e,e.store)
@@ -52,16 +52,16 @@ async def test_independent_v2_get_walk_bulk_and_set(engine):
 
 
 async def test_independent_view_cidr_unknown_rotation_and_gate(engine):
-    e=engine;a,port=await start(e,view_id='interfaces')
+    e=engine;a,port=await start(e,polling={'enabled':True,'view_id':'interfaces'})
     try:
         c=client(port)
         nxt=await c.getnext(OID('1.3.6.1.2.1.2.2.1.20.104'))
         assert str(nxt.oid).startswith('1.3.6.1.2.1.31.')
         with pytest.raises(Exception):await client(port,V2C('wrong')).get(OID('1.3.6.1.2.1.1.1.0'))
         cid=next(iter(e.state.cfg.credentials))
-        await e.execute('credential-save',{'id':cid,'networks':['192.0.2.0/24']});await a.reconcile()
+        await e.execute('credential-save',{'id':cid,'polling':{'networks':['192.0.2.0/24']}});await a.reconcile()
         with pytest.raises(Exception):await c.get(OID('1.3.6.1.2.1.1.1.0'))
-        await e.execute('credential-save',{'id':cid,'networks':['127.0.0.0/8'],'community':'rotated-fixture'});await a.reconcile()
+        await e.execute('credential-save',{'id':cid,'polling':{'networks':['127.0.0.0/8']},'community':'rotated-fixture'});await a.reconcile()
         with pytest.raises(Exception):await c.get(OID('1.3.6.1.2.1.1.1.0'))
         assert await client(port,V2C('rotated-fixture')).get(OID('1.3.6.1.2.1.1.1.0'))
         identity=a.engine_id;boots=a.boots
@@ -109,7 +109,7 @@ async def test_independent_notification_receiver_capture_order_and_gate(engine):
         def datagram_received(self,data,addr):queue.put_nowait(data)
     transport,_=await asyncio.get_running_loop().create_datagram_endpoint(Receiver,local_addr=('127.0.0.1',0))
     port=transport.get_extra_info('sockname')[1]
-    await e.execute('credential-save',{'label':'traps','purpose':'notification','community':'fixture-traps'})
+    await e.execute('credential-save',{'label':'traps','community':'fixture-traps'})
     cid=next(iter(e.state.cfg.credentials))
     await e.execute('target-save',{'address':'127.0.0.1','port':port,'credential_id':cid})
     a,poll_port=await start(e)
@@ -134,3 +134,50 @@ async def test_independent_notification_receiver_capture_order_and_gate(engine):
         assert queue.empty() and not e.state.outbox
     finally:a.close();transport.close()
 
+
+
+async def test_shared_v2_credential_polling_and_traps_are_independent(engine):
+    from switchlab.engine import CommandError
+    e = engine
+    queue = asyncio.Queue()
+    class Receiver(asyncio.DatagramProtocol):
+        def datagram_received(self, data, addr):
+            queue.put_nowait(data)
+    transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(Receiver, local_addr=('127.0.0.1', 0))
+    a = None
+    try:
+        a, port = await start(e)
+        cid = next(iter(e.state.cfg.credentials))
+        tid = (await e.execute('target-save', {'address': '127.0.0.1',
+            'port': transport.get_extra_info('sockname')[1], 'credential_id': cid}))['id']
+        await a.reconcile()
+        async def trap():
+            await e.execute('test-notification', {'target_id': tid})
+            await a.drain_one()
+            packet, _ = decode(await asyncio.wait_for(queue.get(), 1))
+            assert packet[1].pythonize() == b'fixture-poll' and isinstance(packet[2], Trap)
+        assert await client(port).get(OID('1.3.6.1.2.1.1.2.0'))
+        await trap()
+        other = (await e.execute('credential-save', {'label': 'Other polling', 'community': 'other-polling',
+            'polling': {'enabled': True}}))['id']
+        await e.execute('credential-save', {'id': cid, 'polling': {'enabled': False}})
+        await a.reconcile()
+        assert a.listening
+        assert await client(port, V2C('other-polling')).get(OID('1.3.6.1.2.1.1.2.0'))
+        with pytest.raises(Exception):
+            await client(port).get(OID('1.3.6.1.2.1.1.2.0'))
+        await trap()
+        await e.execute('credential-save', {'id': other, 'polling': {'enabled': False}})
+        await a.reconcile()
+        assert not a.listening and a.status()['notifications_ready']
+        await trap()
+        await e.execute('credential-save', {'id': cid, 'enabled': False})
+        await a.reconcile()
+        assert not a.status()['notifications_ready']
+        with pytest.raises(CommandError):
+            await e.execute('test-notification', {'target_id': tid})
+        assert queue.empty()
+    finally:
+        if a:
+            a.close()
+        transport.close()

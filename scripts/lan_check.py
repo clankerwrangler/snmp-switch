@@ -119,11 +119,11 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
         print(json.dumps({"fresh_docker_listener_default": "passed"}))
         credential = command("/snmp/credentials", {
             "label": "LAN fixture", "community": "lan-fixture-community",
-            "networks": ["127.0.0.0/8", "::1/128"]})["id"]
+            "polling": {"enabled": True, "networks": ["127.0.0.0/8", "::1/128"]}})["id"]
     else:
         assert len(state["credentials"]) == 1
         credential = next(iter(state["credentials"]))
-        command(f"/snmp/credentials/{credential}", {"networks": ["127.0.0.0/8", "::1/128"]}, "PUT")
+        command(f"/snmp/credentials/{credential}", {"polling": {"networks": ["127.0.0.0/8", "::1/128"]}}, "PUT")
         print(json.dumps({f"saved_listener_{snmp_port}_preserved": "passed"}))
     command("/snmp/settings", {"enabled": True}, "PATCH")
     assert not api("/api/v1/snmp/status")["ready"]
@@ -131,20 +131,20 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
     command("/switch", {"identity": {"sys_object_id": "2.999.123"}}, "PATCH")
     assert api("/api/v1/snmp/status")["ready"]
     polling(False)  # The credential explicitly allows only loopback sources.
-    command(f"/snmp/credentials/{credential}", {"networks": []}, "PUT")
-    assert api("/api/v1/state")["credentials"][credential]["networks"] == []
+    command(f"/snmp/credentials/{credential}", {"polling": {"networks": []}}, "PUT")
+    assert api("/api/v1/state")["credentials"][credential]["polling"]["networks"] == []
     polling(True)
-    command(f"/snmp/credentials/{credential}", {"networks": ["127.0.0.0/8"]}, "PUT")
+    command(f"/snmp/credentials/{credential}", {"polling": {"networks": ["127.0.0.0/8"]}}, "PUT")
     polling(False)
-    command(f"/snmp/credentials/{credential}", {"networks": [subnet]}, "PUT")
+    command(f"/snmp/credentials/{credential}", {"polling": {"networks": [subnet]}}, "PUT")
     polling(True)
     command("/snmp/settings", {"host": "127.0.0.1"}, "PATCH")
     polling(False)
     command("/snmp/settings", {"host": "0.0.0.0"}, "PATCH")
     polling(True)
-    command(f"/snmp/credentials/{credential}", {"networks": ["127.0.0.0/8"]}, "PUT")
+    command(f"/snmp/credentials/{credential}", {"polling": {"networks": ["127.0.0.0/8"]}}, "PUT")
     polling(False)
-    command(f"/snmp/credentials/{credential}", {"networks": [subnet]}, "PUT")
+    command(f"/snmp/credentials/{credential}", {"polling": {"networks": [subnet]}}, "PUT")
     polling(True)
     command("/switch", {"identity": {"sys_object_id": None}}, "PATCH")
     assert not api("/api/v1/snmp/status")["ready"]

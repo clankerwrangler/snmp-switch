@@ -8,7 +8,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 
-from .models import Configuration, Credential, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, uid
+from .models import Configuration, Credential, CredentialAuth, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, uid
 
 
 class CommandError(Exception):
@@ -20,6 +20,26 @@ class CommandError(Exception):
 def require(condition, message, status=409):
     if not condition:
         raise CommandError(status, message)
+
+
+def merge_credential(previous, fields):
+    saved = previous.model_dump() if previous else {}
+    fields = dict(fields)
+    version = fields.get("version", previous.version if previous else "2c")
+    if previous is None or version != previous.version:
+        for key in ("community", "username", "security_level", "auth_key", "priv_key"):
+            saved.pop(key, None)
+        if version == "2c":
+            fields.update(username="", security_level="noAuthNoPriv", auth_key=None, priv_key=None)
+        else:
+            fields["community"] = None
+    else:
+        for key in ("community", "auth_key", "priv_key"):
+            if fields.get(key) == "":
+                fields.pop(key)
+    if previous and isinstance(fields.get("polling"), dict):
+        fields["polling"] = {**saved["polling"], **fields["polling"]}
+    return Credential.model_validate({**saved, **fields})
 
 
 @dataclass(frozen=True)
@@ -454,7 +474,7 @@ class Engine:
             for pid, p in d["ports"].items():
                 require(p["if_index"] == cfg.ports[pid].if_index and p["bridge_port"] == cfg.ports[pid].bridge_port,
                         "Scenario cannot change interface indexes", 422)
-            merged = {**cfg.model_dump(mode="json"), **{k: v for k, v in d.items() if k != "lab_settings"}}
+            merged = {**cfg.model_dump(mode="json"), **{k: v for k, v in d.items() if k not in ("lab_settings", "schema_version")}}
             merged["switch"].update(d["lab_settings"])
             s.cfg = Configuration.model_validate(merged)
             s.reset_operational()
@@ -465,25 +485,24 @@ class Engine:
         elif action in ("credential-save", "view-save", "target-save"):
             cls, collection = {"credential-save": (Credential, cfg.credentials), "view-save": (View, cfg.views), "target-save": (Target, cfg.targets)}[action]
             previous = collection.get(d.get("id"))
-            saved = previous.model_dump() if previous else {}
             fields = dict(d)
+            if action == "target-save":
+                inline = fields.pop("new_credential", None)
+                require((fields.get("credential_id") is None) != (inline is None),
+                        "Select an existing credential or create one, not both", 422)
+                if inline is not None:
+                    auth = CredentialAuth.model_validate(inline)
+                    credential = merge_credential(None, auth.model_dump())
+                    cfg.credentials[credential.id] = credential
+                    fields["credential_id"] = credential.id
+                    s.event("credential-save", resource_id=credential.id)
             if action == "credential-save":
-                version = fields.get("version", previous.version if previous else "2c")
-                if previous is None or version != previous.version:
-                    for key in ("community", "username", "security_level", "auth_key", "priv_key"):
-                        saved.pop(key, None)
-                    if version == "2c":
-                        fields.update(username="", security_level="noAuthNoPriv", auth_key=None, priv_key=None)
-                    else:
-                        fields["community"] = None
-                else:
-                    for key in ("community", "auth_key", "priv_key"):
-                        if fields.get(key) == "":
-                            fields.pop(key)
-            obj = cls.model_validate({**saved, **fields})
+                obj = merge_credential(previous, fields)
+            else:
+                obj = cls.model_validate({**(previous.model_dump() if previous else {}), **fields})
             collection[obj.id] = obj
             s.event(action, resource_id=obj.id)
-            return {"id": obj.id}
+            return {"id": obj.id, **({"credential_id": obj.credential_id} if action == "target-save" else {})}
         elif action in ("credential-delete", "view-delete", "target-delete"):
             collection = {"credential-delete": cfg.credentials, "view-delete": cfg.views, "target-delete": cfg.targets}[action]
             get(collection, d["id"])

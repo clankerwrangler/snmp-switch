@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import ipaddress
 import re
 import uuid
@@ -155,24 +156,25 @@ class View(Record):
         return result
 
 
-class Credential(Record):
-    id: str = Field(default_factory=uid)
-    label: str = Field(max_length=80)
-    version: Literal["2c", "3"] = "2c"
-    purpose: Literal["polling", "notification"] = "polling"
-    enabled: bool = True
+class PollingAccess(Record):
+    enabled: bool = False
     view_id: str = "all"
     networks: list[str] = Field(default_factory=list, max_length=32)
-    username: str = Field(default="", max_length=32)
-    security_level: Literal["noAuthNoPriv", "authNoPriv", "authPriv"] = "noAuthNoPriv"
-    community: str | None = Field(default=None, max_length=255, repr=False)
-    auth_key: str | None = Field(default=None, max_length=255, repr=False)
-    priv_key: str | None = Field(default=None, max_length=255, repr=False)
 
     @field_validator("networks")
     @classmethod
     def cidrs(cls, values):
         return [str(ipaddress.ip_network(v, strict=False)) for v in values]
+
+
+class CredentialAuth(Record):
+    label: str = Field(max_length=80)
+    version: Literal["2c", "3"] = "2c"
+    username: str = Field(default="", max_length=32)
+    security_level: Literal["noAuthNoPriv", "authNoPriv", "authPriv"] = "noAuthNoPriv"
+    community: str | None = Field(default=None, max_length=255, repr=False)
+    auth_key: str | None = Field(default=None, max_length=255, repr=False)
+    priv_key: str | None = Field(default=None, max_length=255, repr=False)
 
     @model_validator(mode="after")
     def security(self):
@@ -188,6 +190,12 @@ class Credential(Record):
             if self.security_level == "authPriv" and len(self.priv_key or "") < 8:
                 raise ValueError("AES-128 passphrase requires at least 8 characters")
         return self
+
+
+class Credential(CredentialAuth):
+    id: str = Field(default_factory=uid)
+    enabled: bool = True
+    polling: PollingAccess = Field(default_factory=PollingAccess)
 
 
 class Target(Record):
@@ -218,7 +226,7 @@ class SnmpSettings(Record):
 
 
 class Configuration(Record):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     switch: Switch = Field(default_factory=Switch)
     ports: dict[str, Port] = Field(default_factory=dict)
     vlans: dict[int, Vlan] = Field(default_factory=lambda: {1: Vlan(vid=1, name="Default", fdb_id=1001)})
@@ -232,6 +240,39 @@ class Configuration(Record):
     })
     credentials: dict[str, Credential] = Field(default_factory=dict)
     targets: dict[str, Target] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_credentials(cls, value):
+        if not isinstance(value, dict) or type(value.get("schema_version")) is not int or value["schema_version"] != 1:
+            return value
+        raw = copy.deepcopy(value)
+        credentials = raw.get("credentials", {})
+        targets = raw.get("targets", {})
+        if not isinstance(credentials, dict) or not isinstance(targets, dict):
+            raise ValueError("Configuration credentials and targets must be objects")
+        for credential in credentials.values():
+            if not isinstance(credential, dict) or "polling" in credential:
+                raise ValueError("Schema 1 credentials cannot contain schema 2 polling access")
+            if credential.get("purpose", "polling") not in ("polling", "notification"):
+                raise ValueError("Invalid schema 1 credential purpose")
+        for target in targets.values():
+            if not isinstance(target, dict):
+                raise ValueError("Configuration targets must be objects")
+            credential_id = target.get("credential_id")
+            if not isinstance(credential_id, str):
+                raise ValueError("Schema 1 target credential ID must be a string")
+            credential = credentials.get(credential_id)
+            if credential is not None and credential.get("purpose", "polling") != "notification":
+                raise ValueError("Schema 1 targets require notification credentials")
+        for credential in credentials.values():
+            credential["polling"] = {
+                "enabled": credential.pop("purpose", "polling") == "polling",
+                "view_id": credential.pop("view_id", "all"),
+                "networks": credential.pop("networks", []),
+            }
+        raw["schema_version"] = 2
+        return raw
 
     @model_validator(mode="after")
     def references(self):
@@ -256,15 +297,15 @@ class Configuration(Record):
         if not set(self.attachments) <= set(self.endpoints) or not set(self.attachments.values()) <= set(self.ports):
             raise ValueError("Invalid attachment reference")
         for c in self.credentials.values():
-            if c.view_id not in self.views:
+            if c.polling.enabled and c.polling.view_id not in self.views:
                 raise ValueError("Unknown read view")
         users = [(c.version, c.username if c.version == "3" else c.community) for c in self.credentials.values() if c.enabled]
         if len(users) != len(set(users)):
             raise ValueError("Enabled communities and usernames must be unique")
         for t in self.targets.values():
             c = self.credentials.get(t.credential_id)
-            if c is None or c.purpose != "notification":
-                raise ValueError("Targets require a separate notification credential")
+            if c is None:
+                raise ValueError("Unknown target credential")
             if t.source_address and ipaddress.ip_address(t.source_address).version != ipaddress.ip_address(t.address).version:
                 raise ValueError("Target and source IP families must match")
         if len(self.credentials) > 100 or len(self.targets) > 100 or len(self.views) > 100:

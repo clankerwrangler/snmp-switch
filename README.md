@@ -63,10 +63,10 @@ Authenticated API writes require a session cookie and CSRF token. A supplied `Or
 Open **SNMP & settings**:
 
 1. Enter your full numeric **System object ID (`sysObjectID`)**. The public default is intentionally unset. Changing it affects advertised identity only.
-2. Create a polling credential. SNMPv3 supports SHA-256 authentication and AES-128 privacy. SNMPv2c and unprotected v3 modes are labeled as unencrypted.
+2. Create an **SNMP credential**, then open its **Polling** settings and select **Allow polling**. SNMPv3 supports SHA-256 authentication and AES-128 privacy. SNMPv2c and unprotected v3 modes are labeled as unencrypted.
 3. New Docker configurations initialize the listener to `0.0.0.0:161`; managers use the host address and the same port. Native configurations default to `127.0.0.1:161`. Saved or explicitly configured addresses take precedence. **Configure** changes the listener address and port. Native binding requirements are described in **Run natively**.
-4. Select **Enable SNMP**. Check the effective status before polling.
-5. For traps, create a separate credential with purpose **Notification only**, then add a receiver address and event filters. The destination defaults to UDP 162 and can be changed per target.
+4. Select **Enable SNMP**. Check **Polling state** before polling.
+5. For traps, select **+ Target**, enter a receiver address and event filters, and select an existing credential or **Create new** in the same form. The version selector filters compatible credentials. The destination defaults to UDP 162 and can be changed per target. Trap sending does not require polling access.
 
 ```sh
 # Compose defaults; supply your configured SNMP credentials.
@@ -79,13 +79,21 @@ To use another query port, set the listener port in **SNMP & settings**, set the
 
 Credential forms and redacted API responses show only the selected SNMP version's settings. Blank secret fields retain saved secrets on same-version edits. Changing between v2c and v3 requires the new version's credentials and clears the old version's fields.
 
-Source-IP restrictions are optional. New credentials have an empty allowed-networks list, which accepts requests from any source IP. A nonempty list restricts requests to those CIDRs, such as `192.168.1.20/32`; requests outside the list are rejected. Saved lists remain unchanged until edited or cleared. For LAN polling, managers use the host LAN address on UDP 161 (or the selected query port). Docker NAT may change the source address seen by the agent.
+Polling access is independent of trap destinations and starts disabled for new credentials. A credential can serve both polling and any number of trap destinations. Disabling the credential disables both uses; disabling only **Allow polling** leaves trap destinations available.
+
+Source-IP restrictions and read views apply only to polling. Enabled polling access requires an existing read view, even when the credential itself is disabled. Disabled polling retains its saved view ID and source networks without requiring the view to exist; trap-only credentials need no read views. The polling editor shows a missing saved view until you select an existing one.
+
+The allowed-networks list starts empty, which means no source-IP restriction when polling access is enabled. A nonempty list restricts requests to those CIDRs, such as `192.168.1.20/32`; requests outside the list are rejected. Saved lists remain unchanged until edited or cleared. For LAN polling, managers use the host LAN address on UDP 161 (or the selected query port). Docker NAT may change the source address seen by the agent.
+
+The agent uses one enabled credential per v2c community or v3 username. A shared v3 user uses the same security level and keys for polling and traps. Trap receivers configure that user against the sender’s engine ID, shown in **SNMP service**.
 
 Traps are outbound notifications to the configured receiver, normally on UDP 162. Switch Lab does not receive traps, so Compose has no inbound UDP 162 mapping. Delivery and the source address seen by the receiver depend on container networking and routing.
 
 Clearing identity closes the SNMP listener and cancels unsent notifications before the API acknowledges the change. UI, API, and simulation remain available. Restoring identity does not replay disabled-period link events.
 
 ### Existing deployments
+
+Configuration schema 2 replaces the old credential purpose with independent polling access. Existing polling credentials retain polling access, source filters, and read views. Existing notification-only credentials retain their targets without gaining polling access. Saved secrets, enabled states, and SNMP engine identity are retained. Scenario exports remain schema 1 and do not replace deployment credentials.
 
 Saved listener addresses and ports, including 1161 and custom ports, remain unchanged on upgrade. To continue using one, set `SWITCHLAB_SNMP_PORT` in `.env` to that saved port before recreating the container. For example:
 
@@ -162,6 +170,8 @@ Example request body for `POST /api/v1/endpoints`:
 ```
 
 Use the current revision, not the example value. Endpoint tags may reference absent VLANs; those observations are rejected until the VLAN exists and is admitted. Source replacement preserves explicitly supplied source IDs. Credential updates merge omitted secret fields; returned values expose only secret-presence flags.
+
+Credential polling settings are nested as `polling: {enabled, view_id, networks}`. Partial credential or polling updates preserve omitted fields. Target writes accept exactly one of `credential_id` or `new_credential`; the latter contains only a label and protocol credentials. Inline credential and target creation is one transaction, and the response includes both IDs. Deleting a target retains its reusable credential; deleting a referenced credential is rejected.
 
 Scenario exports contain lab state and fixed port IDs, not identity, SNMP settings, credentials or targets. Imports restore a baseline for the same switch inventory. Invalid imports are atomic failures. Exports are portable between backups of that deployment; importing a different deployment's port UUIDs is rejected.
 

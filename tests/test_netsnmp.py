@@ -77,7 +77,7 @@ async def test_authenticated_notification_with_independent_snmptrapd(engine,tmp_
     e=engine;a,port=await start(e)
     process=None
     try:
-        cid=(await e.execute('credential-save',{'label':'secure trap','version':'3','purpose':'notification','username':'trap-fixture',
+        cid=(await e.execute('credential-save',{'label':'secure trap','version':'3','username':'trap-fixture',
              'security_level':'authPriv','auth_key':'fixture-auth-pass','priv_key':'fixture-priv-pass'}))['id']
         trap_port=free_port()
         tid=(await e.execute('target-save',{'address':'127.0.0.1','port':trap_port,'credential_id':cid}))['id']
@@ -98,7 +98,7 @@ async def test_authenticated_notification_with_independent_snmptrapd(engine,tmp_
 
 
 async def test_protocol_change_replaces_wire_credentials(engine):
-    e=engine;a,port=await start(e,networks=['127.0.0.0/8'])
+    e=engine;a,port=await start(e,polling={'enabled':True,'networks':['127.0.0.0/8']})
     try:
         cid=next(iter(e.state.cfg.credentials))
         address=f'127.0.0.1:{port}'
@@ -121,5 +121,68 @@ async def test_protocol_change_replaces_wire_credentials(engine):
         with pytest.raises(AssertionError,match='Timeout|Unknown user name'):
             await command(*v3)
         assert '1.3.999.123' in await command('snmpget','-v2c','-c','changed-v2','-On','-t','1','-r','0',address,oid)
-        assert e.state.cfg.credentials[cid].networks==['127.0.0.0/8']
+        assert e.state.cfg.credentials[cid].polling.networks==['127.0.0.0/8']
     finally:a.close()
+
+
+async def test_shared_v3_credential_polling_and_traps_are_independent(engine, tmp_path):
+    from test_wire import free_port
+    e = engine
+    a, port = await start(e)
+    process = None
+    try:
+        cid = (await e.execute('credential-save', {'label': 'Shared USM', 'version': '3',
+            'username': 'shared-usm', 'security_level': 'authPriv', 'auth_key': 'shared-auth-pass',
+            'priv_key': 'shared-priv-pass', 'polling': {'enabled': True, 'view_id': 'interfaces',
+                                                     'networks': ['127.0.0.0/8']}}))['id']
+        trap_port = free_port()
+        tid = (await e.execute('target-save', {'address': '127.0.0.1', 'port': trap_port, 'credential_id': cid}))['id']
+        await a.reconcile()
+        config = tmp_path / 'shared-snmptrapd.conf'
+        config.write_text(f'createUser -e 0x{a.engine_id.hex()} shared-usm SHA-256 shared-auth-pass AES shared-priv-pass\nauthUser log shared-usm priv\n')
+        process = await asyncio.create_subprocess_exec('snmptrapd', '-f', '-Lo', '-C', '-c', str(config), '-n', '-On',
+            f'udp:127.0.0.1:{trap_port}', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        await asyncio.sleep(.2)
+        async def trap():
+            await e.execute('test-notification', {'target_id': tid})
+            await a.drain_one()
+            async def capture():
+                while True:
+                    line = await process.stdout.readline()
+                    assert line, 'Trap receiver exited before receiving coldStart'
+                    if b'1.3.6.1.6.3.1.1.5.1' in line:
+                        return
+            await asyncio.wait_for(capture(), 2)
+        base = ['snmpget', '-v3', '-u', 'shared-usm', '-l', 'authPriv', '-a', 'SHA-256', '-A', 'shared-auth-pass',
+                '-x', 'AES', '-X', 'shared-priv-pass', '-On', '-t', '1', '-r', '0', f'127.0.0.1:{port}']
+        oid = '1.3.6.1.2.1.1.2.0'
+        assert '1.3.999.123' in await command(*base, oid)
+        assert 'No Such Object' in await command(*base, '1.3.6.1.2.1.17.1.1.0')
+        await trap()
+        await e.execute('credential-save', {'id': cid, 'polling': {'networks': ['192.0.2.0/24']}})
+        await a.reconcile()
+        with pytest.raises(AssertionError, match='Timeout'):
+            await command(*base, oid)
+        await trap()
+        await e.execute('credential-save', {'id': cid, 'polling': {'enabled': False, 'networks': []}})
+        await a.reconcile()
+        assert a.listening and a.status()['notifications_ready']
+        with pytest.raises(AssertionError, match='Timeout'):
+            await command(*base, oid)
+        await trap()
+        # Removing the last polling permission closes only the incoming listener.
+        other = next(k for k in e.state.cfg.credentials if k != cid)
+        await e.execute('credential-save', {'id': other, 'polling': {'enabled': False}})
+        await a.reconcile()
+        assert not a.listening and a.status()['notifications_ready']
+        await trap()
+        assert e.state.cfg.credentials[cid].polling.view_id == 'interfaces'
+    finally:
+        if process and process.returncode is None:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.communicate(), 3)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.communicate()
+        a.close()

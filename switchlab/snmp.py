@@ -35,14 +35,14 @@ class Responder(cmdrsp.CommandResponderBase):
         incoming = snmp.observer.get_execution_context("rfc3412.receiveMessage:request")
         peer = ipaddress.ip_address(incoming["transportAddress"][0].split("%")[0])
         cred = next((c for c in state.cfg.credentials.values() if
-                     c.enabled and c.purpose == "polling" and
+                     c.enabled and c.polling.enabled and
                      ((security_model == 2 and c.version == "2c" and wire_name(c.id) == str(name)) or
                       (security_model == 3 and c.version == "3" and c.username == str(name)))), None)
-        if cred is None or (cred.networks and not any(peer in ipaddress.ip_network(n) for n in cred.networks)):
+        if cred is None or (cred.polling.networks and not any(peer in ipaddress.ip_network(n) for n in cred.polling.networks)):
             return
         if cred.version == "3" and int(level) < {"noAuthNoPriv": 1, "authNoPriv": 2, "authPriv": 3}[cred.security_level]:
             return
-        self.projection = Projection(state, state.cfg.views[cred.view_id].includes)
+        self.projection = Projection(state, state.cfg.views[cred.polling.view_id].includes)
         self.limit = state.cfg.snmp.max_varbinds
         super().process_pdu(snmp, model, security_model, name, level, *rest)
 
@@ -101,7 +101,7 @@ class SnmpAdapter:
             reason = "disabled"
         elif self.error:
             reason = self.error
-        elif not any(x.enabled and x.purpose == "polling" for x in c.credentials.values()):
+        elif not any(x.enabled and x.polling.enabled for x in c.credentials.values()):
             reason = "credentials_required"
         else:
             reason = "ready" if self.listening else "initializing"
@@ -140,6 +140,8 @@ class SnmpAdapter:
         if current != self.configured:
             self._close_senders()
             for k, c in self.configured.items():
+                config.delete_vacm_user(self.snmp, 2 if c["version"] == "2c" else 3,
+                    wire_name(k) if c["version"] == "2c" else c["username"], c["security_level"], notifySubTree=(1,3,6))
                 if c["version"] == "2c":
                     config.delete_v1_system(self.snmp, wire_name(k))
                 else:
@@ -152,12 +154,11 @@ class SnmpAdapter:
                         authProtocol=config.USM_AUTH_HMAC192_SHA256 if c["security_level"] != "noAuthNoPriv" else config.USM_AUTH_NONE,
                         authKey=c["auth_key"], privProtocol=config.USM_PRIV_CFB128_AES if c["security_level"] == "authPriv" else config.USM_PRIV_NONE,
                         privKey=c["priv_key"])
-                if c["purpose"] == "notification":
-                    config.add_vacm_user(self.snmp, 2 if c["version"] == "2c" else 3,
+                config.add_vacm_user(self.snmp, 2 if c["version"] == "2c" else 3,
                         wire_name(k) if c["version"] == "2c" else c["username"], c["security_level"], notifySubTree=(1,3,6))
             self.configured = current
         binding = (s.cfg.snmp.host, s.cfg.snmp.port)
-        polling = any(c.enabled and c.purpose == "polling" for c in s.cfg.credentials.values())
+        polling = any(c.enabled and c.polling.enabled for c in s.cfg.credentials.values())
         if not polling:
             self._unbind()
         elif not self.listening or self.binding != binding:

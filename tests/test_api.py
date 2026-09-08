@@ -115,7 +115,7 @@ def test_saved_snmp_port_and_explicit_standard_port_upgrade(store,saved_port):
 def test_notification_target_default_and_configurable_port(store):
     with session(store) as c:
         sign_in(c,store)
-        credential=change(c,'/snmp/credentials',{'label':'trap fixture','purpose':'notification','community':'fixture-traps'})
+        credential=change(c,'/snmp/credentials',{'label':'trap fixture','community':'fixture-traps'})
         assert credential.status_code==200,credential.text
         result=change(c,'/notifications/targets',{'address':'127.0.0.1','credential_id':credential.json()['id']})
         assert result.status_code==200,result.text
@@ -130,7 +130,7 @@ def test_rejected_request_no_effect_and_body_limits(store):
     with session(store) as c:
         sign_in(c,store)
         before=revision(c)
-        r=change(c,'/snmp/credentials',{'label':'invalid','community':'sensitive-example','networks':['bad-cidr']})
+        r=change(c,'/snmp/credentials',{'label':'invalid','community':'sensitive-example','polling':{'networks':['bad-cidr']}})
         assert r.status_code==422 and 'sensitive-example' not in r.text
         assert revision(c)==before
         assert change(c,'/vlans/1',method='DELETE').status_code==409
@@ -181,7 +181,7 @@ def test_retrying_reboot_does_not_restart_security_engine_twice(store):
     with session(store) as c:
         sign_in(c,store)
         assert change(c,'/switch',{'identity':{'sys_object_id':'1.3.999.123'}},'PATCH').status_code==200
-        assert change(c,'/snmp/credentials',{'label':'fixture','community':'reboot-fixture'}).status_code==200
+        assert change(c,'/snmp/credentials',{'label':'fixture','community':'reboot-fixture','polling':{'enabled':True}}).status_code==200
         assert change(c,'/snmp/settings',{'enabled':True,'port':free_port()},'PATCH').status_code==200
         body={'expected_configuration_revision':revision(c)}
         result=c.post('/api/v1/switch/reboot',json=body,headers={'Idempotency-Key':'reboot-once'})
@@ -297,7 +297,7 @@ def test_legacy_setup_token_cleanup_preserves_active_data(tmp_path):
     with session(store) as c:
         sign_in(c, store)
         change(c, '/snmp/credentials', {'label': 'saved', 'community': 'legacy-community',
-                                      'networks': ['127.0.0.0/8', '::1/128']})
+                                      'polling': {'networks': ['127.0.0.0/8', '::1/128']}})
     with store.db:
         store.put('setup_token', 'obsolete-fixture-token')
         store.put('unrelated', {'preserved': True})
@@ -323,16 +323,16 @@ def test_optional_networks_and_saved_filters(store):
         created = change(c, '/snmp/credentials', {'label': 'unrestricted', 'community': 'networks-fixture'})
         assert created.status_code == 200
         cid = created.json()['id']
-        assert store.load().credentials[cid].networks == []
+        assert store.load().credentials[cid].polling.networks == []
         explicit = ['127.0.0.0/8', '::1/128']
-        assert change(c, f'/snmp/credentials/{cid}', {'networks': explicit}, 'PUT').status_code == 200
+        assert change(c, f'/snmp/credentials/{cid}', {'polling': {'networks': explicit}}, 'PUT').status_code == 200
         assert change(c, f'/snmp/credentials/{cid}', {'label': 'renamed'}, 'PUT').status_code == 200
-        assert store.load().credentials[cid].networks == explicit
+        assert store.load().credentials[cid].polling.networks == explicit
         before = revision(c)
-        assert change(c, f'/snmp/credentials/{cid}', {'networks': ['']}, 'PUT').status_code == 422
-        assert revision(c) == before and store.load().credentials[cid].networks == explicit
-        assert change(c, f'/snmp/credentials/{cid}', {'networks': []}, 'PUT').status_code == 200
-        assert store.load().credentials[cid].networks == []
+        assert change(c, f'/snmp/credentials/{cid}', {'polling': {'networks': ['']}}, 'PUT').status_code == 422
+        assert revision(c) == before and store.load().credentials[cid].polling.networks == explicit
+        assert change(c, f'/snmp/credentials/{cid}', {'polling': {'networks': []}}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].polling.networks == []
 
 
 def test_protocol_fields_redaction_and_explicit_version_change(store):
@@ -381,6 +381,7 @@ def test_protocol_fields_redaction_and_explicit_version_change(store):
 
 def test_legacy_inactive_fields_stay_inert_until_version_change(store):
     cfg = initial_configuration(4).model_dump(mode='json')
+    cfg['schema_version'] = 1
     cfg['credentials']['legacy'] = {'id': 'legacy', 'label': 'legacy', 'community': 'legacy-v2',
         'username': 'hidden-old-user', 'auth_key': 'hidden-old-auth', 'priv_key': 'hidden-old-priv',
         'networks': ['127.0.0.0/8', '::1/128']}
@@ -391,7 +392,7 @@ def test_legacy_inactive_fields_stay_inert_until_version_change(store):
         public = c.get('/api/v1/state').json()['credentials']['legacy']
         assert 'username' not in public and 'has_auth_key' not in public
         assert change(c, '/snmp/credentials/legacy', {'label': 'renamed'}, 'PUT').status_code == 200
-        assert store.load().credentials['legacy'].networks == ['127.0.0.0/8', '::1/128']
+        assert store.load().credentials['legacy'].polling.networks == ['127.0.0.0/8', '::1/128']
         assert store.load().credentials['legacy'].auth_key == 'hidden-old-auth'
         assert change(c, '/snmp/credentials/legacy', {'version': '3', 'security_level': 'authPriv'}, 'PUT').status_code == 422
         assert store.load().credentials['legacy'].community == 'legacy-v2'
@@ -493,3 +494,238 @@ def test_listener_edit_survives_startup_defaults(store, tmp_path, monkeypatch):
         assert state['snmp']['enabled'] is False
         assert state['switch']['identity']['sys_object_id'] is None
         assert not state['snmp_status']['ready']
+
+
+@pytest.mark.parametrize("purpose", ["polling", "notification", None])
+@pytest.mark.parametrize("enabled", [True, False])
+def test_legacy_credential_access_migration(store, purpose, enabled):
+    import copy
+    from switchlab.models import Configuration
+    raw = initial_configuration(4).model_dump(mode="json")
+    raw["schema_version"] = 1
+    legacy = {"id": "legacy", "label": "Legacy", "version": "3", "enabled": enabled,
+              "username": "legacy-user", "security_level": "authPriv",
+              "auth_key": "synthetic-auth", "priv_key": "synthetic-priv", "community": "inert-community",
+              "view_id": "interfaces", "networks": ["127.0.0.0/8", "::1/128"]}
+    if purpose is not None:
+        legacy["purpose"] = purpose
+    raw["credentials"] = {"legacy": legacy}
+    if purpose == "notification":
+        raw["targets"] = {"target": {"id": "target", "credential_id": "legacy", "address": "127.0.0.1",
+                                     "port": 2162, "enabled": enabled, "types": ["coldStart"]},
+                          "second": {"id": "second", "credential_id": "legacy", "address": "127.0.0.2",
+                                     "port": 3162, "enabled": False, "types": ["linkUp"]}}
+    original = copy.deepcopy(raw)
+    cfg = Configuration.model_validate(raw)
+    assert raw == original and cfg.schema_version == 2
+    with store.db:
+        store.put("configuration", raw)
+        store.put("engine_identity", "40000102030405060708090a0b")
+        store.put("engine_boots", 9)
+    with TestClient(create_app(store)) as c:
+        sign_in(c, store)
+        state = c.get('/api/v1/state').json()
+        migrated = state["credentials"]["legacy"]
+        assert migrated["polling"] == {"enabled": purpose != "notification", "view_id": "interfaces",
+                                       "networks": legacy["networks"]}
+        assert migrated["enabled"] == enabled and "purpose" not in migrated
+        assert not {"view_id", "networks", "community", "auth_key", "priv_key"} & migrated.keys()
+        saved = store.load()
+        credential = saved.credentials["legacy"]
+        assert credential.auth_key == legacy["auth_key"] and credential.priv_key == legacy["priv_key"]
+        assert credential.community == legacy["community"]
+        assert saved.targets == cfg.targets
+        scenario = c.get('/api/v1/scenarios/export').json()
+        assert scenario["schema_version"] == 1
+        before = saved.model_dump()
+        assert change(c, '/scenarios/import', {"scenario": scenario}).status_code == 200
+        assert store.load().model_dump() == before
+        assert store.get("configuration")["schema_version"] == 2
+        assert store.get("engine_identity") == "40000102030405060708090a0b" and store.get("engine_boots") == 9
+        assert state["snmp"]["enabled"] is False and state["switch"]["identity"]["sys_object_id"] is None
+    assert store.load().credentials["legacy"].polling == credential.polling
+
+
+@pytest.mark.parametrize("version,credential", [
+    (3, {"label": "future", "community": "synthetic"}),
+    (True, {"label": "invalid tag", "community": "synthetic"}),
+    (1, {"label": "mixed", "community": "synthetic", "polling": {"enabled": True}}),
+    (2, {"label": "mixed", "community": "synthetic", "purpose": "notification"}),
+    (2, {"label": "mixed", "community": "synthetic", "networks": []}),
+    (1, {"label": "invalid", "community": "synthetic", "purpose": "both"}),
+])
+def test_configuration_schema_rejects_ambiguous_credentials(version, credential):
+    from pydantic import ValidationError
+    from switchlab.models import Configuration
+    raw = initial_configuration(4).model_dump(mode="json")
+    raw.update(schema_version=version, credentials={"fixture": credential})
+    with pytest.raises(ValidationError):
+        Configuration.model_validate(raw)
+
+
+def test_shared_credentials_and_partial_polling_access(store):
+    with session(store) as c:
+        sign_in(c, store)
+        created = change(c, '/snmp/credentials', {"label": "Shared", "community": "synthetic-shared"})
+        assert created.status_code == 200
+        cid = created.json()["id"]
+        assert store.load().credentials[cid].polling.enabled is False
+        access = {"enabled": True, "view_id": "interfaces", "networks": ["127.0.0.0/8"]}
+        assert change(c, f'/snmp/credentials/{cid}', {"polling": access}, 'PUT').status_code == 200
+        target = change(c, '/notifications/targets', {"address": "127.0.0.1", "credential_id": cid})
+        assert target.status_code == 200
+        tid = target.json()["id"]
+        assert change(c, f'/snmp/credentials/{cid}', {"label": "Renamed", "community": ""}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].polling.model_dump() == access
+        assert change(c, f'/snmp/credentials/{cid}', {"polling": {"enabled": False}}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].polling.model_dump() == {**access, "enabled": False}
+        assert store.load().targets[tid].enabled and store.load().credentials[cid].enabled
+        assert change(c, f'/snmp/credentials/{cid}', {"polling": {"networks": []}}, 'PUT').status_code == 200
+        saved = store.load().credentials[cid]
+        assert saved.polling.networks == [] and saved.polling.view_id == 'interfaces' and saved.polling.enabled is False
+        assert saved.community == 'synthetic-shared'
+        assert change(c, f'/snmp/credentials/{cid}', method='DELETE').status_code == 422
+        assert change(c, f'/notifications/targets/{tid}', method='DELETE').status_code == 200
+        assert cid in store.load().credentials
+        assert change(c, f'/snmp/credentials/{cid}', method='DELETE').status_code == 200
+
+
+@pytest.mark.parametrize("extra", [{"polling": {"enabled": True}}, {"enabled": True}, {"id": "chosen"},
+                                   {"purpose": "polling"}, {"networks": []}, {"view_id": "all"}])
+def test_inline_target_rejects_privilege_fields(store, extra):
+    with session(store) as c:
+        sign_in(c, store)
+        before = store.get('configuration')
+        result = change(c, '/notifications/targets', {"address": "127.0.0.1",
+                        "new_credential": {"label": "Inline", "community": "synthetic-inline", **extra}})
+        assert result.status_code == 422
+        assert store.get('configuration') == before
+        assert 'synthetic-inline' not in result.text
+
+
+def test_inline_target_atomic_creation_and_replacement(store):
+    with session(store) as c:
+        sign_in(c, store)
+        payload = {"address": "127.0.0.1", "new_credential": {"label": "Inline", "community": "synthetic-inline"},
+                   "expected_configuration_revision": revision(c)}
+        response = c.post('/api/v1/notifications/targets', json=payload, headers={"Idempotency-Key": "inline-once"})
+        assert response.status_code == 200
+        result = response.json(); cid, tid = result['credential_id'], result['id']
+        replay = c.post('/api/v1/notifications/targets', json=payload, headers={"Idempotency-Key": "inline-once"})
+        assert replay.status_code == 200 and replay.json() == result
+        cfg = store.load()
+        assert len(cfg.credentials) == len(cfg.targets) == 1 and cfg.targets[tid].credential_id == cid
+        assert cfg.credentials[cid].enabled and not cfg.credentials[cid].polling.enabled
+        assert change(c, f'/snmp/credentials/{cid}', {"enabled": False}, 'PUT').status_code == 200
+        assert change(c, f'/notifications/targets/{tid}', {"address": "127.0.0.2", "credential_id": cid}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].enabled is False
+        replacement = change(c, f'/notifications/targets/{tid}', {"address": "127.0.0.2", "new_credential": {
+            "label": "Replacement", "version": "3", "username": "inline-v3", "security_level": "authPriv",
+            "auth_key": "synthetic-auth", "priv_key": "synthetic-priv"}}, 'PUT')
+        assert replacement.status_code == 200
+        new_cid = replacement.json()['credential_id']
+        assert new_cid != cid and len(store.load().credentials) == 2
+        assert store.load().targets[tid].credential_id == new_cid
+        assert not store.load().credentials[new_cid].polling.enabled
+        assert 'synthetic-' not in c.get('/api/v1/state').text
+        assert 'synthetic-' not in c.get('/api/v1/events').text
+
+
+def test_inline_target_failure_has_no_partial_records(store):
+    with session(store) as c:
+        sign_in(c, store)
+        existing = change(c, '/snmp/credentials', {"label": "Existing", "community": "synthetic-duplicate"}).json()['id']
+        before, events, idem = store.get('configuration'), store.events(), store.get('idempotency')
+        attempts = [
+            {"address": "127.0.0.1"},
+            {"address": "127.0.0.1", "credential_id": existing, "new_credential": {"label": "Both", "community": "synthetic-new"}},
+            {"address": "not-an-ip", "new_credential": {"label": "Bad IP", "community": "synthetic-new"}},
+            {"address": "127.0.0.1", "source_address": "::1", "new_credential": {"label": "Bad family", "community": "synthetic-new"}},
+            {"address": "127.0.0.1", "new_credential": {"label": "Duplicate", "community": "synthetic-duplicate"}},
+        ]
+        for payload in attempts:
+            result = change(c, '/notifications/targets', payload, headers={"Idempotency-Key": "rejected"})
+            assert result.status_code == 422
+            assert store.get('configuration') == before and store.events() == events and store.get('idempotency') == idem
+        stale = c.post('/api/v1/notifications/targets', json={"address": "127.0.0.1",
+            "new_credential": {"label": "Stale", "community": "synthetic-new"}, "expected_configuration_revision": 0})
+        assert stale.status_code == 409 and store.get('configuration') == before
+
+
+@pytest.mark.parametrize("auth", [
+    {"community": "duplicate-community"},
+    {"version": "3", "username": "duplicate-user", "security_level": "authPriv",
+     "auth_key": "synthetic-auth", "priv_key": "synthetic-priv"},
+])
+def test_shared_identity_uniqueness_and_disabled_references(store, auth):
+    with session(store) as c:
+        sign_in(c, store)
+        first = change(c, '/snmp/credentials', {"label": "First", **auth}).json()['id']
+        second = change(c, '/snmp/credentials', {"label": "Disabled duplicate", "enabled": False, **auth}).json()['id']
+        created = change(c, '/notifications/targets', {"address": "127.0.0.1", "credential_id": second, "enabled": False})
+        assert created.status_code == 200
+        tid = created.json()['id']
+        before = store.load().model_dump()
+        assert change(c, f'/snmp/credentials/{second}', {"enabled": True}, 'PUT').status_code == 422
+        assert store.load().model_dump() == before
+        assert change(c, f'/snmp/credentials/{second}', method='DELETE').status_code == 422
+        assert change(c, f'/snmp/credentials/{first}', {"enabled": False}, 'PUT').status_code == 200
+        assert change(c, f'/snmp/credentials/{second}', {"enabled": True}, 'PUT').status_code == 200
+        assert store.load().targets[tid].enabled is False and store.load().credentials[second].polling.enabled is False
+
+
+@pytest.mark.parametrize("reference", ["legacy", ["legacy"]])
+def test_legacy_target_cannot_change_polling_privileges(reference):
+    import copy
+    from pydantic import ValidationError
+    from switchlab.models import Configuration
+    raw = initial_configuration(4).model_dump(mode="json")
+    raw.update(schema_version=1, credentials={"legacy": {"id": "legacy", "label": "Legacy polling",
+        "community": "synthetic", "purpose": "polling"}}, targets={"target": {
+        "id": "target", "address": "127.0.0.1", "credential_id": reference}})
+    original = copy.deepcopy(raw)
+    with pytest.raises(ValidationError):
+        Configuration.model_validate(raw)
+    assert raw == original
+
+
+@pytest.mark.parametrize("globally_enabled", [True, False])
+def test_trap_credentials_do_not_require_inactive_read_views(store, globally_enabled):
+    with session(store) as c:
+        sign_in(c, store)
+        for vid in list(store.load().views):
+            assert change(c, f'/snmp/views/{vid}', method='DELETE').status_code == 200
+        assert store.load().views == {}
+        response = change(c, '/notifications/targets', {"address": "127.0.0.1", "new_credential": {
+            "label": "No polling view", "community": "synthetic-no-view"}})
+        assert response.status_code == 200
+        cid, tid = response.json()['credential_id'], response.json()['id']
+        access = {"enabled": False, "view_id": "all", "networks": ["127.0.0.0/8", "::1/128"]}
+        assert change(c, f'/snmp/credentials/{cid}', {
+            "enabled": globally_enabled, "polling": {"networks": access['networks']}}, 'PUT').status_code == 200
+        cfg = store.load()
+        assert cfg.credentials[cid].polling.model_dump() == access
+        target = cfg.targets[tid].model_dump()
+        assert target['enabled'] and target['credential_id'] == cid
+        before, events, idem, rev = store.get('configuration'), store.events(), store.get('idempotency'), revision(c)
+        response = change(c, f'/snmp/credentials/{cid}', {"polling": {"enabled": True}}, 'PUT',
+                          headers={"Idempotency-Key": "missing-view"})
+        assert response.status_code == 422 and 'Unknown read view' in response.text
+        assert store.get('configuration') == before and store.events() == events
+        assert store.get('idempotency') == idem and revision(c) == rev
+        response = change(c, '/snmp/views', {"name": "New read view", "includes": ["1.3.6.1.2.1.2"]})
+        assert response.status_code == 200
+        vid = response.json()['id']
+        assert change(c, f'/snmp/credentials/{cid}', {
+            "polling": {"enabled": True, "view_id": vid}}, 'PUT').status_code == 200
+        before = store.get('configuration')
+        assert change(c, f'/snmp/views/{vid}', method='DELETE').status_code == 422
+        assert store.get('configuration') == before
+        assert change(c, f'/snmp/credentials/{cid}', {"polling": {"enabled": False}}, 'PUT').status_code == 200
+        assert change(c, f'/snmp/views/{vid}', method='DELETE').status_code == 200
+        cfg = store.load()
+        assert cfg.views == {} and cfg.credentials[cid].polling.model_dump() == {**access, "view_id": vid}
+        assert cfg.credentials[cid].enabled == globally_enabled and cfg.targets[tid].model_dump() == target
+        assert cfg.credentials[cid].community == 'synthetic-no-view'
+        assert change(c, f'/snmp/credentials/{cid}', method='DELETE').status_code == 422
+        assert cfg.snmp.enabled is False and cfg.switch.identity.sys_object_id is None

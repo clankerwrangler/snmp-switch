@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import Field, ValidationError, create_model, model_validator
 
 from .engine import CommandError, Engine
-from .models import Configuration, Credential, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, initial_configuration
+from .models import Configuration, Credential, CredentialAuth, PollingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, initial_configuration
 from .snmp import SnmpAdapter
 from .storage import Store
 
@@ -88,12 +88,24 @@ SnmpPatch = patch_model("SnmpPatch", SnmpSettings, list(SnmpSettings.model_field
 class EndpointCreate(Endpoint, Revision):
     pass
 # Credential updates merge write-only keys; validation occurs after merging in the engine.
-CredentialWrite = patch_model("CredentialWrite", Credential, list(Credential.model_fields))
+PollingPatch = create_model("PollingPatch", __base__=Record, **{
+    k: (PollingAccess.model_fields[k].annotation | None, None) for k in PollingAccess.model_fields
+})
+CredentialWrite = create_model("CredentialWrite",
+    __base__=patch_model("CredentialFields", Credential, list(Credential.model_fields)),
+    polling=(PollingPatch | None, None))
 class ViewWrite(View, Revision):
     pass
 
 class TargetWrite(Target, Revision):
-    pass
+    credential_id: str | None = None
+    new_credential: CredentialAuth | None = None
+
+    @model_validator(mode="after")
+    def credential_choice(self):
+        if (self.credential_id is None) == (self.new_credential is None):
+            raise ValueError("Select an existing credential or create one, not both")
+        return self
 
 
 def create_app(store=None, configuration=None):
