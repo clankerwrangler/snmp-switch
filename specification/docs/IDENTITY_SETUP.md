@@ -1,6 +1,6 @@
 # SNMP identity setup
 
-**Documentation revision 2.1.** This is the implementation contract for the future application, not instructions for an already implemented agent or configuration loader.
+**Documentation revision 2.1.** This guide defines identity requirements and illustrative configuration fragments. For runnable setup instructions, see the [application README](../../README.md).
 
 ## Development and public defaults
 
@@ -47,13 +47,13 @@ Changing the advertised OID does not enable vendor-specific MIBs, change notific
 
 RFC 3418 describes `sysObjectID` as an allocated management-implementation identifier in the enterprises subtree. Permitting arbitrary test values does not allocate them or establish authority over their namespace. Operators who require standards-conforming identification should use an allocation they are authorized to use. The public application itself has no PEN-registration prerequisite. [1]
 
-PEN 32473 is reserved for documentation. RFC 5612 does not expect implementations to transmit it. Its use in our explicitly isolated development setup is a deliberate departure from that designation, not an officially sanctioned generic-switch or private-lab ID. Show a warning whenever it is configured. Never present it as the public default or describe it as assigned to this project. [2]
+PEN 32473 is reserved for documentation. RFC 5612 does not expect implementations to transmit it. Its use in the explicitly isolated development setup is a deliberate departure from that designation, not an officially sanctioned generic-switch or private-lab ID. Show a warning whenever it is configured. Never present it as the public default or describe it as assigned to this project. [2]
 
 ## Public release checks
 
 Publish with the public fragment and no active development override, image environment default, embedded lab database, or saved test identity. Development fixtures and documentation may retain the number for their stated purpose; they must not be loaded by the normal public entrypoint or quick start.
 
-Test the built image with a fresh volume and no overrides. Confirm null effective identity, a functioning UI/simulation, a closed SNMP gate, no notification sends, and a healthy application setup path. Then explicitly configure an operator OID and verify the response type/value with an independent SNMP client. Verify clearing, malformed input, in-flight shutdown, restart/upgrade persistence, and the absence of vendor behavior changes. These acceptance tests are specified in section 12.2 of the [technical specification](../TECHNICAL_SPECIFICATION.md); they are not claimed as executed here.
+Test the built image with a fresh volume and no overrides. Confirm null effective identity, a functioning UI/simulation, a closed SNMP gate, no notification sends, and a healthy application setup path. Then explicitly configure an operator OID and verify the response type/value with an independent SNMP client. Verify clearing, malformed input, in-flight shutdown, restart/upgrade persistence, and the absence of vendor behavior changes. These acceptance tests are specified in section 12.2 of the [technical specification](../TECHNICAL_SPECIFICATION.md). They are requirements, not test results; the [application validation report](../../docs/VALIDATION.md) records executed checks and their limits.
 
 ## References
 

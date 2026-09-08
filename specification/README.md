@@ -2,9 +2,9 @@
 
 A vendor-neutral switch-management emulator design with reusable endpoints, BRIDGE-MIB/Q-BRIDGE-MIB views, and standard notifications. No Ethernet forwarding is implemented or required.
 
-This revision contains an executable TLA+ model, TLC configurations, targeted scenarios, and an implementation specification. **It is not the web application or SNMP agent.**
+This directory contains an executable TLA+ model, TLC configurations, targeted scenarios, and application requirements. For installation and use, see the [application README](../README.md).
 
-Documentation revision **2.1** updates identity configuration and first-run setup. The checked revision-2 `.tla` and `.cfg` files are unchanged; the new identity gate is outside their verification scope.
+Documentation revision **2.1** defines identity configuration and first-run setup. The identity gate is outside the verification scope of the revision-2 `.tla` and `.cfg` files.
 
 ## Start here
 
@@ -22,9 +22,9 @@ Isolated development explicitly loads `1.3.6.1.4.1.32473.1`. This is a documenta
 
 The [setup guide](docs/IDENTITY_SETUP.md) and its cited standards distinguish the deliberate development exception from standards-conforming identification. Public defaults stay null in the source configuration; a development overlay supplies the placeholder only when explicitly selected.
 
-## What changed
+## Endpoint and VLAN behavior
 
-Endpoint definitions are now mutable, with multiple MAC/tag sources per instance. They can be edited while attached. Historical learned rows survive edits and age normally.
+Endpoint definitions are mutable, with multiple MAC/tag sources per instance. They can be edited while attached. Historical learned rows survive edits and age normally.
 
 VLAN membership changes flush only invalidated entries. Deleting a VLAN falls native ports back to VLAN 1, preserves unrelated memberships and learning, and leaves explicit endpoint tags unchanged. VLAN 1 cannot be deleted.
 
@@ -62,7 +62,7 @@ python .\tests\check_mutations.py --jar C:\tools\tla2tools.jar
 
 Mutation checks operate on temporary copies. Success means the intentionally broken copies were rejected by behavioral checks; a parse failure or timeout does not count as detecting a defect.
 
-The included verification report is a snapshot of the delivered revision. Every new checker run records fresh logs and JSON outcomes; after edits, use those new results rather than treating the bundled report as evidence for changed inputs. A timeout is incomplete, never a pass. Increase the timeout or use a focused configuration when needed. `states/` is disposable local TLC scratch. One worker and a fixed seed are used in the supplied runner; symmetry reduction is not used for liveness.
+The verification report records the revision-2 model checks. Every new checker run records fresh logs and JSON outcomes; after edits, use those new results rather than treating the bundled report as evidence for changed inputs. A timeout is incomplete, never a pass. Increase the timeout or use a focused configuration when needed. `states/` is disposable local TLC scratch. The `run_tlc.py` runner uses one worker and a fixed seed; symmetry reduction is not used for liveness.
 
 ## Model organization
 
@@ -91,8 +91,8 @@ The model uses finite endpoint/source slots for runtime objects, short aging cou
 
 MIB operators represent semantic sets/maps, not ASN.1 encoders. Index objects are not necessarily readable columns; the object manifest distinguishes them. The current VLAN table's TimeFilter semantics, notification encoding, counters, persistence transactions, import/reset behavior, capacity, and SNMPv3 cryptography require implementation-level tests.
 
-`ReadAccess.tla` is not formally composed with `Switch.tla`. Successful finite model checking does not prove an eventual implementation, every possible system size, or compatibility with the user's NAC.
+`ReadAccess.tla` is not formally composed with `Switch.tla`. Successful finite model checking does not prove application correctness, cover every possible system size, or establish NAC-product compatibility.
 
 ## Initial implementation scope
 
-One switch, Docker-first, one web administrator, multiple read credentials, direct/shared ports, an editable endpoint library, live tables, deterministic source activity and aging, standard notifications, and controlled restart behavior. The state engine and independent SNMP compatibility tests come before the full UI. Public release uses operator-supplied `sysObjectID` configuration rather than requiring a project-owned allocation. The identity setup and release tests are implementation work, not additional model-checking results.
+One switch, Docker-first, one web administrator, multiple read credentials, direct/shared ports, an editable endpoint library, live tables, deterministic source activity and aging, standard notifications, and controlled restart behavior. Public release uses operator-supplied `sysObjectID` configuration rather than requiring a project-owned allocation. Identity setup and release behavior require application-level tests; the model-checking results do not cover them.

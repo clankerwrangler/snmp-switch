@@ -1,18 +1,18 @@
 # Verification report
 
-**Revision 2 · checked 7 September 2026**
+**Revision 2 · checked 2026-09-07**
 
-**Documentation revision 2.1:** formal source/configuration files and recorded checker logs are unchanged. The operator-supplied identity policy, public/development separation, readiness behavior, and SNMP identity gate are application requirements added to the documentation. They were not modeled or checked by the recorded TLC run. No new TLC run is claimed for this documentation update.
+**Documentation revision 2.1:** the recorded TLC run covers the revision-2 formal models and configurations. The operator-supplied identity policy, public/development separation, readiness behavior, and SNMP identity gate are application requirements outside those models. The recorded run does not verify them.
 
 ## Outcome
 
-The actual TLA+ specifications were parsed/semantically checked with SANY and checked by TLC. All **25 supplied configurations passed** in the final run. Sixteen are scripted scenario configurations; nine are general/focused state-space or liveness configurations, including the separate credential model.
+The actual TLA+ specifications were parsed/semantically checked with SANY and checked by TLC. All **25 configurations passed** in the final run. Sixteen are scripted scenario configurations; nine are general/focused state-space or liveness configurations, including the separate credential model.
 
 The recorded totals are **9,957,236 generated states** and **659,899 distinct states summed across configurations**. All completed searches had zero states remaining on the queue. These are per-run sums with overlapping abstractions, not the number of unique states of one combined full-scale system. Generated-state counts include repeats and are not a count of distinct behaviors or an exhaustive check of production-sized inputs.
 
-Three mutation checks successfully rejected deliberately broken copies: accepting an obsolete job, flushing the whole port on a VLAN edit, and omitting VLAN 1 admission during fallback. Their logs intentionally contain invariant failures. The shipped unmodified model passes.
+Three mutation checks successfully rejected deliberately broken copies: accepting an obsolete job, flushing the whole port on a VLAN edit, and omitting VLAN 1 admission during fallback. Their logs intentionally contain invariant failures. The model without these mutations passes.
 
-This replaces the previous revision's Python-reference-only verification status. The old reference checker and its counts are not used as evidence for this revision.
+Python reference-checker counts from earlier revisions are not evidence for these TLC results.
 
 ## Toolchain and reproducibility
 
@@ -22,9 +22,9 @@ This replaces the previous revision's Python-reference-only verification status.
 - One worker; seed 20260907; fingerprint index 0; no symmetry reduction.
 - The runtime was obtained from the official `tlaplus/vscode-tlaplus` workflow artifact 9492902073, run 32638245725, containing the VS Code extension's `extension/tools/tla2tools.jar`.
 - Source workflow: https://github.com/tlaplus/vscode-tlaplus/actions/runs/32638245725
-- Exact commands, counts, and log paths are in `logs/result-*.json` and `logs/verification.json`. Hashes of every delivered `.tla`/`.cfg` are in the latter.
+- Exact commands, counts, and log paths are in `logs/result-*.json` and `logs/verification.json`. The latter also records hashes of every checked `.tla`/`.cfg` file.
 
-The runtime binary is not bundled. Use the official tools distribution and the supplied runner to reproduce checks. Tool versions can change state exploration order or diagnostics; compare outcomes and the supplied inputs, not just runtime duration. TLC uses state fingerprints; the usual fingerprint-collision caveat is not a proof of a defect or a guarantee of collision-free exhaustive storage.
+The runtime binary is not bundled. Use the official tools distribution and the `run_tlc.py` runner to reproduce checks. Tool versions can change state exploration order or diagnostics; compare outcomes and the checked inputs, not just runtime duration. TLC uses state fingerprints; the usual fingerprint-collision caveat is not a proof of a defect or a guarantee of collision-free exhaustive storage.
 
 ## Executed configurations
 
@@ -80,7 +80,7 @@ In switch configurations, aging is two abstract ticks, refresh and initial delay
 
 The switch safety checks are `TypeOK`, `InventoryOK`, `FdbOK`, `JobsOK`, `MibOK`, and `TrapsOK`. `LearningHasSource` and `StaleJobCannotCommit` constrain transitions. They cover legal references, permanent VLAN 1, selective FDB legality, nonobsolete job identity, semantic table joins, bounded event structure, and valid learning provenance.
 
-The three dedicated liveness fixtures check `StableSourcesProgress`, `SilentEventuallyAgesOut`, and `QuietLinksDrain` under the supplied fairness and stable-input assumptions. Manual time need not advance on its own. Infinite configuration churn is not promised to make progress. These restricted fixtures do not establish every liveness property for the complete unconstrained action system.
+The three dedicated liveness fixtures check `StableSourcesProgress`, `SilentEventuallyAgesOut`, and `QuietLinksDrain` under the configured fairness and stable-input assumptions. Manual time need not advance on its own. Infinite configuration churn is not promised to make progress. These restricted fixtures do not establish every liveness property for the complete unconstrained action system.
 
 The sixteen scenarios contain 241 scripted command steps. They exercise live MAC/tag changes, VLAN deletion/fallback, selective removal/PVID changes, invalidation after edit/move/configuration/VLAN/instance reuse, reboot, shared-link caching, forced-down persistence, direct-port behavior, manual clock progression, duplicate-MAC isolation/movement, unknown tags, and queue overflow. Terminal states explicitly stutter, and scenario completion is checked so a disabled scripted step cannot pass vacuously.
 
@@ -88,7 +88,7 @@ The sixteen scenarios contain 241 scripted command steps. They exercise live MAC
 
 ## What this does not establish
 
-There is no implemented SNMP agent, web UI, database transaction layer, or Docker application in this bundle. No ASN.1 encoding, actual GETNEXT/GETBULK traversal, TimeFilter alias handling, per-target delivery, port notification suppression, v3 security protocol, cryptography, host source address, counter arithmetic, FDB capacity policy, real scheduler, crash recovery, import transaction, or NAC integration has been tested here.
+This report covers formal models, not the SNMP agent, web UI, database transaction layer, or Docker application. Application test results are recorded separately in the [application validation report](../docs/VALIDATION.md). These TLC checks do not test ASN.1 encoding, actual GETNEXT/GETBULK traversal, TimeFilter alias handling, per-target delivery, port notification suppression, v3 security protocol, cryptography, host source address, counter arithmetic, FDB capacity policy, real scheduler, crash recovery, import transaction, or NAC integration.
 
 The core collapses several application identities into endpoint/port/boot tokens, models one pending job per source slot, and uses countdowns rather than absolute time. Names, metadata, source cloning, independently variable source periods, wire types, and real security time are outside it. FDBs use independent VLAN learning only; one PVID equals one untagged egress VLAN per port. Read/write permissions beyond the read-access abstraction and SNMP SET are not modeled.
 
@@ -96,6 +96,6 @@ There is no theorem proving all cardinalities, no implementation refinement proo
 
 ## Development attempts and final evidence
 
-An earlier unrestricted smoke attempt with queue capacity 1 exceeded its runner limit and was not treated as a pass. The final unrestricted fixture uses capacity 0, and focused/scenario fixtures separately test nonzero queues. Intermediate parser/configuration defects were corrected before the final run. Only final per-configuration logs and the explicitly labeled mutation logs are included as delivered evidence.
+An earlier unrestricted smoke attempt with queue capacity 1 exceeded its runner limit and was not treated as a pass. The final unrestricted fixture uses capacity 0, and focused/scenario fixtures separately test nonzero queues. Intermediate parser/configuration defects were corrected before the final run. Only final per-configuration logs and the explicitly labeled mutation logs are included as evidence.
 
 `logs/sany-final.log` records the standalone final semantic checks. `logs/runner-final.log` records the full final TLC invocation sequence. All formal input hashes in this report were captured after that run, with no intervening changes to the checked modules/configurations.

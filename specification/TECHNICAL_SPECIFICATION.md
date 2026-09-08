@@ -1,12 +1,15 @@
 # SNMP Switch Emulator
 ## Technical specification · revision 2.1
 
-**Date:** 7 September 2026  
-**Implementation target:** first functional release  
-**Status:** design and executable formal model, not a running SNMP agent  
-**Revision 2.1:** documentation-only identity/setup update; the checked revision-2 formal inputs are unchanged
+**Date:** 2026-09-07
 
-This document replaces the earlier project draft. `Switch.tla` defines the core transition semantics; this document specifies the application and wire adapter around them. `docs/mib-coverage.csv` is the initial object manifest. `VERIFICATION.md` records what was actually checked. Requirements below are implementation requirements, not claims that an implementation already exists.
+**Implementation target:** first functional release
+
+**Scope:** application requirements and executable formal model
+
+**Revision 2.1:** identity and setup requirements, outside the revision-2 formal model
+
+`Switch.tla` defines the core transition semantics; this document specifies the application and wire adapter around them. `docs/mib-coverage.csv` is the initial object manifest. `VERIFICATION.md` records the model-checking results. These are design requirements, not implementation test results. See the [application README](../README.md) for installation and use, and the [application validation report](../docs/VALIDATION.md) for executed checks and their limits.
 
 ## 1. Purpose and boundaries
 
@@ -140,7 +143,7 @@ A source event represents one synthetic received unicast frame with a configured
 | Management uptime | `sysUpTime`, interface changes, VLAN creation/change filtering | Real monotonic elapsed time since management boot; not paused by the lab clock. |
 | SNMPv3 engine time/boots | USM security timeliness | Library-managed real time plus durable engine boot state; never rewound by a scenario. |
 
-Use deterministic scheduling, not random increments on reads. A source becomes due after its initial delay; recurring activity uses its interval. Silent endpoints retain definitions and attachments but schedule no accepted source activity. Intermittent behavior is represented by an interval exceeding the aging time; the supplied TLC instances exercise shorter fixed intervals instead.
+Use deterministic scheduling, not random increments on reads. A source becomes due after its initial delay; recurring activity uses its interval. Silent endpoints retain definitions and attachments but schedule no accepted source activity. Intermittent behavior is represented by an interval exceeding the aging time; the TLC fixtures exercise shorter fixed intervals instead.
 
 At each simulation deadline, expire entries first, then service due activity. Within an equal-time batch, production ordering is stable by endpoint ID and source ID. The formal model explores alternative source-service orderings rather than relying on one tie-breaker. All due work must be completed or rejected before advancing past that deadline. A manual advance spanning many deadlines processes them chronologically; it does not jump directly to a final counter value.
 
@@ -265,7 +268,7 @@ Exports are schema-versioned and omit secrets by default. Lab scenario imports/e
 
 ## 9. Architecture and transaction boundaries
 
-Use a modular monolith: one asynchronous backend owns a serialized command processor, scheduler, SNMP adapter, notification dispatcher, persistence layer, and HTTP API. Suggested implementation stack is Python/asyncio, FastAPI, SQLite, a TypeScript UI, and PySNMP as the protocol-library candidate. Confirm dynamic tables, view traversal, and SNMPv3 boot behavior in a compatibility prototype before pinning the library version. PySNMP documents agent-side implementation hooks; that is not evidence that this project already implements them. [R11]
+Use a modular monolith: one asynchronous backend owns a serialized command processor, scheduler, SNMP adapter, notification dispatcher, persistence layer, and HTTP API. Suggested implementation stack is Python/asyncio, FastAPI, SQLite, a TypeScript UI, and PySNMP as the protocol-library candidate. Confirm dynamic tables, view traversal, and SNMPv3 boot behavior in a compatibility prototype before pinning the library version. PySNMP documents agent-side implementation hooks; library documentation does not establish application correctness. [R11]
 
 Every mutating path enters the same command processor. Validate input and expected revision, construct the complete next state, perform required persistent writes, commit, publish an immutable read snapshot, then dispatch committed events. A persistence failure cannot leave half-applied VLAN fallback or emit a success notification for a rejected command. Do not allow the SNMP adapter to maintain a separate authoritative MAC table.
 
@@ -323,7 +326,7 @@ Application readiness requires initialized storage, state, and a usable UI/API; 
 
 ### 11.1 Development and public packaging
 
-Keep the base defaults unset and load the development identity only through an explicitly selected development overlay or test fixture. This implements removal at release through separation, rather than relying on a maintainer to remember to edit a hard-coded default. The proposed identity fragments in `docs/config/` are documentation examples, not an implemented configuration loader.
+Keep the base defaults unset and load the development identity only through an explicitly selected development overlay or test fixture. The normal startup path must not select the development identity. The proposed identity fragments in `docs/config/` are documentation examples, not an implemented configuration loader.
 
 Public images and deployment bundles must not bake in, copy as active configuration, auto-load, or supply environment defaults for the development overlay. Build from clean inputs and exclude saved lab volumes/databases and local settings. Do not remove or rewrite a user's persistent configuration during an upgrade. Source documentation and isolated test fixtures may mention the placeholder, but public quick-start instructions must begin with the unset public fragment and operator setup.
 
@@ -349,11 +352,11 @@ Use Net-SNMP polling tools and `snmptrapd`, or equivalent independently implemen
 
 Model checking is finite and configuration-specific. The full-core fixture is intentionally small; focused fixtures and scripted traces cover larger combinations. The source model and credential model have not been formally composed or refined into an application. Passing TLC does not establish ASN.1 correctness, security implementation correctness, crash safety, unlimited-scale correctness, or NAC compatibility. Exact executed configurations, outcomes, limits, and tool hashes are recorded in `VERIFICATION.md` and `logs/verification.json`.
 
-### 12.1 Implementation sequence
+### 12.1 Integrated validation
 
-First implement the serialized state engine and reproduce the supplied scenarios as automated tests. Next deliver the SNMP compatibility prototype with the object manifest and an independent client/receiver. Then add persistence, boot handling, API, and UI around those same commands. Finish with bounded-load, source-address, authorization, and failure tests. Do not build a second simulation inside the web layer.
+Validate the serialized state engine against the model scenarios with automated tests. Check SNMP compatibility with the object manifest and an independent client/receiver. Verify that persistence, boot handling, API, and UI use the same state-engine commands, without a second simulation in the web layer. Include bounded-load, source-address, authorization, and failure tests.
 
-The first end-to-end milestone is: explicitly select the development identity or supply an operator OID, configure a credential and enable SNMP, walk interfaces/VLANs, attach an active endpoint, receive the appropriate link event, resolve its MAC to the correct interface, change its tag live, delete its native VLAN with fallback, and observe the documented cache behavior.
+An end-to-end acceptance workflow is: explicitly select the development identity or supply an operator OID, configure a credential and enable SNMP, walk interfaces/VLANs, attach an active endpoint, receive the appropriate link event, resolve its MAC to the correct interface, change its tag live, delete its native VLAN with fallback, and observe the documented cache behavior.
 
 ### 12.2 Identity acceptance tests
 
@@ -367,7 +370,7 @@ The first end-to-end milestone is: explicitly select the development identity or
 | ID-T06 | Restarting or upgrading retains an operator value or an intentionally unset state. A lab scenario import does not replace the deployment identity. Changing the advertised OID does not reset the SNMPv3 engine identity. |
 | ID-T07 | Changing identity does not change the supported MIB objects, trap definitions, link state, FDB, or endpoint behavior. A fresh public package cannot select the development value through hidden defaults. |
 
-These are required future application tests. This documentation revision does not report them as executed or formally proved.
+These are required application tests, not results of formal verification. The [application validation report](../docs/VALIDATION.md) records executed checks and their limits.
 
 ## References
 

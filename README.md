@@ -1,6 +1,6 @@
 # Switch Lab
 
-A working, vendor-neutral switch management emulator based on the supplied SNMP Switch specification 2.1. It includes a Python/FastAPI backend, a TypeScript web interface, SQLite persistence, and a PySNMP agent. It simulates management state; it does not forward Ethernet frames.
+A vendor-neutral switch management emulator. It includes a Python/FastAPI backend, a TypeScript web interface, SQLite persistence, and a PySNMP agent. It simulates management state; it does not forward Ethernet frames.
 
 ![Switch overview](docs/screenshots/overview.png)
 
@@ -137,7 +137,7 @@ node node_modules/vite/bin/vite.js build --configLoader native
 
 The native suite skips Net-SNMP tests when its executables are absent; the Docker test image installs them. [Validation report](docs/VALIDATION.md) records actual executed checks and boundaries. `tests/ui-smoke.cjs` exercises a fresh instance using Playwright; set `SWITCHLAB_TEST_URL`, `SWITCHLAB_TEST_TOKEN` and `SWITCHLAB_TEST_PASSWORD`. Use `SWITCHLAB_BROWSER_CHANNEL=msedge` to test installed Edge, or install Playwright's Chromium.
 
-The original specification and unchanged formal artifacts are retained in [specification/](specification/). Their bundled TLC reports describe the original finite models; they are not proof of this application. No NAC-product compatibility claim is made.
+The [technical specification and formal models](specification/) describe the design. The bundled TLC reports cover finite models; they are not proof of this application. NAC-product integration has not been tested.
 
 Implementation references: [PySNMP agent interfaces](https://docs.lextudio.com/pysnmp/v7.1/examples/v3arch/asyncio/agent/cmdrsp/agent-side-mib-implementations), [IF-MIB](https://www.rfc-editor.org/rfc/rfc2863.html), [Q-BRIDGE-MIB](https://www.rfc-editor.org/rfc/rfc4363.html), [TimeFilter](https://www.rfc-editor.org/rfc/rfc4502.html).
 

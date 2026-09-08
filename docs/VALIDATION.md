@@ -1,6 +1,6 @@
 # Implementation validation
 
-Executed on 8 September 2026. These results concern the implemented application. Original TLC artifacts under `specification/` were preserved and were not rerun or claimed as implementation proof.
+Executed on 2026-09-08. These results concern the application. The TLC reports under `specification/` cover the formal models and were not rerun during application validation; they are not implementation proof.
 
 ## Automated checks
 
@@ -16,7 +16,7 @@ Executed on 8 September 2026. These results concern the implemented application.
 
 Engine tests exercise direct/shared carrier, forced faults, move validation, connected deletion conflicts, multi-source live edits, historical cache retention, selective membership removal, PVID changes, VLAN 1 fallback, absent tags, duplicate MAC moves and VLAN isolation, pause/manual time, chronological expiration, capacity counters, durable restart, scenario validation, persistence failures and idempotency. Seven late-job tests cover edit, attachment, port, VLAN, instance, reboot and explicit-clear invalidation.
 
-MIB tests compare every definition in the supplied 72-row manifest with implemented access: 68 readable object definitions and four non-readable indexes. They verify ASN.1 types, scalar exceptions, interface/bridge joins, fixed six-octet MAC indexes, PortList bit order, counters, restricted traversal, TimeFilter single traversal and uptime wrap.
+MIB tests compare every definition in the 72-row object manifest with implemented access: 68 readable object definitions and four non-readable indexes. They verify ASN.1 types, scalar exceptions, interface/bridge joins, fixed six-octet MAC indexes, PortList bit order, counters, restricted traversal, TimeFilter single traversal and uptime wrap.
 
 Wire tests use independent **puresnmp/x690** for v2c reads, walks, bulk requests, SET rejection, credential/CIDR rejection, rotation, v3 discovery and trap decoding. **Net-SNMP** independently verifies v3 noAuthNoPriv, SHA-256 authNoPriv and SHA-256/AES-128 authPriv, numeric identity values including `2.999.123`, reboot timeliness, TimeFilter, live MAC edits, VLAN fallback and authenticated/encrypted trap reception with `snmptrapd`. PySNMP manager tests additionally check USM state across reboot.
 
@@ -52,4 +52,4 @@ This measures the in-memory engine and projection, excluding SQLite, HTTP, UI, a
 - UDP send acknowledgment is local only. A send/record crash window may leave delivery uncertain; exactly-once notifications are not promised.
 - Imports require the same stable port inventory. Mid-timer recovery is intentionally a reboot, and scenario import does not rewind the management/security engine.
 - Test runs emit upstream deprecation warnings from Starlette/httpx integration and PySNMP's cryptography CFB import. The tested encrypted operations pass with the pinned versions.
-- The original formal state machines were not composed with, or formally refined into, this implementation. This test suite is evidence for the exercised behavior, not a proof over every input or scale.
+- The formal state machines were not composed with, or formally refined into, this implementation. This test suite is evidence for the exercised behavior, not a proof over every input or scale.
