@@ -176,3 +176,9 @@ The [technical specification and formal models](specification/) describe the des
 
 Implementation references: [PySNMP agent interfaces](https://docs.lextudio.com/pysnmp/v7.1/examples/v3arch/asyncio/agent/cmdrsp/agent-side-mib-implementations), [IF-MIB](https://www.rfc-editor.org/rfc/rfc2863.html), [Q-BRIDGE-MIB](https://www.rfc-editor.org/rfc/rfc4363.html), [TimeFilter](https://www.rfc-editor.org/rfc/rfc4502.html).
 
+## License
+
+Original Switch Lab code, documentation, models, and project assets are licensed under the [MIT License](LICENSE), copyright 2026 Präludium. Third-party code and dependencies retain their upstream licenses.
+
+The browser bundle includes Vite's modulepreload helper, adapted from es-module-shims. Its copyrights and MIT terms are in [third-party notices](ui/public/assets/THIRD_PARTY_NOTICES.txt). The same notices ship with the packaged UI at `/assets/THIRD_PARTY_NOTICES.txt` and in the Python distribution's license files.
+

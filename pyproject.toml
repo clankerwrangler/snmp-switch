@@ -6,11 +6,15 @@ build-backend = "setuptools.build_meta"
 name = "snmp-switch-lab"
 version = "0.1.0"
 description = "Vendor-neutral SNMP switch management simulator"
+license = { text = "MIT" }
 requires-python = ">=3.12"
 dependencies = ["fastapi==0.141.1", "uvicorn==0.52.4", "pysnmp==7.1.29", "cryptography==50.0.1", "argon2-cffi==25.1.0"]
 
 [project.optional-dependencies]
 test = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "httpx==0.28.1", "puresnmp==2.0.1"]
+
+[tool.setuptools]
+license-files = ["LICENSE", "switchlab/static/assets/THIRD_PARTY_NOTICES.txt"]
 
 [tool.setuptools.packages.find]
 include = ["switchlab*"]

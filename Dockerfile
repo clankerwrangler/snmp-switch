@@ -8,7 +8,7 @@ RUN node node_modules/typescript/bin/tsc --noEmit && node node_modules/vite/bin/
 FROM python:3.13-slim AS runtime
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 SWITCHLAB_DB=/data/switch.db SWITCHLAB_KEY_FILE=/run/secrets/config_key
-COPY pyproject.toml ./
+COPY pyproject.toml LICENSE ./
 COPY switchlab ./switchlab
 COPY --from=ui /build/switchlab/static ./switchlab/static
 RUN pip install --no-cache-dir . && useradd --uid 10001 --create-home app && mkdir /data && chown app:app /data

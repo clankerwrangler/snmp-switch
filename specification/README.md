@@ -2,7 +2,7 @@
 
 A vendor-neutral switch-management emulator design with reusable endpoints, BRIDGE-MIB/Q-BRIDGE-MIB views, and standard notifications. No Ethernet forwarding is implemented or required.
 
-This directory contains an executable TLA+ model, TLC configurations, targeted scenarios, and application requirements. For installation and use, see the [application README](../README.md).
+This directory contains an executable TLA+ model, TLC configurations, targeted scenarios, and application requirements. For installation and use, see the [application README](../README.md). The original models, scripts, and documentation use the [project MIT License](../LICENSE). External tools and referenced standards retain their own terms.
 
 Documentation revision **2.1** defines identity configuration and first-run setup. The identity gate is outside the verification scope of the revision-2 `.tla` and `.cfg` files.
 
