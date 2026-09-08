@@ -243,7 +243,7 @@ Implementation references: [PySNMP agent interfaces](https://docs.lextudio.com/p
 
 ## License
 
-Original Switch Lab code, documentation, models, and project assets are licensed under the [MIT License](LICENSE), copyright 2026 Präludium. Third-party code and dependencies retain their upstream licenses.
+Original Switch Lab code, documentation, models, and project assets are licensed under the [MIT License](LICENSE). Third-party code and dependencies retain their upstream licenses.
 
 The browser bundle includes Vite's modulepreload helper, adapted from es-module-shims. Its copyrights and MIT terms are in [third-party notices](ui/public/assets/THIRD_PARTY_NOTICES.txt). The same notices ship with the packaged UI at `/assets/THIRD_PARTY_NOTICES.txt` and in the Python distribution's license files.
 
