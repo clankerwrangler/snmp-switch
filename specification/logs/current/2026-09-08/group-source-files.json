@@ -1,0 +1,37 @@
+{
+  "baseline": "ea5047605260e0806d0e8f00406755c97094eb9e",
+  "candidate_root": "/workspace/.scratch/snmp-switch-formal/group-access-candidate",
+  "files": [
+    {
+      "path": "GroupedAccess.tla",
+      "sha256": "6a8df0c3ff6eb4766c7fbaf961fb53cf07036de405e02544564c52b35e17e3c3",
+      "bytes": 12438,
+      "old_sha256": null
+    },
+    {
+      "path": "GroupedAccessScenarios.tla",
+      "sha256": "cb269f73d38dc28154e112ad9c95d4bff4f1c597950111235cd05a34640e2892",
+      "bytes": 19621,
+      "old_sha256": null
+    },
+    {
+      "path": "configs/GroupMigrationConversion.cfg",
+      "sha256": "f97402fda83a914207ed84059390d2301d67b7ccc48b59583bed91c929a92bbf",
+      "bytes": 1041,
+      "old_sha256": null
+    },
+    {
+      "path": "configs/GroupAccessForms.cfg",
+      "sha256": "aebed0c96b567ee252b22f4d5f57b3dd6c3b3acecdd5264dd86bd72da104ab12",
+      "bytes": 982,
+      "old_sha256": null
+    },
+    {
+      "path": "configs/GroupQueuedSet.cfg",
+      "sha256": "85d6d5eefb576463c1ccd84dea2882c4a2add783f7880aab1ec5ee99c6159d34",
+      "bytes": 1113,
+      "old_sha256": null
+    }
+  ],
+  "total_bytes": 35195
+}

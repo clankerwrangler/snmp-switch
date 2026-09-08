@@ -4,7 +4,7 @@ import copy
 import ipaddress
 import re
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pysnmp.proto.rfc1902 import ObjectIdentifier
@@ -181,14 +181,24 @@ class WritingAccess(PollingAccess):
     view_id: str | None = None
 
 
+SecurityLevel = Literal["noAuthNoPriv", "authNoPriv", "authPriv"]
+
+
 class CredentialAuth(Record):
     label: str = Field(max_length=80)
     version: Literal["2c", "3"] = "2c"
     username: str = Field(default="", max_length=32)
-    security_level: Literal["noAuthNoPriv", "authNoPriv", "authPriv"] = "noAuthNoPriv"
+    security_level: SecurityLevel = "noAuthNoPriv"
     community: str | None = Field(default=None, max_length=255, repr=False)
     auth_key: str | None = Field(default=None, max_length=255, repr=False)
     priv_key: str | None = Field(default=None, max_length=255, repr=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def new_user_profile(cls, value):
+        if isinstance(value, dict) and value.get("version") == "3" and "security_level" not in value:
+            return {**value, "security_level": "authPriv"}
+        return value
 
     @model_validator(mode="after")
     def security(self):
@@ -209,8 +219,35 @@ class CredentialAuth(Record):
 class Credential(CredentialAuth):
     id: str = Field(default_factory=uid)
     enabled: bool = True
+
+
+class Community(Credential):
+    version: Literal["2c"] = "2c"
     polling: PollingAccess = Field(default_factory=PollingAccess)
     writing: WritingAccess = Field(default_factory=WritingAccess)
+
+
+class UsmUser(Credential):
+    version: Literal["3"] = "3"
+    security_level: SecurityLevel = "authPriv"
+    group_id: str | None = None
+
+
+class AccessGroup(Record):
+    id: str = Field(default_factory=uid)
+    label: str = Field(max_length=80)
+    minimum_security_level: SecurityLevel = "authPriv"
+    polling: PollingAccess = Field(default_factory=PollingAccess)
+    writing: WritingAccess = Field(default_factory=WritingAccess)
+
+
+class LegacyCredential(Credential):
+    polling: PollingAccess = Field(default_factory=PollingAccess)
+    writing: WritingAccess = Field(default_factory=WritingAccess)
+
+
+def incoming_policy(cfg, credential):
+    return credential if credential.version == "2c" else cfg.groups.get(credential.group_id)
 
 
 class Target(Record):
@@ -241,7 +278,7 @@ class SnmpSettings(Record):
 
 
 class Configuration(Record):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     switch: Switch = Field(default_factory=Switch)
     ports: dict[str, Port] = Field(default_factory=dict)
     vlans: dict[int, Vlan] = Field(default_factory=lambda: {1: Vlan(vid=1, name="Default", fdb_id=1001)})
@@ -253,43 +290,77 @@ class Configuration(Record):
         "all": View(id="all", name="All implemented objects", includes=["1.3.6.1.2.1"]),
         "interfaces": View(id="interfaces", name="Identity and interfaces", includes=["1.3.6.1.2.1.1", "1.3.6.1.2.1.2", "1.3.6.1.2.1.31"]),
     })
-    credentials: dict[str, Credential] = Field(default_factory=dict)
+    credentials: dict[str, Annotated[Community | UsmUser, Field(discriminator="version")]] = Field(default_factory=dict)
+    groups: dict[str, AccessGroup] = Field(default_factory=dict)
     targets: dict[str, Target] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
     def migrate_credentials(cls, value):
-        if not isinstance(value, dict) or type(value.get("schema_version")) is not int or value["schema_version"] != 1:
+        if not isinstance(value, dict):
             return value
+        version = value.get("schema_version", 3)
+        if type(version) is not int:
+            raise ValueError("Configuration schema version must be an integer")
+        if version not in (1, 2):
+            return value
+        if "groups" in value:
+            raise ValueError("Legacy configuration cannot contain schema 3 groups")
         raw = copy.deepcopy(value)
+        if version == 1:
+            credentials = raw.get("credentials", {})
+            targets = raw.get("targets", {})
+            if not isinstance(credentials, dict) or not isinstance(targets, dict):
+                raise ValueError("Configuration credentials and targets must be objects")
+            for credential in credentials.values():
+                if not isinstance(credential, dict) or "polling" in credential:
+                    raise ValueError("Schema 1 credentials cannot contain schema 2 polling access")
+                if "writing" in credential:
+                    raise ValueError("Schema 1 credentials cannot contain SET access")
+                if credential.get("purpose", "polling") not in ("polling", "notification"):
+                    raise ValueError("Invalid schema 1 credential purpose")
+            for target in targets.values():
+                if not isinstance(target, dict):
+                    raise ValueError("Configuration targets must be objects")
+                credential_id = target.get("credential_id")
+                if not isinstance(credential_id, str):
+                    raise ValueError("Schema 1 target credential ID must be a string")
+                credential = credentials.get(credential_id)
+                if credential is not None and credential.get("purpose", "polling") != "notification":
+                    raise ValueError("Schema 1 targets require notification credentials")
+            for credential in credentials.values():
+                credential["polling"] = {
+                    "enabled": credential.pop("purpose", "polling") == "polling",
+                    "view_id": credential.pop("view_id", "all"),
+                    "networks": credential.pop("networks", []),
+                }
         credentials = raw.get("credentials", {})
-        targets = raw.get("targets", {})
-        if not isinstance(credentials, dict) or not isinstance(targets, dict):
-            raise ValueError("Configuration credentials and targets must be objects")
-        for credential in credentials.values():
-            if not isinstance(credential, dict) or "polling" in credential:
-                raise ValueError("Schema 1 credentials cannot contain schema 2 polling access")
-            if "writing" in credential:
-                raise ValueError("Schema 1 credentials cannot contain SET access")
-            if credential.get("purpose", "polling") not in ("polling", "notification"):
-                raise ValueError("Invalid schema 1 credential purpose")
-        for target in targets.values():
-            if not isinstance(target, dict):
-                raise ValueError("Configuration targets must be objects")
-            credential_id = target.get("credential_id")
-            if not isinstance(credential_id, str):
-                raise ValueError("Schema 1 target credential ID must be a string")
-            credential = credentials.get(credential_id)
-            if credential is not None and credential.get("purpose", "polling") != "notification":
-                raise ValueError("Schema 1 targets require notification credentials")
-        for credential in credentials.values():
-            credential["polling"] = {
-                "enabled": credential.pop("purpose", "polling") == "polling",
-                "view_id": credential.pop("view_id", "all"),
-                "networks": credential.pop("networks", []),
-            }
-        raw["schema_version"] = 2
+        if not isinstance(credentials, dict):
+            raise ValueError("Configuration credentials must be objects")
+        groups = {}
+        for cid, fields in credentials.items():
+            if not isinstance(cid, str) or not isinstance(fields, dict):
+                raise ValueError("Configuration credentials must have string keys and object values")
+            legacy = LegacyCredential.model_validate({"security_level": "noAuthNoPriv", **fields})
+            credential = legacy.model_dump()
+            if legacy.version == "3":
+                # The old schema has no groups; this injective ID needs no allocator.
+                gid = "user-policy:" + cid.encode("utf-8").hex()
+                groups[gid] = dict(id=gid, label=legacy.label,
+                    minimum_security_level=legacy.security_level,
+                    polling=credential.pop("polling"), writing=credential.pop("writing"))
+                credential["group_id"] = gid
+            credentials[cid] = credential
+        raw.update(schema_version=3, groups=groups)
         return raw
+
+    @field_validator("credentials", mode="before")
+    @classmethod
+    def community_version_default(cls, values):
+        if isinstance(values, dict):
+            return {key: {"version": "2c", **value} if isinstance(value, dict) else value
+                    for key, value in values.items()}
+        return values
 
     @model_validator(mode="after")
     def references(self):
@@ -320,10 +391,16 @@ class Configuration(Record):
         if not set(self.attachments) <= set(self.endpoints) or not set(self.attachments.values()) <= set(self.ports):
             raise ValueError("Invalid attachment reference")
         for c in self.credentials.values():
+            if c.version == "3" and c.group_id is not None and c.group_id not in self.groups:
+                raise ValueError("Unknown SNMPv3 group")
+        if any(key != group.id for key, group in self.groups.items()):
+            raise ValueError("Group keys must match their IDs")
+        policies = [c for c in self.credentials.values() if c.version == "2c"] + list(self.groups.values())
+        for c in policies:
             if c.polling.enabled and c.polling.view_id not in self.views:
                 raise ValueError("Unknown read view")
             if c.writing.enabled and c.writing.view_id not in self.views:
-                raise ValueError("Select an existing SET view")
+                raise ValueError("Select an existing write view")
         users = [(c.version, c.username if c.version == "3" else c.community) for c in self.credentials.values() if c.enabled]
         if len(users) != len(set(users)):
             raise ValueError("Enabled communities and usernames must be unique")
@@ -333,8 +410,8 @@ class Configuration(Record):
                 raise ValueError("Unknown target credential")
             if t.source_address and ipaddress.ip_address(t.source_address).version != ipaddress.ip_address(t.address).version:
                 raise ValueError("Target and source IP families must match")
-        if len(self.credentials) > 100 or len(self.targets) > 100 or len(self.views) > 100:
-            raise ValueError("At most 100 credentials, targets and views")
+        if any(len(collection) > 100 for collection in (self.credentials, self.groups, self.targets, self.views)):
+            raise ValueError("At most 100 credentials, groups, targets and views")
         return self
 
 

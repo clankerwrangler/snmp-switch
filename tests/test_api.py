@@ -357,7 +357,7 @@ def test_protocol_fields_redaction_and_explicit_version_change(store):
         assert change(c, f'/snmp/credentials/{cid}', {'version': '3'}, 'PUT').status_code == 422
         assert revision(c) == before
         v3 = {'version': '3', 'username': 'v3-fixture', 'security_level': 'authPriv',
-              'auth_key': 'auth-fixture', 'priv_key': 'priv-fixture'}
+              'auth_key': 'auth-fixture', 'priv_key': 'priv-fixture', 'access_transfer': 'none'}
         assert change(c, f'/snmp/credentials/{cid}', v3, 'PUT').status_code == 200
         assert 'has_community' not in public() and public()['has_auth_key'] and public()['has_priv_key']
         assert store.load().credentials[cid].community is None
@@ -367,12 +367,12 @@ def test_protocol_fields_redaction_and_explicit_version_change(store):
         before = revision(c)
         assert change(c, f'/snmp/credentials/{cid}', {'version': '2c'}, 'PUT').status_code == 422
         assert revision(c) == before
-        assert change(c, f'/snmp/credentials/{cid}', {'version': '2c', 'community': 'new-v2-fixture'}, 'PUT').status_code == 200
+        assert change(c, f'/snmp/credentials/{cid}', {'version': '2c', 'community': 'new-v2-fixture', 'access_transfer': 'none'}, 'PUT').status_code == 200
         saved = store.load().credentials[cid]
         assert saved.username == '' and saved.security_level == 'noAuthNoPriv'
         assert saved.auth_key is None and saved.priv_key is None
         assert not {'username', 'security_level', 'has_auth_key', 'has_priv_key'} & public().keys()
-        assert change(c, f'/snmp/credentials/{cid}', {'version': '3', 'username': 'plain-v3'}, 'PUT').status_code == 200
+        assert change(c, f'/snmp/credentials/{cid}', {'version': '3', 'username': 'plain-v3', 'security_level': 'noAuthNoPriv', 'access_transfer': 'none'}, 'PUT').status_code == 200
         assert not {'has_community', 'has_auth_key', 'has_priv_key'} & public().keys()
         assert change(c, f'/snmp/credentials/{cid}', {'security_level': 'authNoPriv', 'auth_key': 'short'}, 'PUT').status_code == 422
         assert change(c, f'/snmp/credentials/{cid}', {'security_level': 'authNoPriv', 'auth_key': 'new-auth-fixture'}, 'PUT').status_code == 200
@@ -381,6 +381,7 @@ def test_protocol_fields_redaction_and_explicit_version_change(store):
 
 def test_legacy_inactive_fields_stay_inert_until_version_change(store):
     cfg = initial_configuration(4).model_dump(mode='json')
+    cfg.pop('groups')
     cfg['schema_version'] = 1
     cfg['credentials']['legacy'] = {'id': 'legacy', 'label': 'legacy', 'community': 'legacy-v2',
         'username': 'hidden-old-user', 'auth_key': 'hidden-old-auth', 'priv_key': 'hidden-old-priv',
@@ -502,6 +503,7 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
     import copy
     from switchlab.models import Configuration
     raw = initial_configuration(4).model_dump(mode="json")
+    raw.pop("groups")
     raw["schema_version"] = 1
     legacy = {"id": "legacy", "label": "Legacy", "version": "3", "enabled": enabled,
               "username": "legacy-user", "security_level": "authPriv",
@@ -517,7 +519,7 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
                                      "port": 3162, "enabled": False, "types": ["linkUp"]}}
     original = copy.deepcopy(raw)
     cfg = Configuration.model_validate(raw)
-    assert raw == original and cfg.schema_version == 2
+    assert raw == original and cfg.schema_version == 3
     with store.db:
         store.put("configuration", raw)
         store.put("engine_identity", "40000102030405060708090a0b")
@@ -526,10 +528,12 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
         sign_in(c, store)
         state = c.get('/api/v1/state').json()
         migrated = state["credentials"]["legacy"]
-        assert migrated["polling"] == {"enabled": purpose != "notification", "view_id": "interfaces",
+        group = state["groups"][migrated["group_id"]]
+        assert group["minimum_security_level"] == legacy["security_level"]
+        assert group["polling"] == {"enabled": purpose != "notification", "view_id": "interfaces",
                                        "networks": legacy["networks"]}
         assert migrated["enabled"] == enabled and "purpose" not in migrated
-        assert migrated["writing"] == {"enabled": False, "view_id": None, "networks": []}
+        assert group["writing"] == {"enabled": False, "view_id": None, "networks": []}
         assert not {"view_id", "networks", "community", "auth_key", "priv_key"} & migrated.keys()
         saved = store.load()
         credential = saved.credentials["legacy"]
@@ -541,14 +545,14 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
         before = saved.model_dump()
         assert change(c, '/scenarios/import', {"scenario": scenario}).status_code == 200
         assert store.load().model_dump() == before
-        assert store.get("configuration")["schema_version"] == 2
+        assert store.get("configuration")["schema_version"] == 3
         assert store.get("engine_identity") == "40000102030405060708090a0b" and store.get("engine_boots") == 9
         assert state["snmp"]["enabled"] is False and state["switch"]["identity"]["sys_object_id"] is None
-    assert store.load().credentials["legacy"].polling == credential.polling
+    assert store.load().groups[credential.group_id].polling == saved.groups[credential.group_id].polling
 
 
 @pytest.mark.parametrize("version,credential", [
-    (3, {"label": "future", "community": "synthetic"}),
+    (4, {"label": "future", "community": "synthetic"}),
     (True, {"label": "invalid tag", "community": "synthetic"}),
     (1, {"label": "mixed", "community": "synthetic", "polling": {"enabled": True}}),
     (2, {"label": "mixed", "community": "synthetic", "purpose": "notification"}),
@@ -559,6 +563,7 @@ def test_configuration_schema_rejects_ambiguous_credentials(version, credential)
     from pydantic import ValidationError
     from switchlab.models import Configuration
     raw = initial_configuration(4).model_dump(mode="json")
+    raw.pop("groups")
     raw.update(schema_version=version, credentials={"fixture": credential})
     with pytest.raises(ValidationError):
         Configuration.model_validate(raw)
@@ -627,7 +632,7 @@ def test_inline_target_atomic_creation_and_replacement(store):
         new_cid = replacement.json()['credential_id']
         assert new_cid != cid and len(store.load().credentials) == 2
         assert store.load().targets[tid].credential_id == new_cid
-        assert not store.load().credentials[new_cid].polling.enabled
+        assert store.load().credentials[new_cid].group_id is None
         assert 'synthetic-' not in c.get('/api/v1/state').text
         assert 'synthetic-' not in c.get('/api/v1/events').text
 
@@ -672,7 +677,9 @@ def test_shared_identity_uniqueness_and_disabled_references(store, auth):
         assert change(c, f'/snmp/credentials/{second}', method='DELETE').status_code == 422
         assert change(c, f'/snmp/credentials/{first}', {"enabled": False}, 'PUT').status_code == 200
         assert change(c, f'/snmp/credentials/{second}', {"enabled": True}, 'PUT').status_code == 200
-        assert store.load().targets[tid].enabled is False and store.load().credentials[second].polling.enabled is False
+        assert store.load().targets[tid].enabled is False
+        credential = store.load().credentials[second]
+        assert credential.group_id is None if credential.version == "3" else not credential.polling.enabled
 
 
 @pytest.mark.parametrize("reference", ["legacy", ["legacy"]])
@@ -971,3 +978,107 @@ def test_failed_owned_startup_closes_without_replacing_durable_configuration(tmp
         assert db.execute("SELECT value FROM kv WHERE key='configuration'").fetchone()[0] == encrypted
     finally:
         db.close()
+
+
+@pytest.mark.parametrize("intent", [{"access_transfer": "keep"}, {"access_transfer": "none"}, {"group_id": None}])
+def test_api_conversion_missing_profile_is_atomic(store, intent):
+    with session(store) as c:
+        sign_in(c, store)
+        cid = change(c, "/snmp/credentials", {"label": "Before", "community": "synthetic-old"}).json()["id"]
+        before = c.get("/api/v1/state").json()
+        saved = store.get("configuration")
+        result = change(c, f"/snmp/credentials/{cid}", {"label": "After", "version": "3", "username": "new-user",
+            "auth_key": "synthetic-new-auth", "priv_key": "synthetic-new-priv", **intent}, "PUT")
+        assert result.status_code == 422 and "explicit protection profile" in result.text
+        assert "synthetic-new" not in result.text
+        after = c.get("/api/v1/state").json()
+        assert after["configuration_revision"] == before["configuration_revision"]
+        assert after["credentials"] == before["credentials"] and after["groups"] == before["groups"]
+        assert store.get("configuration") == saved
+
+
+def test_api_groups_combined_sparse_auth_and_policy_ownership(store):
+    with session(store) as c:
+        sign_in(c, store)
+        created = change(c, "/snmp/groups", {"label": "Group"})
+        assert created.status_code == 200
+        gid = created.json()["id"]
+        initial = c.get("/api/v1/snmp/groups").json()["data"][gid]
+        assert initial["minimum_security_level"] == "authPriv" and not initial["polling"]["enabled"] and not initial["writing"]["enabled"]
+        cid = change(c, "/snmp/credentials", {"label": "User", "version": "3", "username": "user",
+            "auth_key": "synthetic-auth", "priv_key": "synthetic-priv"}).json()["id"]
+        saved = store.load().credentials[cid]
+        assert saved.security_level == "authPriv" and saved.group_id is None
+        # One credential save can update authentication and group membership atomically.
+        assert change(c, f"/snmp/credentials/{cid}", {"group_id": gid, "auth_key": "synthetic-replacement"}, "PUT").status_code == 200
+        assert change(c, f"/snmp/credentials/{cid}", {"label": "Renamed", "auth_key": "", "priv_key": ""}, "PUT").status_code == 200
+        assert store.load().credentials[cid].auth_key == "synthetic-replacement"
+        before = store.get("configuration")
+        for fields in ({"polling": {"enabled": True}}, {"writing": {}}, {"group_id": "missing", "auth_key": "unsaved-key"}):
+            response = change(c, f"/snmp/credentials/{cid}", fields, "PUT")
+            assert response.status_code == 422 and "unsaved-key" not in response.text
+            assert store.get("configuration") == before
+        assert change(c, f"/snmp/groups/{gid}", {"polling": {"view_id": "interfaces", "networks": ["192.0.2.1/24"]},
+            "writing": {"view_id": "all", "networks": ["2001:db8::/32"]}}, "PUT").status_code == 200
+        assert change(c, f"/snmp/groups/{gid}", {"polling": {"enabled": True}, "writing": {"enabled": True}}, "PUT").status_code == 200
+        group = store.load().groups[gid]
+        assert group.polling.view_id == "interfaces" and group.polling.networks == ["192.0.2.0/24"]
+        assert group.writing.view_id == "all" and group.writing.networks == ["2001:db8::/32"]
+        before = store.get("configuration")
+        assert change(c, f"/snmp/groups/{gid}", {"polling": {"networks": []}, "writing": {"view_id": None}}, "PUT").status_code == 422
+        assert store.get("configuration") == before
+        # A lower-profile member is permitted without changing group minimum or stored keys.
+        assert change(c, f"/snmp/credentials/{cid}", {"security_level": "noAuthNoPriv", "enabled": False}, "PUT").status_code == 200
+        assert store.load().groups[gid] == group
+        assert store.load().credentials[cid].priv_key == "synthetic-priv"
+        assert change(c, f"/snmp/groups/{gid}", method="DELETE").status_code == 422
+        assert change(c, f"/snmp/credentials/{cid}", {"group_id": None}, "PUT").status_code == 200
+        assert change(c, f"/snmp/groups/{gid}", method="DELETE").status_code == 200
+        assert c.get("/api/v1/snmp/groups").json()["data"] == {}
+        final = c.get("/api/v1/state").json()
+        assert final["snmp"]["enabled"] is False and final["switch"]["identity"]["sys_object_id"] is None
+
+
+@pytest.mark.parametrize("transfer", ["keep", "none"])
+def test_api_user_to_community_explicit_choice_and_retained_group_members(store, transfer):
+    with session(store) as c:
+        sign_in(c, store)
+        gid = change(c, "/snmp/groups", {"label": "Stronger group", "polling": {"enabled": True},
+            "writing": {"enabled": True, "view_id": "interfaces"}}).json()["id"]
+        ids = [change(c, "/snmp/credentials", {"label": str(n), "version": "3", "username": str(n),
+            "security_level": "noAuthNoPriv", "group_id": gid}).json()["id"] for n in (1, 2)]
+        cid = ids[0]
+        tid = change(c, "/notifications/targets", {"address": "127.0.0.1", "credential_id": cid}).json()["id"]
+        before = store.load()
+        assert change(c, f"/snmp/credentials/{cid}", {"version": "2c", "community": "synthetic-new"}, "PUT").status_code == 422
+        assert change(c, f"/snmp/credentials/{cid}", {"version": "2c", "community": "synthetic-new",
+            "access_transfer": transfer}, "PUT").status_code == 200
+        cfg = store.load()
+        assert cfg.targets[tid] == before.targets[tid] and cfg.groups == before.groups
+        assert cfg.credentials[ids[1]] == before.credentials[ids[1]]
+        assert cfg.credentials[cid].polling.enabled == (transfer == "keep")
+        assert cfg.credentials[cid].writing.enabled == (transfer == "keep")
+        assert cfg.credentials[cid].auth_key is None and cfg.credentials[cid].priv_key is None
+
+
+def test_api_inline_user_defaults_and_selected_target_isolation(store):
+    with session(store) as c:
+        sign_in(c, store)
+        cid = change(c, "/snmp/credentials", {"label": "Existing", "community": "synthetic-old"}).json()["id"]
+        ids = [change(c, "/notifications/targets", {"address": "127.0.0.1", "port": 162+n,
+            "credential_id": cid, "enabled": bool(n)}).json()["id"] for n in (0, 1)]
+        before = store.load()
+        fields = {"label": "Inline", "version": "3", "username": "inline-user",
+                  "auth_key": "synthetic-auth", "priv_key": "synthetic-priv"}
+        result = change(c, f"/notifications/targets/{ids[0]}", {"address": "127.0.0.2", "new_credential": fields}, "PUT")
+        assert result.status_code == 200
+        after = store.load()
+        new_id = result.json()["credential_id"]
+        assert after.targets[ids[1]] == before.targets[ids[1]]
+        assert after.targets[ids[0]].credential_id == new_id
+        assert after.credentials[new_id].security_level == "authPriv" and after.credentials[new_id].group_id is None
+        assert after.groups == before.groups and after.credentials[cid] == before.credentials[cid]
+        for extra in ({"group_id": None}, {"access_transfer": "keep"}, {"polling": {}}, {"writing": {}}):
+            rejected = change(c, "/notifications/targets", {"address": "127.0.0.1", "new_credential": {**fields, **extra}})
+            assert rejected.status_code == 422
+            assert store.load() == after

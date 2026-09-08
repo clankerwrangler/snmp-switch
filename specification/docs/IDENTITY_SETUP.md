@@ -8,7 +8,7 @@
 |---|---|
 | Explicit development overlay | Loads `1.3.6.1.4.1.32473.1`. Credentials and destinations are configured separately. |
 | Public release, fresh installation | `identity.sys_object_id` starts null. SNMP setup includes a full numeric OID. |
-| Existing operator configuration | Retains the saved value or intentionally unset state across restart and upgrade. |
+| Existing operator configuration | Retains the saved value or intentionally unset state across restart. |
 
 The base/default configuration remains unset in source. A development overlay provides the placeholder only when explicitly loaded. Public packaging excludes that overlay from active runtime configuration; it does not depend on manually replacing a hard-coded identity just before publication.
 
@@ -33,7 +33,14 @@ These fragments document the intended fields. They do not enable SNMP by themsel
 
 The UI, API, and switch simulation start with identity unset. The SNMP listener remains unbound, and every notification path, including a test-send button, remains disabled. The status is `identity_required`, with the message **SNMP disabled: configure a system object ID**. This setup condition does not fail application health checks.
 
-The administrator enters the **full numeric OID** in **System object ID (`sysObjectID`)**, saves it, configures credentials and notification targets as needed, and enables SNMP. A PEN alone is not a complete value for this field. No registration certificate or ownership lookup is required. The identity field starts empty in a public installation.
+In **SNMP & settings**:
+
+1. Edit **Switch identity** and enter the full numeric **System object ID (`sysObjectID`)**. A PEN alone is not a complete value. The field starts empty; no registration certificate or ownership lookup is required.
+2. Add a v2c community with **Access**, or add a v3 group and assign users to it. Select independent read/write views and optional source networks in the community or group form. New incoming access is denied by default. The [credential reference](../TECHNICAL_SPECIFICATION.md#71-credentials) describes profiles and shared policy.
+3. Open **Configure** in **SNMP service**, verify the listener address/port, and select **Enable SNMP**. Fresh Docker configurations use `0.0.0.0:161`; native configurations use `127.0.0.1:161`. Saved settings take precedence. With Compose, the saved port must match `SWITCHLAB_SNMP_PORT`; native managers use the listener directly. The operating system must permit binding that port.
+4. Check **Listener status**. For traps, add a notification target and select or create its credential in the target form. Trap transport does not require incoming access.
+
+Managers connect to the host address, not the container wildcard address. Publishing a host port alone does not enable SNMP.
 
 Input is parsed as an SNMP-compatible numeric OBJECT IDENTIFIER. Any syntactically valid numeric OID is allowed for testing, including values outside the enterprises prefix. A blank form field saves configuration null; malformed nonempty input is rejected without replacing an existing valid value. The API uses `identity.sys_object_id: null` to clear it explicitly.
 

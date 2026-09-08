@@ -4,7 +4,7 @@ This directory contains the current TLA+ contract, bounded TLC configurations, b
 
 ## Start here
 
-- [Application README](../README.md): installation, controls, and supported SNMP operations.
+- [Application README](../README.md): installation, essential configuration, and documentation links.
 - [Technical specification](TECHNICAL_SPECIFICATION.md): state, VLAN/SET/ENTITY behavior, API/UI, and storage recovery.
 - [Current model contract](CURRENT_MODEL.md): model ownership, selected profiles, finite bounds, and implementation boundaries.
 - [Current verification](CURRENT_VERIFICATION.md): exact checked inputs, outcomes, negative controls, and preserved failures.

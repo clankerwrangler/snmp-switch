@@ -1,0 +1,38 @@
+{
+  "model": "GroupMigrationConversion",
+  "module": "GroupedAccessScenarios.tla",
+  "status": "FAIL",
+  "returncode": 12,
+  "elapsed_seconds": 22.329,
+  "counts": {
+    "generated": 5881,
+    "distinct": 5881,
+    "queue": 2331
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx1g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/groups-mutation-migration-deduplicate/states/GroupMigrationConversion",
+    "-config",
+    "configs/GroupMigrationConversion.cfg",
+    "GroupedAccessScenarios.tla"
+  ],
+  "log": "tlc-GroupMigrationConversion.log",
+  "log_sha256": "c7b61d2b33c2c7378e115fd5747a98a0529199df6d4e3100b32d7221a092ae2b",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

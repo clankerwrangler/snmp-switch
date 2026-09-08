@@ -1,0 +1,132 @@
+{
+  "current_sources": [
+    {
+      "path": "configs/GroupQueuedSet.cfg",
+      "sha256": "85d6d5eefb576463c1ccd84dea2882c4a2add783f7880aab1ec5ee99c6159d34",
+      "bytes": 1113
+    },
+    {
+      "path": "GroupedAccess.tla",
+      "sha256": "26b14e5c663e0bd9591c60571c880a1953b670f852482773e113379d55cdfd12",
+      "bytes": 12647
+    },
+    {
+      "path": "configs/GroupMigrationConversion.cfg",
+      "sha256": "f97402fda83a914207ed84059390d2301d67b7ccc48b59583bed91c929a92bbf",
+      "bytes": 1041
+    },
+    {
+      "path": "configs/GroupAccessForms.cfg",
+      "sha256": "aebed0c96b567ee252b22f4d5f57b3dd6c3b3acecdd5264dd86bd72da104ab12",
+      "bytes": 982
+    },
+    {
+      "path": "GroupedAccessScenarios.tla",
+      "sha256": "ff406397fddb68716db4001677931db84c09b49007e2386e1f355a4e2c9eba94",
+      "bytes": 20349
+    }
+  ],
+  "source_inventory": "group-inline-source-files.json",
+  "source_inventory_sha256": "30cda00fa15ec176f53cf1b5f6e60e9b1cbe268a7b0cb455881558ee01d340ab",
+  "source_patch_sha256": "268b04f18f4611d0125d53c648b845455430815dc1069d7acae9d54054f56bba",
+  "reproduction": {
+    "receipt": "runs/groups-inline-repro/verification.json",
+    "sha256": "a11393322a20711fc91ffad62958e49df08a01fef67038757f7d190a46a7ae5f",
+    "result": {
+      "model": "GroupMigrationConversion",
+      "module": "GroupedAccessScenarios.tla",
+      "status": "FAIL",
+      "returncode": 12,
+      "elapsed_seconds": 21.074,
+      "counts": {
+        "generated": 4692,
+        "distinct": 4692,
+        "queue": 2331
+      },
+      "command": [
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx1g",
+        "-Dutil.ExecutionStatisticsCollector.id=",
+        "-cp",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "tlc2.TLC",
+        "-checkpoint",
+        "30",
+        "-workers",
+        "1",
+        "-seed",
+        "20260907",
+        "-fp",
+        "0",
+        "-metadir",
+        "/workspace/.scratch/snmp-switch-formal/runs/groups-inline-repro/states/GroupMigrationConversion",
+        "-config",
+        "configs/GroupMigrationConversion.cfg",
+        "GroupedAccessScenarios.tla"
+      ],
+      "log": "tlc-GroupMigrationConversion.log",
+      "log_sha256": "afd2e6b9bdcb3bf738d099fe125bfb8fd86e5f1549c9848333e9cd0e4ace9e60",
+      "inputs_unchanged": true,
+      "resource_failure": null
+    }
+  },
+  "corrected": {
+    "receipt": "runs/groups-inline-fixed/verification.json",
+    "sha256": "b1e29b05c111cd74085b5032e0426f93e0b3d29de81b1dc0c7b5de4d50a15b0c",
+    "result": {
+      "model": "GroupMigrationConversion",
+      "module": "GroupedAccessScenarios.tla",
+      "status": "PASS",
+      "returncode": 0,
+      "elapsed_seconds": 25.631,
+      "counts": {
+        "generated": 9328,
+        "distinct": 6996,
+        "queue": 0
+      },
+      "command": [
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx1g",
+        "-Dutil.ExecutionStatisticsCollector.id=",
+        "-cp",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "tlc2.TLC",
+        "-checkpoint",
+        "30",
+        "-workers",
+        "1",
+        "-seed",
+        "20260907",
+        "-fp",
+        "0",
+        "-metadir",
+        "/workspace/.scratch/snmp-switch-formal/runs/groups-inline-fixed/states/GroupMigrationConversion",
+        "-config",
+        "configs/GroupMigrationConversion.cfg",
+        "GroupedAccessScenarios.tla"
+      ],
+      "log": "tlc-GroupMigrationConversion.log",
+      "log_sha256": "bdf13087fd929b2691f041c1c123a6d44d9f2db06bc170a01806aa52eb962a55",
+      "inputs_unchanged": true,
+      "resource_failure": null
+    }
+  },
+  "unchanged_forms_queued": {
+    "receipt": "runs/groups-stock-usm/verification.json",
+    "slice_receipt": "group-inline-unaffected-slices.json",
+    "slice_sha256": "85f80c963f800998725742ff6b1aee29bf45319563821878ad63e39692562119",
+    "rerun": false,
+    "description": "Their full original input hashes remain in the stock-USM receipt. Changed NewUser, SelectedTarget, MigrationAction and MigrationAssertions are outside their unchanged selected action/property slices."
+  },
+  "actual_seconds": 46.705,
+  "bound_seconds": 240,
+  "background_ids": [
+    "bg-42069f8fee86",
+    "bg-8e372c7db8b8"
+  ],
+  "all_processes_reaped": true,
+  "existing_config_domains_cases_preserved": true,
+  "canonical_promotion": false
+}

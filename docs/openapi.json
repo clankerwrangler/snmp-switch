@@ -1076,6 +1076,135 @@
         }
       }
     },
+    "/api/v1/snmp/groups": {
+      "get": {
+        "summary": "Read Groups",
+        "operationId": "read_groups_api_v1_snmp_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "snmp"
+        ],
+        "summary": "Group-Save Post  Snmp Groups",
+        "operationId": "group_save_POST__snmp_groups_api_v1_snmp_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/snmp/groups/{id}": {
+      "put": {
+        "tags": [
+          "snmp"
+        ],
+        "summary": "Group-Save Put  Snmp Groups {Id}",
+        "operationId": "group_save_PUT__snmp_groups__id__api_v1_snmp_groups__id__put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "snmp"
+        ],
+        "summary": "Group-Delete Delete  Snmp Groups {Id}",
+        "operationId": "group_delete_DELETE__snmp_groups__id__api_v1_snmp_groups__id__delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Revision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/snmp/views": {
       "get": {
         "summary": "Read Views",
@@ -2064,6 +2193,32 @@
                 "type": "null"
               }
             ]
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "access_transfer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "keep",
+                  "none"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Transfer"
           }
         },
         "additionalProperties": false,
@@ -2220,6 +2375,95 @@
         "additionalProperties": false,
         "type": "object",
         "title": "EndpointPatch"
+      },
+      "GroupWrite": {
+        "properties": {
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "expected_configuration_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Configuration Revision"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "minimum_security_level": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "noAuthNoPriv",
+                  "authNoPriv",
+                  "authPriv"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Security Level"
+          },
+          "polling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PollingPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "writing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WritingPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GroupWrite"
       },
       "HTTPValidationError": {
         "properties": {

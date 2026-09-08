@@ -416,3 +416,201 @@ async def test_vlan_permission_persistence_scenario_and_legacy_defaults(engine):
     assert restored.state.cfg == e.state.cfg
     assert restored.state.cfg.credentials[result["id"]].writing.enabled
     assert restored.state.cfg.credentials[result["id"]].polling.enabled is False
+
+
+@pytest.mark.parametrize("level", ["noAuthNoPriv", "authNoPriv", "authPriv"])
+@pytest.mark.parametrize("read,write", [(False, False), (True, False), (True, True), (False, True)])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_schema2_groups_preserve_encrypted_policy_and_identity(store, level, read, write, enabled):
+    import copy
+    from switchlab.models import Configuration, initial_configuration
+    raw = initial_configuration(4).model_dump(mode="json")
+    raw.pop("groups")
+    raw["schema_version"] = 2
+    policy = {"polling": {"enabled": read, "view_id": "interfaces" if read else "missing-read", "networks": ["192.0.2.0/24"]},
+              "writing": {"enabled": write, "view_id": "all" if write else None, "networks": ["2001:db8::/32"]}}
+    raw["credentials"] = {cid: dict(id=cid, label="Same label", version="3", username=cid, enabled=enabled,
+        security_level=level, community="inert-community", auth_key="synthetic-auth", priv_key="synthetic-priv", **policy)
+        for cid in ("one", "two")}
+    raw["credentials"]["community"] = dict(id="community", label="Community", version="2c", community="synthetic-community",
+        username="retained-inactive", auth_key="inactive-auth", priv_key="inactive-priv", **policy)
+    raw["targets"] = {"t": dict(id="t", address="127.0.0.1", credential_id="one", enabled=False)}
+    before = copy.deepcopy(raw)
+    with store.db:
+        store.put("configuration", raw)
+        store.put("engine_identity", "40000102030405060708090a0b")
+        store.put("engine_boots", 9)
+    cfg = store.load()
+    assert raw == before and cfg.schema_version == 3
+    assert Configuration.model_validate(raw) == cfg
+    assert len(cfg.groups) == 2
+    for cid in ("one", "two"):
+        user = cfg.credentials[cid]
+        group = cfg.groups[user.group_id]
+        assert user.group_id == "user-policy:" + cid.encode("utf-8").hex()
+        assert group.minimum_security_level == user.security_level == level
+        assert user.enabled == enabled and user.id == cid and user.username == cid
+        assert user.auth_key == "synthetic-auth" and user.priv_key == "synthetic-priv" and user.community == "inert-community"
+        assert "polling" not in user.model_dump() and "writing" not in user.model_dump()
+        assert group.polling.model_dump() == policy["polling"] and group.writing.model_dump() == policy["writing"]
+    community = cfg.credentials["community"]
+    assert community.polling.model_dump() == policy["polling"] and community.writing.model_dump() == policy["writing"]
+    assert (community.username, community.auth_key, community.priv_key) == ("retained-inactive", "inactive-auth", "inactive-priv")
+    e = Engine(cfg, store)
+    assert store.load() == cfg and store.get("configuration")["schema_version"] == 3
+    assert store.get("engine_identity") == "40000102030405060708090a0b" and store.get("engine_boots") == 9
+    assert e.export()["schema_version"] == 1 and not {"credentials", "groups"} & e.export().keys()
+    assert "synthetic-auth" not in str(e.snapshot()) and "inactive-auth" not in str(e.snapshot())
+
+
+async def test_group_defaults_references_sparse_policy_and_shared_generations(engine):
+    from pydantic import ValidationError
+    e = engine
+    gid = (await e.execute("group-save", {"label": "Management"}))["id"]
+    group = e.state.cfg.groups[gid]
+    assert group.minimum_security_level == "authPriv" and not group.polling.enabled and not group.writing.enabled
+    ids = []
+    for n in (1, 2):
+        cid = (await e.execute("credential-save", {"label": str(n), "version": "3", "username": str(n),
+            "auth_key": "synthetic-auth", "priv_key": "synthetic-priv", "group_id": gid}))["id"]
+        ids.append(cid)
+        assert e.state.cfg.credentials[cid].security_level == "authPriv"
+    await e.execute("credential-save", {"id": ids[1], "enabled": False})
+    before = e.state
+    with pytest.raises(ValidationError):
+        await e.execute("group-delete", {"id": gid})
+    assert e.state is before
+    tokens = dict(e.state.credential_generations)
+    await e.execute("group-save", {"id": gid, "label": "Renamed"})
+    assert e.state.credential_generations == tokens
+    await e.execute("group-save", e.state.cfg.groups[gid].model_dump())
+    assert e.state.credential_generations == tokens
+    await e.execute("group-save", {"id": gid, "polling": {"view_id": "interfaces", "networks": ["192.0.2.1/24"]},
+                                  "writing": {"enabled": True, "view_id": "all"}})
+    assert all(e.state.credential_generations[c] != tokens[c] for c in ids)
+    old = e.state.cfg.groups[gid]
+    await e.execute("group-save", {"id": gid, "polling": {"enabled": True}})
+    assert e.state.cfg.groups[gid].polling.networks == ["192.0.2.0/24"]
+    assert e.state.cfg.groups[gid].writing == old.writing
+    tokens = dict(e.state.credential_generations)
+    view = e.state.cfg.views["all"].model_dump()
+    await e.execute("view-save", {**view, "includes": ["1.3.6.1.2.1.47"]})
+    middle = dict(e.state.credential_generations)
+    await e.execute("view-save", view)
+    assert all(e.state.credential_generations[c] not in (tokens[c], middle[c]) for c in ids)
+    tokens = dict(e.state.credential_generations)
+    await e.execute("credential-save", {"id": ids[0], "group_id": None})
+    assert e.state.credential_generations[ids[0]] != tokens[ids[0]]
+    assert e.state.credential_generations[ids[1]] == tokens[ids[1]]
+    with pytest.raises(CommandError, match="belongs to"):
+        await e.execute("credential-save", {"id": ids[0], "polling": {"enabled": True}})
+    # An unused group's active view remains a required reference.
+    with pytest.raises(ValidationError):
+        await e.execute("group-save", {"label": "Invalid", "writing": {"enabled": True}})
+    with pytest.raises(ValidationError):
+        await e.execute("view-delete", {"id": "all"})
+    await e.execute("group-save", {"id": gid, "writing": {"enabled": False}})
+    await e.execute("view-delete", {"id": "all"})
+    assert e.state.cfg.groups[gid].writing.view_id == "all"
+
+
+@pytest.mark.parametrize("choice", ["keep", "none", "group", "null"])
+async def test_protocol_conversion_explicit_saved_policy_and_targets(engine, choice):
+    e = engine
+    policy = {"polling": {"enabled": True, "view_id": "interfaces", "networks": ["192.0.2.0/24"]},
+              "writing": {"enabled": True, "view_id": "all", "networks": ["2001:db8::/32"]}}
+    cid = (await e.execute("credential-save", {"label": "Converted", "community": "synthetic", **policy}))["id"]
+    tid = (await e.execute("target-save", {"credential_id": cid, "address": "127.0.0.1"}))["id"]
+    gid = (await e.execute("group-save", {"label": "Existing", "polling": {"enabled": True}}))["id"]
+    existing = e.state.cfg.groups[gid].model_dump()
+    fields = dict(id=cid, version="3", username="converted", security_level="authNoPriv", auth_key="new-auth-passphrase")
+    intent = {"group_id": gid if choice == "group" else None} if choice in ("group", "null") else {"access_transfer": choice}
+    result = await e.execute("credential-save", {**fields, **intent}, key="convert")
+    saved = e.state.cfg
+    assert await e.execute("credential-save", {**fields, **intent}, key="convert") == result
+    assert e.state.cfg is saved
+    user = saved.credentials[cid]
+    assert saved.targets[tid].credential_id == cid and user.community is None and user.priv_key is None
+    assert "access_transfer" not in user.model_dump()
+    if choice == "keep":
+        group = saved.groups[user.group_id]
+        assert group.minimum_security_level == "authNoPriv"
+        assert group.polling.model_dump() == policy["polling"] and group.writing.model_dump() == policy["writing"]
+    else:
+        assert user.group_id == (gid if choice == "group" else None)
+    assert saved.groups[gid].model_dump() == existing
+    groups = dict(saved.groups)
+    await e.execute("credential-save", {"id": cid, "version": "2c", "community": "new-community", "access_transfer": "keep"})
+    community = e.state.cfg.credentials[cid]
+    expected = groups[user.group_id] if user.group_id else None
+    assert community.polling.enabled == (expected.polling.enabled if expected else False)
+    assert community.writing.enabled == (expected.writing.enabled if expected else False)
+    assert e.state.cfg.groups == groups and e.state.cfg.targets[tid].credential_id == cid
+
+
+@pytest.mark.parametrize("intent", [{}, {"access_transfer": "keep", "group_id": None},
+    {"access_transfer": "keep", "polling": {"enabled": False}}, {"group_id": "missing"}, {"access_transfer": None}])
+async def test_conversion_rejects_ambiguous_or_invalid_intent_without_effect(engine, intent):
+    e = engine
+    cid = (await e.execute("credential-save", {"label": "Before", "community": "synthetic"}))["id"]
+    before, persisted = e.state, stored_state(e.store)
+    with pytest.raises(CommandError):
+        await e.execute("credential-save", {"id": cid, "label": "After", "version": "3", "username": "converted",
+            "security_level": "noAuthNoPriv", **intent}, key="rejected")
+    assert e.state is before and stored_state(e.store) == persisted and "rejected" not in e.idempotency
+
+
+async def test_conversion_group_and_user_rollback_together(engine, monkeypatch):
+    import sqlite3
+    e = engine
+    cid = (await e.execute("credential-save", {"label": "Before", "community": "synthetic", "polling": {"enabled": True}}))["id"]
+    request = {"id": cid, "version": "3", "username": "new-user", "security_level": "noAuthNoPriv", "access_transfer": "keep"}
+    before, persisted = e.state, stored_state(e.store)
+    original = e.store.put
+    def fail_after_write(key, value):
+        original(key, value)
+        if key == "configuration":
+            raise sqlite3.OperationalError("Synthetic conversion write failure")
+    with monkeypatch.context() as patch:
+        patch.setattr(e.store, "put", fail_after_write)
+        with pytest.raises(sqlite3.OperationalError):
+            await e.execute("credential-save", request, key="conversion")
+    assert e.state is before and stored_state(e.store) == persisted and not e.idempotency
+    with pytest.raises(CommandError):
+        await e.execute("credential-save", request, expected_config=e.state.configuration_revision-1)
+    assert e.state is before and not e.state.cfg.groups
+    await e.execute("credential-save", request)
+    assert len(e.state.cfg.groups) == 1
+
+
+@pytest.mark.parametrize("intent", ["keep", "none", "group"])
+async def test_conversion_requires_explicit_new_user_profile(engine, intent):
+    e = engine
+    gid = (await e.execute("group-save", {"label": "Selected group"}))["id"]
+    cid = (await e.execute("credential-save", {"label": "Existing", "community": "synthetic-community"}))["id"]
+    choice = {"group_id": gid} if intent == "group" else {"access_transfer": intent}
+    fields = {"id": cid, "version": "3", "username": "converted", "auth_key": "synthetic-auth",
+              "priv_key": "synthetic-priv", **choice}
+    before, persisted = e.state, stored_state(e.store)
+    with pytest.raises(CommandError, match="explicit protection profile"):
+        await e.execute("credential-save", fields, key="missing-profile")
+    assert e.state is before and stored_state(e.store) == persisted and not e.idempotency
+    await e.execute("credential-save", {**fields, "security_level": "authPriv"})
+    assert e.state.cfg.credentials[cid].security_level == "authPriv"
+
+
+def test_schema2_generated_group_ids_are_url_safe_distinct_and_repeatable():
+    import copy
+    from switchlab.models import Configuration, initial_configuration
+    raw = initial_configuration(4).model_dump()
+    raw.pop("groups"); raw["schema_version"] = 2
+    ids = ["a/b", "a?b", "a#b", "管理", "a:b", "a%2Fb"]
+    raw["credentials"] = {cid: {"id": cid, "label": "Saved user", "version": "3", "username": str(n),
+        "security_level": "noAuthNoPriv"} for n, cid in enumerate(ids)}
+    before = copy.deepcopy(raw)
+    cfg = Configuration.model_validate(raw)
+    assert raw == before and cfg == Configuration.model_validate(raw)
+    assert len(cfg.groups) == len(ids)
+    for cid, user in cfg.credentials.items():
+        assert user.id == cid and user.group_id in cfg.groups
+        assert set(user.group_id) <= set("user-policy:0123456789abcdef")

@@ -1,0 +1,782 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 910MB heap and 64MB offheap memory [pid: 237668] (Linux 6.12.101+deb13-amd64 amd64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/.scratch/snmp-switch-formal/group-mutation-editor-only-generation-inputs/GroupedAccessScenarios.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-mutation-editor-only-generation-inputs/GroupedAccess.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-mutation-editor-only-generation-inputs/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-mutation-editor-only-generation-inputs/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-mutation-editor-only-generation-inputs/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-mutation-editor-only-generation-inputs/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+Semantic processing of module GroupedAccess
+Semantic processing of module GroupedAccessScenarios
+Starting... (2026-09-08 20:46:56)
+Implied-temporal checking--satisfiability problem has 2 branches.
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Computed 64 initial states...
+Computed 128 initial states...
+Computed 256 initial states...
+Computed 512 initial states...
+Computed 1024 initial states...
+Computed 2048 initial states...
+Computed 4096 initial states...
+Finished computing initial states: 5276 distinct states generated at 2026-09-08 20:46:58.
+Checking 2 branches of temporal properties for the current state space with 23444 total distinct states at (2026-09-08 20:47:01)
+Finished checking temporal properties in 00s at 2026-09-08 20:47:01
+Progress(3) at 2026-09-08 20:47:01: 11,722 states generated (11,722 s/min), 11,722 distinct states found (11,722 ds/min), 5,275 states left on queue.
+Error: Invariant QueueAssertions is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ s = [ mode |-> <<"shared">>,
+  pending |-> (<<e1, 1>> :> NoJob),
+  admin |-> <<TRUE>>,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  vlans |-> {1},
+  allowed |-> <<{1}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  boot |-> 0,
+  fault |-> <<FALSE>>,
+  pvid |-> <<1>>,
+  overflow |-> FALSE,
+  vlanNames |-> (1 :> 0 @@ 10 :> 0),
+  untagged |-> <<{1}>>,
+  forbidden |-> <<{}>>,
+  legacy |-> 1,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ cfg = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+/\ gate = TRUE
+/\ result = [status |-> "none", index |-> 0]
+/\ response = NoResponse
+/\ activation = 0
+/\ pc = 0
+/\ fixture = [ key |-> secretA,
+  kind |-> "queue",
+  name |-> "policyRestore",
+  credential |-> readerB ]
+/\ request = NoRequest
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ pending = NoPdu
+/\ snapshot = snapshotA
+/\ audit = NoAudit
+/\ revision = 0
+/\ origin = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+
+State 2: <QueueNext line 246, col 14 to line 246, col 79 of module GroupedAccessScenarios>
+/\ s = [ mode |-> <<"shared">>,
+  pending |-> (<<e1, 1>> :> NoJob),
+  admin |-> <<TRUE>>,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  vlans |-> {1},
+  allowed |-> <<{1}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  boot |-> 0,
+  fault |-> <<FALSE>>,
+  pvid |-> <<1>>,
+  overflow |-> FALSE,
+  vlanNames |-> (1 :> 0 @@ 10 :> 0),
+  untagged |-> <<{1}>>,
+  forbidden |-> <<{}>>,
+  legacy |-> 1,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ cfg = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+/\ gate = TRUE
+/\ result = [status |-> "none", index |-> 0]
+/\ response = NoResponse
+/\ activation = 0
+/\ pc = 1
+/\ fixture = [ key |-> secretA,
+  kind |-> "queue",
+  name |-> "policyRestore",
+  credential |-> readerB ]
+/\ request = NoRequest
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ pending = [ persist |-> TRUE,
+  credential |-> readerB,
+  budget |-> TRUE,
+  registration |-> 0,
+  activation |-> 0,
+  secret |-> secretA,
+  boot |-> 0,
+  ops |-> <<[key |-> 1, kind |-> "admin", value |-> 2, error |-> "noError"]>> ]
+/\ snapshot = snapshotA
+/\ audit = NoAudit
+/\ revision = 0
+/\ origin = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+
+State 3: <QueueNext line 246, col 14 to line 246, col 79 of module GroupedAccessScenarios>
+/\ s = [ mode |-> <<"shared">>,
+  pending |-> (<<e1, 1>> :> NoJob),
+  admin |-> <<TRUE>>,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  vlans |-> {1},
+  allowed |-> <<{1}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  boot |-> 0,
+  fault |-> <<FALSE>>,
+  pvid |-> <<1>>,
+  overflow |-> FALSE,
+  vlanNames |-> (1 :> 0 @@ 10 :> 0),
+  untagged |-> <<{1}>>,
+  forbidden |-> <<{}>>,
+  legacy |-> 1,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ cfg = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> FALSE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+/\ gate = TRUE
+/\ result = [status |-> "none", index |-> 0]
+/\ response = NoResponse
+/\ activation = 0
+/\ pc = 2
+/\ fixture = [ key |-> secretA,
+  kind |-> "queue",
+  name |-> "policyRestore",
+  credential |-> readerB ]
+/\ request = NoRequest
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ pending = [ persist |-> TRUE,
+  credential |-> readerB,
+  budget |-> TRUE,
+  registration |-> 0,
+  activation |-> 0,
+  secret |-> secretA,
+  boot |-> 0,
+  ops |-> <<[key |-> 1, kind |-> "admin", value |-> 2, error |-> "noError"]>> ]
+/\ snapshot = snapshotA
+/\ audit = [ accepted |-> TRUE,
+  before |->
+      [ users |->
+            ( readerA :>
+                  [ version |-> 3,
+                    on |-> TRUE,
+                    key |-> secretA,
+                    profile |-> 3,
+                    label |-> 0,
+                    group |-> groupA ] @@
+              readerB :>
+                  [ version |-> 3,
+                    on |-> TRUE,
+                    key |-> secretA,
+                    profile |-> 3,
+                    label |-> 0,
+                    group |-> groupA ] ),
+        groups |->
+            ( groupA :>
+                  [ label |-> 0,
+                    policy |->
+                        [ read |->
+                              [nets |-> {}, on |-> TRUE, view |-> portView],
+                          write |->
+                              [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+                    minimum |-> 3 ] @@
+              groupB :>
+                  [ label |-> 0,
+                    policy |->
+                        [ read |->
+                              [nets |-> {}, on |-> TRUE, view |-> portView],
+                          write |->
+                              [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+                    minimum |-> 3 ] ),
+        present |-> {portView, vlanView},
+        includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+        targets |-> (targetA :> readerB @@ targetB :> readerA),
+        targetOn |-> {targetA, targetB},
+        metadata |-> <<"engine-id", "persistent-identity">> ],
+  candidate |->
+      [ users |->
+            ( readerA :>
+                  [ version |-> 3,
+                    on |-> TRUE,
+                    key |-> secretA,
+                    profile |-> 3,
+                    label |-> 0,
+                    group |-> groupA ] @@
+              readerB :>
+                  [ version |-> 3,
+                    on |-> TRUE,
+                    key |-> secretA,
+                    profile |-> 3,
+                    label |-> 0,
+                    group |-> groupA ] ),
+        groups |->
+            ( groupA :>
+                  [ label |-> 0,
+                    policy |->
+                        [ read |->
+                              [nets |-> {}, on |-> TRUE, view |-> portView],
+                          write |->
+                              [nets |-> {}, on |-> FALSE, view |-> vlanView] ],
+                    minimum |-> 3 ] @@
+              groupB :>
+                  [ label |-> 0,
+                    policy |->
+                        [ read |->
+                              [nets |-> {}, on |-> TRUE, view |-> portView],
+                          write |->
+                              [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+                    minimum |-> 3 ] ),
+        present |-> {portView, vlanView},
+        includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+        targets |-> (targetA :> readerB @@ targetB :> readerA),
+        targetOn |-> {targetA, targetB},
+        metadata |-> <<"engine-id", "persistent-identity">> ],
+  oldRevision |-> 0,
+  oldRegistration |-> (readerA :> 0 @@ readerB :> 0) ]
+/\ revision = 1
+/\ origin = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+
+State 4: <QueueNext line 246, col 14 to line 246, col 79 of module GroupedAccessScenarios>
+/\ s = [ mode |-> <<"shared">>,
+  pending |-> (<<e1, 1>> :> NoJob),
+  admin |-> <<TRUE>>,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  vlans |-> {1},
+  allowed |-> <<{1}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  boot |-> 0,
+  fault |-> <<FALSE>>,
+  pvid |-> <<1>>,
+  overflow |-> FALSE,
+  vlanNames |-> (1 :> 0 @@ 10 :> 0),
+  untagged |-> <<{1}>>,
+  forbidden |-> <<{}>>,
+  legacy |-> 1,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ cfg = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+/\ gate = TRUE
+/\ result = [status |-> "none", index |-> 0]
+/\ response = NoResponse
+/\ activation = 0
+/\ pc = 3
+/\ fixture = [ key |-> secretA,
+  kind |-> "queue",
+  name |-> "policyRestore",
+  credential |-> readerB ]
+/\ request = NoRequest
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ pending = [ persist |-> TRUE,
+  credential |-> readerB,
+  budget |-> TRUE,
+  registration |-> 0,
+  activation |-> 0,
+  secret |-> secretA,
+  boot |-> 0,
+  ops |-> <<[key |-> 1, kind |-> "admin", value |-> 2, error |-> "noError"]>> ]
+/\ snapshot = snapshotA
+/\ audit = [ accepted |-> TRUE,
+  before |->
+      [ users |->
+            ( readerA :>
+                  [ version |-> 3,
+                    on |-> TRUE,
+                    key |-> secretA,
+                    profile |-> 3,
+                    label |-> 0,
+                    group |-> groupA ] @@
+              readerB :>
+                  [ version |-> 3,
+                    on |-> TRUE,
+                    key |-> secretA,
+                    profile |-> 3,
+                    label |-> 0,
+                    group |-> groupA ] ),
+        groups |->
+            ( groupA :>
+                  [ label |-> 0,
+                    policy |->
+                        [ read |->
+                              [nets |-> {}, on |-> TRUE, view |-> portView],
+                          write |->
+                              [nets |-> {}, on |-> FALSE, view |-> vlanView] ],
+                    minimum |-> 3 ] @@
+              groupB :>
+                  [ label |-> 0,
+                    policy |->
+                        [ read |->
+                              [nets |-> {}, on |-> TRUE, view |-> portView],
+                          write |->
+                              [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+                    minimum |-> 3 ] ),
+        present |-> {portView, vlanView},
+        includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+        targets |-> (targetA :> readerB @@ targetB :> readerA),
+        targetOn |-> {targetA, targetB},
+        metadata |-> <<"engine-id", "persistent-identity">> ],
+  candidate |->
+      [ users |->
+            ( readerA :>
+                  [ version |-> 3,
+                    on |-> TRUE,
+                    key |-> secretA,
+                    profile |-> 3,
+                    label |-> 0,
+                    group |-> groupA ] @@
+              readerB :>
+                  [ version |-> 3,
+                    on |-> TRUE,
+                    key |-> secretA,
+                    profile |-> 3,
+                    label |-> 0,
+                    group |-> groupA ] ),
+        groups |->
+            ( groupA :>
+                  [ label |-> 0,
+                    policy |->
+                        [ read |->
+                              [nets |-> {}, on |-> TRUE, view |-> portView],
+                          write |->
+                              [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+                    minimum |-> 3 ] @@
+              groupB :>
+                  [ label |-> 0,
+                    policy |->
+                        [ read |->
+                              [nets |-> {}, on |-> TRUE, view |-> portView],
+                          write |->
+                              [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+                    minimum |-> 3 ] ),
+        present |-> {portView, vlanView},
+        includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+        targets |-> (targetA :> readerB @@ targetB :> readerA),
+        targetOn |-> {targetA, targetB},
+        metadata |-> <<"engine-id", "persistent-identity">> ],
+  oldRevision |-> 1,
+  oldRegistration |-> (readerA :> 1 @@ readerB :> 0) ]
+/\ revision = 2
+/\ origin = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+
+State 5: <QueueNext line 246, col 14 to line 246, col 79 of module GroupedAccessScenarios>
+/\ s = [ mode |-> <<"shared">>,
+  pending |-> (<<e1, 1>> :> NoJob),
+  admin |-> <<FALSE>>,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  vlans |-> {1},
+  allowed |-> <<{1}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |->
+      << [ kind |-> "linkDown",
+           admin |-> FALSE,
+           before |-> TRUE,
+           port |-> 1,
+           ifIndex |-> 101,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<1>>,
+  boot |-> 0,
+  fault |-> <<FALSE>>,
+  pvid |-> <<1>>,
+  overflow |-> FALSE,
+  vlanNames |-> (1 :> 0 @@ 10 :> 0),
+  untagged |-> <<{1}>>,
+  forbidden |-> <<{}>>,
+  legacy |-> 1,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ cfg = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+/\ gate = TRUE
+/\ result = [status |-> "noError", index |-> 0]
+/\ response = NoResponse
+/\ activation = 0
+/\ pc = 4
+/\ fixture = [ key |-> secretA,
+  kind |-> "queue",
+  name |-> "policyRestore",
+  credential |-> readerB ]
+/\ request = NoRequest
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ pending = NoPdu
+/\ snapshot = snapshotA
+/\ audit = NoAudit
+/\ revision = 2
+/\ origin = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> groupA ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> TRUE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> TRUE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+
+21110 states generated, 21110 distinct states found, 5275 states left on queue.
+The depth of the complete state graph search is 5.
+The average outdegree of the complete state graph is 1 (minimum is 1, the maximum 1 and the 95th percentile is 1).
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/groups-mutation-editor-only-generation/states/GroupQueuedSet/26-09-08-20-46-56
+Checkpointing completed at (2026-09-08 20:47:03)
+Finished in 07s at (2026-09-08 20:47:03)

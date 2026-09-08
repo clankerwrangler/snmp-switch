@@ -17,6 +17,7 @@ from pysnmp.proto import rfc1902 as a, rfc1905
 from pysnmp.proto.api import v2c
 
 from .mib import Projection, oid, plan_set, SetError
+from .models import incoming_policy
 from .snmp_lifetime import InboundLifetime, UnsupportedLifetime, OwnershipError
 from .storage import RollbackFailed, CommitUncertain
 
@@ -111,14 +112,19 @@ class Responder(cmdrsp.CommandResponderBase):
         incoming = snmp.observer.get_execution_context("rfc3412.receiveMessage:request")
         peer = ipaddress.ip_address(incoming["transportAddress"][0].split("%")[0])
         cred = next((c for c in state.cfg.credentials.values() if
-                     c.enabled and c.polling.enabled and
+                     c.enabled and
                      ((security_model == 2 and c.version == "2c" and wire_name(c.id) == str(name)) or
                       (security_model == 3 and c.version == "3" and c.username == str(name)))), None)
-        if cred is None or (cred.polling.networks and not any(peer in ipaddress.ip_network(n) for n in cred.polling.networks)):
+        policy = incoming_policy(state.cfg, cred) if cred else None
+        if policy is None or not policy.polling.enabled:
             return
-        if cred.version == "3" and int(level) < {"noAuthNoPriv": 1, "authNoPriv": 2, "authPriv": 3}[cred.security_level]:
+        if policy.polling.networks and not any(peer in ipaddress.ip_network(n) for n in policy.polling.networks):
             return
-        self.projection = Projection(state, state.cfg.views[cred.polling.view_id].includes)
+        # USM has already accepted the actual protection profile. Only the
+        # shared group's incoming minimum belongs to this authorization owner.
+        if cred.version == "3" and int(level) < {"noAuthNoPriv": 1, "authNoPriv": 2, "authPriv": 3}[policy.minimum_security_level]:
+            return
+        self.projection = Projection(state, state.cfg.views[policy.polling.view_id].includes)
         self.limit = state.cfg.snmp.max_varbinds
         super().process_pdu(snmp, model, security_model, name, level, *rest)
 
@@ -174,18 +180,19 @@ class SnmpAdapter:
 
     def status(self):
         c = self.engine.state.cfg
+        policies = [incoming_policy(c, x) for x in c.credentials.values() if x.enabled]
+        reading = any(p and p.polling.enabled for p in policies)
+        writing = any(p and p.writing.enabled for p in policies)
         if not c.switch.identity.sys_object_id:
             reason = "identity_required"
         elif not c.snmp.enabled:
             reason = "disabled"
         elif self.error:
             reason = self.error
-        elif not any(x.enabled and x.polling.enabled for x in c.credentials.values()):
+        elif not reading:
             reason = "credentials_required"
         else:
             reason = "ready" if self.listening else "initializing"
-        reading = any(x.enabled and x.polling.enabled for x in c.credentials.values())
-        writing = any(x.enabled and x.writing.enabled for x in c.credentials.values())
         fault = self.engine.storage_fault
         set_ready = bool(self.listening and writing and self.inbound and not self.inbound.error and not fault)
         if not self.engine.state.gate():
@@ -262,9 +269,9 @@ class SnmpAdapter:
                         wire_name(k) if c["version"] == "2c" else c["username"], c["security_level"], notifySubTree=(1,3,6))
             self.configured = current
         binding = (s.cfg.snmp.host, s.cfg.snmp.port)
-        incoming = any(c.enabled and (c.polling.enabled or
-                       (c.writing.enabled and self.inbound is not None and not self.inbound.error))
-                       for c in s.cfg.credentials.values())
+        policies = [incoming_policy(s.cfg, c) for c in s.cfg.credentials.values() if c.enabled]
+        incoming = any(p and (p.polling.enabled or
+                       (p.writing.enabled and self.inbound is not None and not self.inbound.error)) for p in policies)
         if not incoming:
             self._unbind()
         elif not self.listening or self.binding != binding:
@@ -326,10 +333,12 @@ class SnmpAdapter:
             # not a newly edited credential that reuses its security name.
             if self.configured.get(credential.id) != credential.model_dump():
                 return None
-            if int(level) < {"noAuthNoPriv": 1, "authNoPriv": 2, "authPriv": 3}[credential.security_level]:
-                return None
-            if credential.writing.networks and not any(peer in ipaddress.ip_network(n) for n in credential.writing.networks):
-                return None
+            policy = incoming_policy(state.cfg, credential)
+            if policy is not None:
+                if credential.version == "3" and int(level) < {"noAuthNoPriv": 1, "authNoPriv": 2, "authPriv": 3}[policy.minimum_security_level]:
+                    return None
+                if policy.writing.networks and not any(peer in ipaddress.ip_network(n) for n in policy.writing.networks):
+                    return None
             return credential
         return None
 
@@ -418,6 +427,7 @@ class SnmpAdapter:
                     credential = self._current_set(request)
                     if credential is None or not owner.ready(request.ticket):
                         return
+                    policy = incoming_policy(self.engine.state.cfg, credential)
                     bindings = v2c.apiPDU.get_varbinds(request.args[8])
                     plan, information = None, None
                     status, index, empty = 0, 0, False
@@ -432,12 +442,12 @@ class SnmpAdapter:
                     elif (len(bindings) > self.engine.state.cfg.snmp.max_varbinds or
                           not response_budget(request.args, request.whole_message)):
                         status, empty = "tooBig", True
-                    elif not credential.writing.enabled or credential.writing.view_id not in self.engine.state.cfg.views:
+                    elif policy is None or not policy.writing.enabled or policy.writing.view_id not in self.engine.state.cfg.views:
                         status = "authorizationError"
                     else:
                         try:
                             plan = plan_set(self.engine.state.cfg, bindings,
-                                self.engine.state.cfg.views[credential.writing.view_id].includes)
+                                self.engine.state.cfg.views[policy.writing.view_id].includes)
                         except SetError as failure:
                             status, index = failure.status, failure.index
 

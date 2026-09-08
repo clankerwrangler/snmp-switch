@@ -24,9 +24,21 @@ def client(port,credential=None):
     return c
 
 
+def access_command(e, cid, fields):
+    credential = e.state.cfg.credentials[cid]
+    if credential.version == '3':
+        return 'group-save', {'id': credential.group_id, **fields}
+    return 'credential-save', {'id': cid, **fields}
+
+
 async def start(e,**credential):
     await e.execute('switch-edit',{'identity':{'sys_object_id':'1.3.999.123'}})
-    await e.execute('credential-save',{'label':'fixture','community':'fixture-poll','polling':{'enabled':True},**credential})
+    fields = {'label':'fixture','community':'fixture-poll','polling':{'enabled':True},**credential}
+    if fields.get('version') == '3':
+        fields['group_id'] = (await e.execute('group-save', {'label': 'Fixture group',
+            'minimum_security_level': fields['security_level'], 'polling': fields.pop('polling'),
+            'writing': fields.pop('writing', {'enabled': False})}))['id']
+    await e.execute('credential-save', fields)
     port=free_port()
     await e.execute('snmp-settings',{'enabled':True,'port':port})
     a=SnmpAdapter(e,e.store)

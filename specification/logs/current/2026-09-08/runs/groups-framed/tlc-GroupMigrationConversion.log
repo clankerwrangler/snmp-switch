@@ -1,0 +1,51 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 910MB heap and 64MB offheap memory [pid: 237327] (Linux 6.12.101+deb13-amd64 amd64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/.scratch/snmp-switch-formal/group-framed-inputs/GroupedAccessScenarios.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-framed-inputs/GroupedAccess.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-framed-inputs/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-framed-inputs/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-framed-inputs/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-framed-inputs/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+Semantic processing of module GroupedAccess
+Semantic processing of module GroupedAccessScenarios
+Starting... (2026-09-08 20:44:23)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Computed 64 initial states...
+Computed 128 initial states...
+Computed 256 initial states...
+Computed 512 initial states...
+Computed 1024 initial states...
+Computed 2048 initial states...
+Finished computing initial states: 2332 distinct states generated at 2026-09-08 20:44:25.
+Checking temporal properties for the current state space with 3586 total distinct states at (2026-09-08 20:44:28)
+Finished checking temporal properties in 00s at 2026-09-08 20:44:28
+Progress(2) at 2026-09-08 20:44:28: 3,586 states generated (3,586 s/min), 3,586 distinct states found (3,586 ds/min), 2,331 states left on queue.
+Progress(3) at 2026-09-08 20:44:45: 9,328 states generated, 6,996 distinct states found, 0 states left on queue.
+Checking temporal properties for the complete state space with 6996 total distinct states at (2026-09-08 20:44:45)
+Finished checking temporal properties in 00s at 2026-09-08 20:44:45
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 8.8E-13
+9328 states generated, 6996 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 3.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 1 and the 95th percentile is 1).
+Finished in 22s at (2026-09-08 20:44:45)

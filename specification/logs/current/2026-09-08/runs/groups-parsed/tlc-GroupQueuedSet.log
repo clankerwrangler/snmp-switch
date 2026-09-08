@@ -1,0 +1,187 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 910MB heap and 64MB offheap memory [pid: 237184] (Linux 6.12.101+deb13-amd64 amd64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/.scratch/snmp-switch-formal/group-parsed-inputs/GroupedAccessScenarios.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-parsed-inputs/GroupedAccess.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-parsed-inputs/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-parsed-inputs/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-parsed-inputs/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/group-parsed-inputs/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+Semantic processing of module GroupedAccess
+Semantic processing of module GroupedAccessScenarios
+Starting... (2026-09-08 20:42:53)
+Implied-temporal checking--satisfiability problem has 2 branches.
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Computed 64 initial states...
+Computed 128 initial states...
+Computed 256 initial states...
+Computed 512 initial states...
+Computed 1024 initial states...
+Computed 2048 initial states...
+Computed 4096 initial states...
+Finished computing initial states: 5276 distinct states generated at 2026-09-08 20:42:55.
+Error: TLC threw an unexpected exception.
+This was probably caused by an error in the spec or model.
+See the User Output or TLC Console for clues to what happened.
+The exception was a java.lang.RuntimeException
+: In evaluation, the identifier cfg is either undefined or not an operator.
+line 45, col 24 to line 45, col 26 of module GroupedAccess
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ s = [ mode |-> <<"shared">>,
+  pending |-> (<<e1, 1>> :> NoJob),
+  admin |-> <<TRUE>>,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  vlans |-> {1},
+  allowed |-> <<{1}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  boot |-> 0,
+  fault |-> <<FALSE>>,
+  pvid |-> <<1>>,
+  overflow |-> FALSE,
+  vlanNames |-> (1 :> 0 @@ 10 :> 0),
+  untagged |-> <<{1}>>,
+  forbidden |-> <<{}>>,
+  legacy |-> 1,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ cfg = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> NoGroup ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> NoGroup ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> FALSE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> FALSE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> FALSE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> FALSE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+/\ gate = TRUE
+/\ result = [status |-> "none", index |-> 0]
+/\ response = NoResponse
+/\ activation = 0
+/\ pc = 0
+/\ fixture = [key |-> secretA, kind |-> "queue", name |-> "noGroup", credential |-> readerA]
+/\ request = NoRequest
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ pending = NoPdu
+/\ snapshot = snapshotA
+/\ audit = NoAudit
+/\ revision = 0
+/\ origin = [ users |->
+      ( readerA :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> NoGroup ] @@
+        readerB :>
+            [ version |-> 3,
+              on |-> TRUE,
+              key |-> secretA,
+              profile |-> 3,
+              label |-> 0,
+              group |-> NoGroup ] ),
+  groups |->
+      ( groupA :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> FALSE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> FALSE, view |-> vlanView] ],
+              minimum |-> 3 ] @@
+        groupB :>
+            [ label |-> 0,
+              policy |->
+                  [ read |-> [nets |-> {}, on |-> FALSE, view |-> portView],
+                    write |-> [nets |-> {}, on |-> FALSE, view |-> vlanView] ],
+              minimum |-> 3 ] ),
+  present |-> {portView, vlanView},
+  includes |-> (portView :> {portView} @@ vlanView :> {portView}),
+  targets |-> (targetA :> readerB @@ targetB :> readerA),
+  targetOn |-> {targetA, targetB},
+  metadata |-> <<"engine-id", "persistent-identity">> ]
+
+Error: The error occurred when TLC was evaluating the nested
+expressions at the following positions:
+0. Line 246, column 14 to line 246, column 79 in GroupedAccessScenarios
+1. Line 246, column 63 to line 246, column 79 in GroupedAccessScenarios
+2. Line 5, column 17 to line 5, column 73 in GroupedAccessScenarios
+3. Line 5, column 20 to line 5, column 73 in GroupedAccessScenarios
+4. Line 5, column 20 to line 5, column 41 in GroupedAccessScenarios
+5. Line 5, column 20 to line 5, column 25 in GroupedAccessScenarios
+6. Line 246, column 68 to line 246, column 78 in GroupedAccessScenarios
+7. Line 241, column 16 to line 244, column 20 in GroupedAccessScenarios
+8. Line 241, column 31 to line 241, column 73 in GroupedAccessScenarios
+9. Line 177, column 29 to line 178, column 53 in GroupedAccess
+10. Line 177, column 29 to line 178, column 23 in GroupedAccess
+11. Line 177, column 29 to line 177, column 98 in GroupedAccess
+12. Line 177, column 32 to line 177, column 98 in GroupedAccess
+13. Line 44, column 1 to line 48, column 59 in GroupedAccess
+14. Line 162, column 5 to line 167, column 62 in SetTransactions
+15. Line 162, column 8 to line 162, column 22 in SetTransactions
+16. Line 163, column 8 to line 165, column 62 in SetTransactions
+17. Line 166, column 8 to line 166, column 48 in SetTransactions
+18. Line 167, column 8 to line 167, column 62 in SetTransactions
+19. Line 167, column 18 to line 167, column 62 in SetTransactions
+20. Line 167, column 20 to line 167, column 20 in SetTransactions
+21. Line 167, column 22 to line 167, column 31 in SetTransactions
+22. Line 9, column 15 to line 10, column 99 in SetTransactions
+23. Line 9, column 17 to line 9, column 24 in SetTransactions
+24. Line 45, column 17 to line 45, column 32 in GroupedAccess
+25. Line 45, column 24 to line 45, column 32 in GroupedAccess
+26. Line 45, column 24 to line 45, column 26 in GroupedAccess
+
+
+5276 states generated, 5276 distinct states found, 5275 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/groups-parsed/states/GroupQueuedSet/26-09-08-20-42-52
+Checkpointing completed at (2026-09-08 20:42:55)
+Finished in 02s at (2026-09-08 20:42:55)

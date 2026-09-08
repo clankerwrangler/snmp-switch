@@ -1,8 +1,26 @@
 # Implementation validation
 
-## Current ENTITY and SET checks
+## Current users and groups checks
 
-Executed locally on 2026-09-08 with the pinned Python 3.12 environment and PySNMP 7.1.29:
+Executed locally on 2026-09-08 with the pinned Python 3.12 environment and unchanged PySNMP 7.1.29:
+
+| Check | Actual result |
+|---|---|
+| API, engine, MIB, dispatcher/lifetime, and storage recovery | 734 passed; one real-listener API case excluded; 150 upstream warnings; 107.98 s |
+| Network boundary | AF_INET/AF_INET6 creation prohibited; zero attempted network sockets |
+| Stock-USM normal profile matrix | All nine suite/requested-level cases checked: three matching profiles accepted; six mismatches rejected with counter increments; three actual unsupported-level REPORTs decoded |
+| UI build | TypeScript 5.9.3 and Vite 7.1.12 passed; CSS and third-party notices unchanged |
+| Actual headless Chromium browser | Passed in 24.427 s; desktop/mobile layouts; no screenshots or page errors |
+
+The implementation checks cover encrypted schema loading, independent community/group permissions, sparse saves, explicit protocol-conversion intent, atomic rejection and SQLite rollback, shared-group generation changes, queued ABA revocation, and unchanged response/storage owners. The original lower-level-USM probe failed three cases; it remains failed evidence. The selected product behavior retains stock USM protection requirements and applies group minimum only after actual security-model acceptance.
+
+The browser exercised the single Access form, all four modes, hidden drafts, shared users/groups, profile mismatch, explicit conversion choices, missing views, literal labels, validation/revision errors, one listener status, and the exact Switch Lab title. Existing trap, endpoint-disconnect, VLAN, authentication, and mobile flows also passed. Its synthetic instance kept identity unset and SNMP disabled, used prebound ephemeral loopback HTTP and exact-origin requests, then closed its processes/socket and removed its database/key.
+
+The focused grouped-access models ran before implementation; the [formal report](../specification/CURRENT_VERIFICATION.md) records separate checkpoints and corrections, not a combined 51-config run. Independent wire/Net-SNMP fixtures are prepared for the existing Docker CI and have not been executed for this change locally.
+
+## Recorded ENTITY and SET checks
+
+These measurements describe the earlier ENTITY/SET implementation, before the users/groups change. Executed locally on 2026-09-08 with the pinned Python 3.12 environment and PySNMP 7.1.29:
 
 | Check | Actual result |
 |---|---|

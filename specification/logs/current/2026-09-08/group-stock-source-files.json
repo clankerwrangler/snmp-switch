@@ -1,0 +1,19 @@
+{
+  "candidate_root": "/workspace/.scratch/snmp-switch-formal/group-access-candidate",
+  "canonical_root": "/workspace/snmp-switch/specification",
+  "files": [
+    {
+      "path": "GroupedAccess.tla",
+      "bytes": 12644,
+      "sha256": "19d8255bfe102a18d2cf047496c866f7a19fad248c0ecffc1047221a5ab15ad6",
+      "old_sha256": "6a8df0c3ff6eb4766c7fbaf961fb53cf07036de405e02544564c52b35e17e3c3"
+    },
+    {
+      "path": "GroupedAccessScenarios.tla",
+      "bytes": 20082,
+      "sha256": "2144a7e4eaeb697fda1ae46ab6dfa556bfe741fd32adc994ba9f39ae5d6093fa",
+      "old_sha256": "cb269f73d38dc28154e112ad9c95d4bff4f1c597950111235cd05a34640e2892"
+    }
+  ],
+  "total_bytes": 32726
+}
