@@ -1,8 +1,12 @@
 """Numeric, typed MIB projections. No simulation state is mutated by polling."""
 from bisect import bisect_right
+from dataclasses import dataclass
 import time
+import uuid
 
 from pysnmp.proto import rfc1902 as a, rfc1905 as exceptions
+
+from .models import Configuration, Vlan
 
 
 def oid(value):
@@ -10,6 +14,31 @@ def oid(value):
 
 
 CURRENT = oid("1.3.6.1.2.1.17.7.1.4.2.1")
+
+
+ENTITY = oid("1.3.6.1.2.1.47")
+
+
+def octets(value):
+    return a.OctetString(value.encode("utf-8") if isinstance(value, str) else value)
+
+
+def entity_inventory(cfg):
+    """Return the fixed emulated inventory used by projection and change detection."""
+    records = [(1, cfg.switch, cfg.switch.description, 0, 3, -1, None)]
+    records.extend((p.bridge_port + 1, p, "Emulated Ethernet port", 1, 10, p.bridge_port, p.if_index)
+                   for p in sorted(cfg.ports.values(), key=lambda p: p.bridge_port))
+    rows = []
+    for index, record, description, parent, kind, position, if_index in records:
+        try:
+            identity = uuid.UUID(record.id)
+            identifier, uri = identity.bytes, identity.urn
+        except ValueError:
+            identifier, uri = b"", ""
+        columns = {2: description, 3: (0, 0), 4: parent, 5: kind, 6: position, 7: record.name,
+                   **{column: "" for column in range(8, 16)}, 16: 2, 17: bytes(8), 18: uri, 19: identifier}
+        rows.append((index, columns, if_index))
+    return tuple(rows)
 
 
 def port_list(state, predicate):
@@ -51,7 +80,7 @@ class Projection:
                 self.put(oid(prefix)+(col,), index, val)
 
     def build(self):
-        s, I, O, C, G, T, H = self.state, a.Integer32, a.OctetString, a.Counter32, a.Gauge32, a.TimeTicks, a.Counter64
+        s, I, O, C, G, T, H = self.state, a.Integer32, octets, a.Counter32, a.Gauge32, a.TimeTicks, a.Counter64
         sw = s.cfg.switch
         system = [O(sw.identity.sys_descr), a.ObjectIdentifier(sw.identity.sys_object_id) if sw.identity.sys_object_id else None,
                   T(self.ticks), O(sw.contact), O(sw.name), O(sw.location), I(2)]
@@ -96,9 +125,22 @@ class Projection:
         static = []
         for vid, v in s.cfg.vlans.items():
             static.append(((vid,), {1: O(v.name), 2: O(port_list(s, lambda p: vid in p.admitted)),
-                3: O(port_list(s, lambda p: False)), 4: O(port_list(s, lambda p: p.pvid == vid)), 5: I(1)}))
+                3: O(port_list(s, lambda p: vid in p.forbidden)), 4: O(port_list(s, lambda p: vid in p.untagged)), 5: I(1)}))
         self.table("1.3.6.1.2.1.17.7.1.4.3.1", [1,2,3,4,5], static)
         self.bases.update(CURRENT+(i,) for i in range(3,8))
+        physical, aliases, contains = [], [], []
+        for index, columns, if_index in entity_inventory(s.cfg):
+            physical.append(((index,), {column: (a.ObjectIdentifier if column == 3 else
+                             I if column in (4, 5, 6, 16) else O)(value)
+                             for column, value in columns.items()}))
+            if if_index is not None:
+                aliases.append(((index, 0), {2: a.ObjectIdentifier(oid("1.3.6.1.2.1.2.2.1.1") + (if_index,))}))
+                contains.append(((1, index), {1: I(index)}))
+        self.table(ENTITY + (1, 1, 1, 1), range(2, 20), physical)
+        self.table(ENTITY + (1, 3, 2, 1), (2,), aliases)
+        self.table(ENTITY + (1, 3, 3, 1), (1,), contains)
+        self.put(ENTITY + (1, 4, 1), (0,), T(s.entity_last_change))
+
 
     def current(self, cutoff):
         if cutoff in self.filtered:
@@ -111,7 +153,7 @@ class Projection:
             if cutoff and (cutoff > self.ticks or changed < cutoff):
                 continue
             columns = {3: a.Gauge32(v.fdb_id), 4: a.OctetString(port_list(s, lambda p: vid in p.admitted)),
-                       5: a.OctetString(port_list(s, lambda p: p.pvid == vid)), 6: a.Integer32(2), 7: a.TimeTicks(created)}
+                       5: a.OctetString(port_list(s, lambda p: vid in p.untagged)), 6: a.Integer32(2), 7: a.TimeTicks(created)}
             for col, value in columns.items():
                 name = CURRENT + (col, cutoff, vid)
                 if self.allowed(name):
@@ -144,3 +186,223 @@ class Projection:
         if candidate is not None:
             return candidate, filtered[candidate]
         return name, exceptions.endOfMibView
+
+
+# Maximum access and this product's write subset are separate metadata. The
+# descriptor keys are the exact column prefixes; indexes retain their MIB owner.
+WRITE_OBJECTS = {
+    oid("1.3.6.1.2.1.2.2.1.7"): ("admin", a.Integer32.tagSet),
+    oid("1.3.6.1.2.1.17.7.1.4.5.1.1"): ("pvid", a.Gauge32.tagSet),
+    **{oid("1.3.6.1.2.1.17.7.1.4.3.1") + (column,): (kind, syntax.tagSet)
+       for column, kind, syntax in ((1, "name", a.OctetString), (2, "egress", a.OctetString),
+           (3, "forbidden", a.OctetString), (4, "untagged", a.OctetString), (5, "row", a.Integer32))},
+}
+BITMAP_FIELDS = {"egress": "admitted", "untagged": "untagged", "forbidden": "forbidden"}
+
+
+class SetError(Exception):
+    def __init__(self, status, index):
+        self.status, self.index = status, index
+        super().__init__(f"{status} at binding {index}")
+
+
+@dataclass(frozen=True)
+class Assignment:
+    index: int
+    kind: str
+    key: int | str
+    value: object
+
+
+@dataclass(frozen=True)
+class SetPlan:
+    before: object
+    candidate: object
+    assignments: tuple
+    creates: frozenset
+    deletes: frozenset
+    affected_ports: frozenset
+    first_effective: int
+
+    @property
+    def changed(self):
+        return self.candidate != self.before
+
+
+def _write_object(name):
+    return next(((base, kind, tag) for base, (kind, tag) in WRITE_OBJECTS.items()
+                 if name[:len(base)] == base), None)
+
+
+def _row_error(exists, vid, value):
+    if value not in (1, 2, 4, 5, 6):
+        return "wrongValue"
+    if (exists and value in (4, 5)) or (not exists and value in (1, 2)):
+        return "inconsistentValue"
+    if value in (2, 5):
+        return "wrongValue"
+    if vid == 1 and value == 6:
+        return "inconsistentValue"
+    return None
+
+
+def plan_set(cfg, bindings, includes):
+    """Validate original positions and return one simultaneous configuration plan.
+
+    Authentication and response-budget checks belong to the adapter. This pure
+    function never changes the caller's configuration or derives runtime effects.
+    """
+    prefixes = tuple(oid(p) for p in includes)
+    original = [(oid(name), value) for name, value in bindings]
+    row_intent = {}
+    # Look ahead only for row intent. Each occurrence still receives all ordinary
+    # checks in its original position, including denied or malformed row commands.
+    # The first occurrence supplies intent; a later duplicate cannot alter it.
+    for name, value in original:
+        descriptor = _write_object(name)
+        if descriptor:
+            base, kind, tag = descriptor
+            if kind == "row" and len(name) == len(base) + 1:
+                row_intent.setdefault(name[-1], int(value) if value.tagSet == tag else None)
+    creates = {vid for vid, value in row_intent.items() if value == 4}
+    destroys = {vid for vid, value in row_intent.items() if value == 6}
+    ports_by_if = {p.if_index: p.id for p in cfg.ports.values()}
+    ports_by_bridge = {p.bridge_port: p.id for p in cfg.ports.values()}
+    assignments, seen = [], {}
+    for index, (name, wire) in enumerate(original, 1):
+        def fail(status):
+            raise SetError(status, index)
+        if not any(name[:len(p)] == p for p in prefixes):
+            fail("noAccess")
+        descriptor = _write_object(name)
+        if descriptor is None:
+            fail("notWritable")
+        base, kind, tag = descriptor
+        if wire.tagSet != tag:
+            fail("wrongType")
+        if kind in ("admin", "pvid", "row"):
+            value = int(wire)
+            if ((kind == "admin" and value not in (1, 2)) or
+                    (kind == "pvid" and not 1 <= value <= 4094) or
+                    (kind == "row" and value not in (1, 2, 4, 5, 6))):
+                fail("wrongValue")
+        elif kind == "name":
+            raw = wire.asOctets()
+            if len(raw) > 32:
+                fail("wrongLength")
+            try:
+                value = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                fail("wrongValue")
+        else:
+            members = set()
+            for offset, octet in enumerate(wire.asOctets()):
+                for bit in range(8):
+                    if octet & (0x80 >> bit):
+                        port = ports_by_bridge.get(offset * 8 + bit + 1)
+                        if port is None:
+                            fail("wrongValue")
+                        members.add(port)
+            value = frozenset(members)
+        if len(name) != len(base) + 1:
+            fail("noCreation")
+        key = name[-1]
+        if kind in ("admin", "pvid"):
+            key = (ports_by_if if kind == "admin" else ports_by_bridge).get(key)
+            if key is None:
+                fail("noCreation")
+        elif not 1 <= key <= 4094:
+            fail("noCreation")
+        if kind == "row":
+            error = _row_error(key in cfg.vlans, key, value)
+            if error:
+                fail(error)
+        elif kind not in ("admin", "pvid"):
+            if key not in cfg.vlans and key not in creates:
+                fail("inconsistentName")
+            if key in destroys:
+                fail("inconsistentValue")
+        prior = seen.get((kind, key))
+        if prior is not None and prior.value != value:
+            fail("inconsistentValue")
+        assignment = Assignment(index, kind, key, value)
+        assignments.append(assignment)
+        seen.setdefault((kind, key), assignment)
+
+    deletes = destroys & cfg.vlans.keys()
+    candidate = cfg.model_copy(deep=True)
+    for vid in deletes:
+        del candidate.vlans[vid]
+    for vid in creates:
+        candidate.vlans[vid] = Vlan(vid=vid, fdb_id=1000 + vid)
+    for pid, port in candidate.ports.items():
+        old = cfg.ports[pid]
+        for field in BITMAP_FIELDS.values():
+            setattr(port, field, [v for v in getattr(old, field) if v not in deletes])
+        if old.pvid in deletes and ("pvid", pid) not in seen:
+            port.pvid = 1
+            if 1 not in port.admitted:
+                port.admitted.append(1)
+            if old.pvid in old.untagged and 1 not in port.untagged:
+                port.untagged.append(1)
+    if candidate.switch.legacy_vlan in deletes:
+        candidate.switch.legacy_vlan = 1
+    effective = []
+    for op in seen.values():
+        kind, key, value = op.kind, op.key, op.value
+        if kind == "admin":
+            candidate.ports[key].admin_up = value == 1
+            changed = (value == 1) != cfg.ports[key].admin_up
+        elif kind == "pvid":
+            candidate.ports[key].pvid = value
+            changed = value != cfg.ports[key].pvid
+        elif kind == "name":
+            candidate.vlans[key].name = value
+            changed = key not in cfg.vlans or value != cfg.vlans[key].name
+        elif kind == "row":
+            changed = value == 4 or (value == 6 and key in cfg.vlans)
+        else:
+            field = BITMAP_FIELDS[kind]
+            changed = value != {p.id for p in cfg.ports.values() if key in getattr(p, field)}
+            for pid, port in candidate.ports.items():
+                memberships = list(getattr(port, field))
+                if pid in value and key not in memberships:
+                    memberships.append(key)
+                elif pid not in value and key in memberships:
+                    memberships.remove(key)
+                setattr(port, field, memberships)
+        if changed:
+            effective.append(op.index)
+
+    conflicts = set()
+    for pid, port in candidate.ports.items():
+        admitted = set(port.admitted)
+        overlap = admitted & set(port.forbidden)
+        missing_tags = set(port.untagged) - admitted
+        missing_pvid = port.pvid not in admitted
+        illegal = overlap | missing_tags | ({port.pvid} if missing_pvid else set())
+        if not illegal:
+            continue
+        for op in assignments:
+            if ((op.kind == "pvid" and op.key == pid and missing_pvid) or
+                (op.kind == "egress" and (op.key in overlap | missing_tags or
+                                         (op.key == port.pvid and missing_pvid))) or
+                (op.kind == "forbidden" and op.key in overlap) or
+                (op.kind == "untagged" and op.key in missing_tags) or
+                (op.kind == "row" and op.value == 6 and op.key == cfg.ports[pid].pvid and
+                 op.key in deletes and ("pvid", pid) not in seen and 1 in illegal)):
+                conflicts.add(op.index)
+    if conflicts:
+        raise SetError("inconsistentValue", min(conflicts))
+    # Existing custom FDB identifiers stay stable. A colliding new static row
+    # cannot be allocated in this fixed independent-FDB profile.
+    for op in assignments:
+        if op.kind == "row" and op.value == 4 and any(
+                v.vid != op.key and v.fdb_id == candidate.vlans[op.key].fdb_id for v in candidate.vlans.values()):
+            raise SetError("resourceUnavailable", op.index)
+    candidate = Configuration.model_validate(candidate.model_dump())
+    fields = ("admin_up", "pvid", "admitted", "untagged", "forbidden")
+    affected = frozenset(pid for pid, p in candidate.ports.items()
+                         if any(getattr(p, f) != getattr(cfg.ports[pid], f) for f in fields))
+    return SetPlan(cfg, candidate, tuple(assignments), frozenset(creates), frozenset(deletes),
+                   affected, min(effective, default=0))

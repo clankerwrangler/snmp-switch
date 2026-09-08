@@ -1,71 +1,68 @@
 #!/usr/bin/env python3
-"""Confirm selected specification defects are rejected by existing TLC checks."""
+"""Require behavioral rejection of deliberate defects, with separate receipts."""
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parents[1]
-MUTATIONS = [
-    (
-        'accept_obsolete_job', 'ScenarioAttachmentABA',
-        'accepted == ValidJob(s, sk, j) /\\ Admitted(s, j.port, j.vlan)',
-        'accepted == CanEmit(s, sk) /\\ Admitted(s, j.port, j.vlan)',
-    ),
-    (
-        'flush_whole_port_on_vlan_edit', 'ScenarioSelectiveAndPvid',
-        'Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members], {}, {p})',
-        '''Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members,
-            !.fdb = [k \\in FdbKeys |->
-                IF s.fdb[k].port = p THEN EmptyEntry ELSE s.fdb[k]]], {}, {p})''',
-    ),
-    (
-        'omit_vlan1_admission_on_fallback', 'ScenarioDeleteFallback',
-        '(IF s.pvid[p] = v THEN {1} ELSE {})', '{}',
-    ),
-]
+sys.path.insert(0, str(ROOT))
+from run_tlc import config_module, input_hashes, sha256
+MUTATIONS = [('accept_obsolete_job', 'ScenarioAttachmentABA', 'Switch.tla', 'accepted == ValidJob(s, sk, j) /\\ Admitted(s, j.port, j.vlan)', 'accepted == CanEmit(s, sk) /\\ Admitted(s, j.port, j.vlan)'), ('flush_whole_port_on_vlan_edit', 'ScenarioSelectiveAndPvid', 'Switch.tla', 'Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members,\n                              !.untagged[p] = tags], {}, {p})', 'Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members,\n                              !.untagged[p] = tags,\n                              !.fdb = [k \\in FdbKeys |-> IF s.fdb[k].port = p THEN EmptyEntry ELSE s.fdb[k]]], {}, {p})'), ('omit_vlan1_admission_on_fallback', 'ScenarioDeleteFallback', 'Switch.tla', '(IF s.pvid[p] = v THEN {1} ELSE {})', '{}'), ('allow_unauthorized_set', 'SetAuthorization', 'SetTransactions.tla', 'ELSE IF ~auth THEN Reject("authorizationError",0)', 'ELSE IF FALSE THEN Reject("authorizationError",0)'), ('publish_failed_set_prefix', 'SetAtomicMixed', 'SetTransactions.tla', 'ELSE IF error.status # "noError" THEN Reject(error.status,error.index)', 'ELSE IF error.status # "noError" THEN\n               /\\ s\' = [s EXCEPT !.admin[P0] = FALSE]\n               /\\ result\' = [status |-> error.status,index |-> error.index] /\\ pending\' = NoPdu\n               /\\ UNCHANGED <<accessvars,registration,gate,activation>>'), ('entity_alias_uses_bridge_port', 'EntityInventory', 'Switch.tla', '[logicalIndex |-> 0, pointer |-> <<"ifIndex", IfIndex[PhysicalPort(i)]>>]]', '[logicalIndex |-> 0, pointer |-> <<"ifIndex", PhysicalPort(i)>>]]')]
 
-def main() -> int:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jar', required=True, type=Path)
+    parser.add_argument('--java', type=Path)
+    parser.add_argument('--output', type=Path, default=ROOT / 'logs' / 'current-mutations')
     args = parser.parse_args()
-    java, jar = shutil.which('java'), args.jar.resolve()
-    if not java or not jar.is_file():
-        parser.error('Java on PATH and an existing --jar are required.')
+    java = str(args.java.resolve()) if args.java else shutil.which('java')
+    jar = args.jar.resolve()
+    if not java or not Path(java).is_file() or not jar.is_file():
+        parser.error('An existing Java executable and --jar are required.')
+    output = args.output.resolve()
+    if output.exists():
+        parser.error('--output must be a new directory; preserve prior evidence.')
+    output.mkdir(parents=True)
+    original_inputs = input_hashes()
     results = []
-    (ROOT/'logs').mkdir(exist_ok=True)
-    original = (ROOT/'Switch.tla').read_text()
-    for name, config, before, after in MUTATIONS:
+    for name, config, module, before, after in MUTATIONS:
+        original = (ROOT / module).read_text()
         if original.count(before) != 1:
             raise RuntimeError(f'{name}: mutation anchor is not unique')
-        with tempfile.TemporaryDirectory(prefix='switch-mutation-') as td:
+        with tempfile.TemporaryDirectory(prefix='switch-mutation-', dir=output) as td:
             work = Path(td)
             for source in ROOT.glob('*.tla'):
-                shutil.copy2(source, work/source.name)
-            (work/'Switch.tla').write_text(original.replace(before, after))
-            shutil.copy2(ROOT/'configs'/f'{config}.cfg', work/'check.cfg')
-            cmd = [java, '-Xmx1g', '-Dutil.ExecutionStatisticsCollector.id=',
-                   '-cp', str(jar), 'tlc2.TLC', '-workers', '1', '-seed', '20260907',
-                   '-fp', '0', '-config', 'check.cfg', 'Scenarios.tla']
+                shutil.copy2(source, work / source.name)
+            (work / module).write_text(original.replace(before, after))
+            cfg = ROOT / 'configs' / f'{config}.cfg'
+            shutil.copy2(cfg, work / 'check.cfg')
+            checked = {p.name: sha256(p) for p in sorted(work.iterdir()) if p.is_file()}
+            cmd = [java, '-Xmx1g', '-Dutil.ExecutionStatisticsCollector.id=', '-cp', str(jar),
+                   'tlc2.TLC', '-workers', '1', '-seed', '20260907', '-fp', '0',
+                   '-config', 'check.cfg', config_module(cfg)]
             try:
                 run = subprocess.run(cmd, cwd=work, text=True, capture_output=True, timeout=60)
-                text = run.stdout + run.stderr
-                # Parse/type errors and timeouts do NOT count as detected behavioral defects.
-                detected = run.returncode != 0 and any(marker in text for marker in
+                text, code = run.stdout + run.stderr, run.returncode
+                detected = code != 0 and any(marker in text for marker in
                     ('is violated', 'Temporal properties were violated'))
-                code = run.returncode
+                status = 'DETECTED' if detected else 'NOT_ESTABLISHED'
             except subprocess.TimeoutExpired:
-                text, detected, code = 'TIMEOUT: no behavioral rejection established.\n', False, None
-            (ROOT/'logs'/f'mutation-{name}.log').write_text(text)
-            result = {'mutation':name, 'scenario':config, 'behavioral_defect_detected':detected,
-                      'returncode':code, 'log':f'logs/mutation-{name}.log'}
-            results.append(result)
-            print(f'{name}: {"DETECTED" if detected else "NOT ESTABLISHED"}', flush=True)
-    (ROOT/'logs'/'mutation-results.json').write_text(json.dumps(results, indent=2)+'\n')
-    return 0 if all(r['behavioral_defect_detected'] for r in results) else 1
-
+                text, code, detected, status = 'TIMEOUT: no behavioral rejection established.\n', None, False, 'TIMEOUT'
+            log = output / f'mutation-{name}.log'
+            log.write_text(text)
+            results.append(dict(mutation=name, configuration=config, status=status,
+                behavioral_defect_detected=detected, returncode=code, command=cmd,
+                checked_input_sha256=checked, log=log.name, log_sha256=sha256(log)))
+            print(f'{name}: {status}', flush=True)
+    summary = dict(status='PASS' if all(r['behavioral_defect_detected'] for r in results) else 'FAIL',
+        jar_sha256=sha256(jar), formal_input_sha256=original_inputs,
+        inputs_unchanged=input_hashes() == original_inputs, results=results)
+    (output / 'verification.json').write_text(json.dumps(summary, indent=2) + '\n')
+    return 0 if summary['status'] == 'PASS' and summary['inputs_unchanged'] else 1
 if __name__ == '__main__':
     raise SystemExit(main())

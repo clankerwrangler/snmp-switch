@@ -19,9 +19,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import Field, ValidationError, create_model, model_validator
 
 from .engine import CommandError, Engine
-from .models import Configuration, Credential, CredentialAuth, PollingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, initial_configuration
+from .models import Configuration, Credential, CredentialAuth, PollingAccess, WritingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, initial_configuration
 from .snmp import SnmpAdapter
-from .storage import Store
+from .storage import Store, StorageFault, RollbackFailed, CommitUncertain
 
 
 class Revision(Record):
@@ -91,9 +91,12 @@ class EndpointCreate(Endpoint, Revision):
 PollingPatch = create_model("PollingPatch", __base__=Record, **{
     k: (PollingAccess.model_fields[k].annotation | None, None) for k in PollingAccess.model_fields
 })
+WritingPatch = create_model("WritingPatch", __base__=Record, **{
+    k: (WritingAccess.model_fields[k].annotation | None, None) for k in WritingAccess.model_fields
+})
 CredentialWrite = create_model("CredentialWrite",
     __base__=patch_model("CredentialFields", Credential, list(Credential.model_fields)),
-    polling=(PollingPatch | None, None))
+    polling=(PollingPatch | None, None), writing=(WritingPatch | None, None))
 class ViewWrite(View, Revision):
     pass
 
@@ -122,59 +125,73 @@ def create_app(store=None, configuration=None):
             if not Path(key_path).is_file():
                 raise RuntimeError("Missing encryption key. Run python scripts/init.py before starting.")
             store = Store(os.environ.get("SWITCHLAB_DB", "data/switch.db"), Path(key_path).read_bytes().strip())
-        saved = store.load()
-        cfg = saved or configuration or initial_configuration(int(os.environ.get("SWITCHLAB_PORT_COUNT", "24")))
-        if saved is None and configuration is None:
-            cfg.snmp = SnmpSettings(host=os.environ.get("SWITCHLAB_SNMP_DEFAULT_HOST") or cfg.snmp.host)
-        if getattr(store, "startup_warning", None):
-            app.state.startup_warning = store.startup_warning
-        # An explicit overlay applies only to a fresh database, never to upgrades.
-        overlay = os.environ.get("SWITCHLAB_CONFIG")
-        if overlay and saved is None:
-            raw = json.loads(Path(overlay).read_text())
-            merged = cfg.model_dump(mode="json")
-            if "identity" in raw:
-                merged["switch"]["identity"].update(raw["identity"])
-            if "snmp" in raw:
-                merged["snmp"].update(raw["snmp"])
-            try:
-                cfg = Configuration.model_validate(merged)
-            except ValidationError:
-                # Repairable identity/setup failure must not make the UI unavailable.
-                app.state.startup_warning = "Invalid startup configuration; SNMP remains disabled. Repair settings."
-        app.state.engine = Engine(cfg, store)
-        app.state.adapter = SnmpAdapter(app.state.engine, store)
-        await app.state.adapter.reconcile()
-        app.state.background_error = None
-
-        async def background():
-            last = time.monotonic()
-            while True:
-                await asyncio.sleep(0.1)
-                now = time.monotonic()
-                elapsed = int((now-last)*1000)
-                last = now
-                try:
-                    if not app.state.engine.state.cfg.paused:
-                        await app.state.engine.execute("advance", {"duration_ms": max(1, min(elapsed, 60000)), "automatic": True})
-                    await app.state.adapter.drain_one()
-                    app.state.background_error = None
-                except Exception:
-                    # Visible diagnostic, no unhandled task death or leaked request data.
-                    app.state.background_error = "Background work failed; check storage and use a smaller simulation step."
-
-        task = asyncio.create_task(background())
+        task = adapter = None
         try:
+            saved = store.load()
+            cfg = saved or configuration or initial_configuration(int(os.environ.get("SWITCHLAB_PORT_COUNT", "24")))
+            if saved is None and configuration is None:
+                cfg.snmp = SnmpSettings(host=os.environ.get("SWITCHLAB_SNMP_DEFAULT_HOST") or cfg.snmp.host)
+            if getattr(store, "startup_warning", None):
+                app.state.startup_warning = store.startup_warning
+            # An explicit overlay applies only to a fresh database, never to upgrades.
+            overlay = os.environ.get("SWITCHLAB_CONFIG")
+            if overlay and saved is None:
+                raw = json.loads(Path(overlay).read_text())
+                merged = cfg.model_dump(mode="json")
+                if "identity" in raw:
+                    merged["switch"]["identity"].update(raw["identity"])
+                if "snmp" in raw:
+                    merged["snmp"].update(raw["snmp"])
+                try:
+                    cfg = Configuration.model_validate(merged)
+                except ValidationError:
+                    # Repairable identity/setup failure must not make the UI unavailable.
+                    app.state.startup_warning = "Invalid startup configuration; SNMP remains disabled. Repair settings."
+            app.state.engine = Engine(cfg, store)
+            adapter = app.state.adapter = SnmpAdapter(app.state.engine, store)
+            await app.state.adapter.reconcile()
+            app.state.background_error = None
+
+            async def background():
+                last = time.monotonic()
+                while True:
+                    await asyncio.sleep(0.1)
+                    now = time.monotonic()
+                    elapsed = int((now-last)*1000)
+                    last = now
+                    try:
+                        if app.state.engine.storage_fault:
+                            continue
+                        if not app.state.engine.state.cfg.paused:
+                            await app.state.engine.execute("advance", {"duration_ms": max(1, min(elapsed, 60000)), "automatic": True})
+                        await app.state.adapter.drain_one()
+                        app.state.background_error = None
+                    except Exception:
+                        # Visible diagnostic, no unhandled task death or leaked request data.
+                        app.state.background_error = "Background work failed; check storage and use a smaller simulation step."
+
+            task = asyncio.create_task(background())
             yield
         finally:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-            app.state.adapter.close()
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            if adapter is not None:
+                adapter.close()
             if owned:
                 store.close()
+                store = None
 
     app = FastAPI(title="Switch Lab API", version="1.0.0", lifespan=lifespan)
+
+    @app.exception_handler(StorageFault)
+    @app.exception_handler(RollbackFailed)
+    @app.exception_handler(CommitUncertain)
+    async def storage_error(request, exc):
+        return JSONResponse({"detail": "Storage is faulted; this process serves its last confirmed snapshot. "
+                             "Writes and trap sends require a successful restart from the saved database.",
+                             "storage_status": app.state.engine.storage_status()}, status_code=503)
 
     @app.exception_handler(CommandError)
     async def command_error(request, exc):
@@ -232,7 +249,7 @@ def create_app(store=None, configuration=None):
     async def auth_status(request: Request):
         session = sessions.get(request.cookies.get("switchlab_session"))
         active = session is not None and session["expires"] > time.monotonic()
-        return {"setup_required": not bool(store.get("admin_hash")), "authenticated": active,
+        return {"setup_required": not bool(store.administrator_hash()), "authenticated": active,
                 "csrf_token": session["csrf"] if active else None}
 
     def issue_session():
@@ -250,13 +267,13 @@ def create_app(store=None, configuration=None):
 
     @app.post("/api/v1/auth/setup")
     async def setup(body: Login):
-        if store.get("admin_hash") or not store.create_administrator(password_hasher.hash(body.password)):
+        if store.administrator_hash() or not store.create_administrator(password_hasher.hash(body.password)):
             raise HTTPException(409, "Administrator already configured")
         return issue_session()
 
     @app.post("/api/v1/auth/login")
     async def login(body: Login):
-        saved = store.get("admin_hash")
+        saved = store.administrator_hash()
         try:
             if saved is None or not password_hasher.verify(saved, body.password):
                 raise HTTPException(401, "Invalid credentials")
@@ -321,7 +338,10 @@ def create_app(store=None, configuration=None):
     @app.get("/api/v1/state")
     async def state():
         return {**app.state.engine.snapshot(), "snmp_status": app.state.adapter.status(),
-                "warning": getattr(app.state, "startup_warning", None) or app.state.background_error}
+                "warning": ("Storage is faulted (" + app.state.engine.storage_fault + "). Showing the last confirmed snapshot; "
+                            "writes and trap sends require a successful restart from the saved database."
+                            if app.state.engine.storage_fault else
+                            getattr(app.state, "startup_warning", None) or app.state.background_error)}
 
     @app.get("/api/v1/snmp/status")
     async def snmp_status():

@@ -25,6 +25,7 @@ async def test_independent_netsnmp_v3(engine,level):
         if level=='authPriv':base+=['-x','AES','-X','fixture-priv-pass']
         address=f'127.0.0.1:{port}'
         assert '1.3.999.123' in await command(*base,address,'1.3.6.1.2.1.1.2.0')
+        assert 'INTEGER: 3' in await command(*base,address,'1.3.6.1.2.1.47.1.1.1.1.5.1')
         await e.execute('switch-edit',{'identity':{'sys_object_id':'2.999.123'}})
         assert '2.999.123' in await command(*base,address,'1.3.6.1.2.1.1.2.0')
         await endpoint(e);await tick(e)
@@ -176,6 +177,18 @@ async def test_shared_v3_credential_polling_and_traps_are_independent(engine, tm
         await a.reconcile()
         assert not a.listening and a.status()['notifications_ready']
         await trap()
+        await e.execute('credential-save', {'id': cid, 'writing': {'enabled': True, 'view_id': 'all'}})
+        await a.reconcile()
+        assert a.listening and a.status()['writing_ready'] and not a.status()['ready']
+        await command('snmpset', *base[1:], '1.3.6.1.2.1.2.2.1.7.101', 'i', '2')
+        assert not next(iter(e.state.cfg.ports.values())).admin_up
+        with pytest.raises(AssertionError, match='Timeout'):
+            await command(*base, oid)
+        await trap()
+        await e.execute('credential-save', {'id': cid, 'writing': {'enabled': False}})
+        await a.reconcile()
+        assert not a.listening and a.status()['notifications_ready']
+        await trap()
         assert e.state.cfg.credentials[cid].polling.view_id == 'interfaces'
     finally:
         if process and process.returncode is None:
@@ -185,4 +198,158 @@ async def test_shared_v3_credential_polling_and_traps_are_independent(engine, tm
             except asyncio.TimeoutError:
                 process.kill()
                 await process.communicate()
+        a.close()
+
+
+@pytest.mark.parametrize("version", ["2c", "3"])
+async def test_entity_inventory_with_independent_netsnmp(engine, version):
+    import re
+    import uuid
+    e = engine
+    credential = {} if version == "2c" else dict(version="3", username="entity-fixture", community=None,
+        security_level="authPriv", auth_key="entity-auth-pass", priv_key="entity-priv-pass")
+    a, port = await start(e, **credential)
+    try:
+        access = ["-v2c", "-c", "fixture-poll"] if version == "2c" else ["-v3", "-u", "entity-fixture",
+            "-l", "authPriv", "-a", "SHA-256", "-A", "entity-auth-pass", "-x", "AES", "-X", "entity-priv-pass"]
+        base = [*access, "-On", "-t", "1", "-r", "1", f"127.0.0.1:{port}"]
+        entity = "1.3.6.1.2.1.47"
+        physical = entity + ".1.1.1.1"
+        expected = {f"{physical}.{column}.{index}" for column in range(2, 20) for index in range(1, 6)}
+        expected |= {f"{entity}.1.3.2.1.2.{index}.0" for index in range(2, 6)}
+        expected |= {f"{entity}.1.3.3.1.1.1.{index}" for index in range(2, 6)}
+        expected.add(entity + ".1.4.1.0")
+        for tool in ("snmpwalk", "snmpbulkwalk"):
+            output = await command(tool, *base, entity)
+            names = [line.split(" = ", 1)[0].lstrip(".") for line in output.splitlines() if " = " in line]
+            assert len(names) == 99 and set(names) == expected, output
+            assert names == sorted(names, key=lambda name: tuple(map(int, name.split("."))))
+        assert "OID: .0.0" in await command("snmpget", *base, physical + ".3.1")
+        assert "INTEGER: -1" in await command("snmpget", *base, physical + ".6.1")
+        assert "OID: .1.3.6.1.2.1.2.2.1.1.101" in await command("snmpget", *base, entity + ".1.3.2.1.2.2.0")
+        for suffix, octets in ((".17.1", bytes(8)), (".19.1", uuid.UUID(e.state.cfg.switch.id).bytes)):
+            output = await command("snmpget", "-Ox", *base, physical + suffix)
+            assert "Hex-STRING:" in output, output
+            assert bytes.fromhex(output.split("Hex-STRING:", 1)[1].strip()) == octets
+        assert uuid.UUID(e.state.cfg.switch.id).urn in await command("snmpget", *base, physical + ".18.1")
+        for before, after in ((physical + ".19.5", entity + ".1.3.2.1.2.2.0"),
+                (entity + ".1.3.2.1.2.5.0", entity + ".1.3.3.1.1.1.2"),
+                (entity + ".1.3.3.1.1.1.5", entity + ".1.4.1.0")):
+            assert (await command("snmpgetnext", *base, before)).split(" = ", 1)[0].lstrip(".") == after
+        # Explicit hex output checks wire UTF-8 independently of host locale.
+        pid = next(iter(e.state.cfg.ports))
+        for text in ("café", "交换机"):
+            await e.execute("switch-edit", {"name": text, "description": text})
+            await e.execute("port-edit", {"id": pid, "patch": {"name": text}})
+            for suffix in (".2.1", ".7.1", ".7.2"):
+                output = await command("snmpget", "-Ox", *base, physical + suffix)
+                assert "Hex-STRING:" in output, output
+                assert bytes.fromhex(output.split("Hex-STRING:", 1)[1].strip()) == text.encode("utf-8")
+        clock = entity + ".1.4.1.0"
+        e.state.boot_start -= 2
+        await e.execute("switch-edit", {"name": "Entity chassis"})
+        changed = await command("snmpget", *base, clock)
+        assert int(re.search(r"Timeticks: \((\d+)\)", changed)[1]) >= 200
+        pid = next(iter(e.state.cfg.ports))
+        await e.execute("port-edit", {"id": pid, "patch": {"alias": "a" * 64}})
+        assert await command("snmpget", *base, clock) == changed
+        cid = next(iter(e.state.cfg.credentials))
+        await e.execute("credential-save", {"id": cid, "polling": {"view_id": "interfaces"}})
+        await a.reconcile()
+        assert "No Such Object" in await command("snmpget", *base, physical + ".7.1")
+        assert "1.3.999.123" in await command("snmpget", *base, "1.3.6.1.2.1.1.2.0")
+    finally:
+        a.close()
+
+
+@pytest.mark.parametrize("level", ["2c", "noAuthNoPriv", "authNoPriv", "authPriv"])
+async def test_independent_netsnmp_set_vlan_admin_permissions_and_restart(engine, level):
+    e = engine
+    credential = {} if level == "2c" else dict(version="3", username="set-fixture", community=None,
+        security_level=level, auth_key="set-auth-pass", priv_key="set-priv-pass")
+    a, port = await start(e, **credential)
+    try:
+        access = ["-v2c", "-c", "fixture-poll"] if level == "2c" else ["-v3", "-u", "set-fixture", "-l", level]
+        if level in ("authNoPriv", "authPriv"):
+            access += ["-a", "SHA-256", "-A", "set-auth-pass"]
+        if level == "authPriv":
+            access += ["-x", "AES", "-X", "set-priv-pass"]
+        base = [*access, "-On", "-t", "1", "-r", "0", f"127.0.0.1:{port}"]
+        admin = "1.3.6.1.2.1.2.2.1.7.101"
+        static = "1.3.6.1.2.1.17.7.1.4.3.1"
+        pvid = "1.3.6.1.2.1.17.7.1.4.5.1.1.1"
+        cid = next(iter(e.state.cfg.credentials))
+        pid = next(iter(e.state.cfg.ports))
+        before = e.state
+        with pytest.raises(AssertionError, match="authorizationError"):
+            await command("snmpset", *base, admin, "i", "2")
+        assert e.state is before
+        await e.execute("credential-save", {"id": cid, "writing": {
+            "enabled": True, "view_id": "all", "networks": ["127.0.0.0/8"]}})
+        await a.reconcile()
+        eid = await endpoint(e)
+        await tick(e)
+        assert e.state.fdb
+        await command("snmpset", *base, admin, "i", "2")
+        assert not e.state.fdb and not e.state.cfg.ports[pid].admin_up
+        assert "INTEGER: 2" in await command("snmpget", *base, "1.3.6.1.2.1.2.2.1.8.101")
+        await command("snmpset", *base, admin, "i", "1")
+        created = await command("snmpset", *base,
+            static + ".5.10", "i", "4", static + ".1.10", "s", "研发",
+            static + ".2.10", "x", "80", static + ".4.10", "x", "80",
+            static + ".3.10", "x", "40", pvid, "u", "10")
+        assert "INTEGER: 4" in created  # Echoed command, not the persisted active status.
+        assert "INTEGER: 1" in await command("snmpget", *base, static + ".5.10")
+        name = await command("snmpget", "-Ox", *base, static + ".1.10")
+        assert bytes.fromhex(name.split("Hex-STRING:", 1)[1].strip()) == "研发".encode()
+        p = e.state.cfg.ports[pid]
+        assert p.pvid == 10 and set(p.untagged) == {1, 10} and set(p.admitted) == {1, 10}
+        assert e.state.cfg.ports[list(e.state.cfg.ports)[1]].forbidden == [10]
+        await tick(e)
+        assert any(row["vid"] == 10 for row in e.state.fdb.values())
+        await command("snmpset", *base, pvid, "u", "1")
+        assert set(e.state.cfg.ports[pid].untagged) == {1, 10}  # Raw PVID is ingress only.
+        await command("snmpset", *base, static + ".4.10", "s", "", static + ".2.10", "x", "00",
+                      static + ".3.10", "x", "80")
+        assert e.state.cfg.ports[pid].untagged == [1] and e.state.cfg.ports[pid].forbidden == [10]
+        assert not any(row["vid"] == 10 for row in e.state.fdb.values())
+        bad_cases = [
+            ("1.3.6.1.2.1.2.2.1.8.101", "i", "2", "notWritable"),
+            (pvid, "i", "1", "wrongType"), (admin, "i", "3", "wrongValue"),
+            (static + ".1.10", "s", "x" * 33, "wrongLength"),
+            (static + ".2.10", "x", "08", "wrongValue"),
+            ("1.3.6.1.2.1.2.2.1.7.999", "i", "1", "noCreation"),
+            (static + ".1.20", "s", "Absent", "inconsistentName"),
+            (static + ".5.1", "i", "6", "inconsistentValue"),
+        ]
+        for name, syntax, value, status in bad_cases:
+            before = e.state
+            with pytest.raises(AssertionError) as failure:
+                await command("snmpset", *base, "1.3.6.1.2.1.2.2.1.7.102", "i", "1",
+                              name, syntax, value, static + ".1.1", "s", "Not committed")
+            assert status in str(failure.value) and "Failed object: ." + name in str(failure.value)
+            assert e.state is before and e.store.load() == before.cfg
+        identity, boots, saved = a.engine_id, a.boots, e.state.cfg.model_dump()
+        await e.execute("reboot")
+        await a.reboot()
+        assert a.engine_id == identity and a.boots == boots + 1
+        assert e.state.cfg.model_dump() == saved and eid in e.state.cfg.endpoints
+        assert "Gauge32: 1" in await command("snmpget", *base, pvid)
+        await command("snmpset", *base, static + ".5.10", "i", "6")
+        assert 10 not in e.state.cfg.vlans and not e.state.cfg.ports[pid].forbidden
+        await command("snmpset", *base, static + ".5.20", "i", "4", static + ".2.20", "x", "80",
+                      static + ".4.20", "x", "80", pvid, "u", "20")
+        await command("snmpset", *base, static + ".5.20", "i", "6")
+        assert e.state.cfg.ports[pid].pvid == 1 and e.state.cfg.ports[pid].untagged == [1]
+        await e.execute("credential-save", {"id": cid, "polling": {"enabled": False}})
+        await a.reconcile()
+        assert a.listening and a.status()["writing_ready"] and not a.status()["ready"]
+        with pytest.raises(AssertionError, match="Timeout"):
+            await command("snmpget", *base, admin)
+        await command("snmpset", *base, admin, "i", "2")
+        assert not e.state.cfg.ports[pid].admin_up
+        await e.execute("credential-save", {"id": cid, "writing": {"enabled": False}})
+        await a.reconcile()
+        assert not a.listening
+    finally:
         a.close()

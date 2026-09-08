@@ -1,0 +1,7 @@
+usage: run_tlc.py [-h] --jar JAR [--java JAVA] [--models [MODELS ...]]
+                  [--timeout TIMEOUT] [--batch-timeout BATCH_TIMEOUT]
+                  [--heap HEAP] [--output OUTPUT]
+                  [--checkpoint-minutes CHECKPOINT_MINUTES]
+                  [--max-state-mib MAX_STATE_MIB]
+                  [--min-free-mib MIN_FREE_MIB]
+run_tlc.py: error: Normal suite requires replacement configs: SetTransactionsEquality

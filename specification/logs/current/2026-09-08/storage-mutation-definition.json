@@ -1,0 +1,10 @@
+{
+  "name": "continue_after_unconfirmed_commit",
+  "source": "StorageOutcomes.tla",
+  "before": "CommitAllowed == Gate",
+  "after": "CommitAllowed == store.open /\\ store.health # \"rollbackFailed\"",
+  "correct_sha256": "1d149f16d4aa55c5b1ea2bd3bb47502cdda76ec525a80747456e6cf1f7d0023a",
+  "mutant_sha256": "13942d3094dc1869ab64787a0356a90f9b73a60df0b703404174d368ffa1b12a",
+  "config_sha256": "21beea58636eb6b564d28f2ef52e6a97a76da7bbba35abadf634ed45fb206c66",
+  "expected": "A primary-field COMMIT succeeds without publication; later secondary edit from stale published Runtime overwrites durable primary. Configuration and assertions remain unchanged."
+}

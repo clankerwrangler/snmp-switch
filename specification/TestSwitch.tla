@@ -1,6 +1,9 @@
 --------------------------- MODULE TestSwitch ---------------------------
 EXTENDS Switch
 
+SparsePorts == <<1, 65535>>
+SparseIndices == [p \in Ports |-> IF p = 1 THEN 2147483647 ELSE 7]
+
 OrderedPorts == [i \in 1..Cardinality(Ports) |-> i]
 Indices == [p \in Ports |-> 100 + p]
 FdbMap == [v \in VLANs |-> 1000 + v]

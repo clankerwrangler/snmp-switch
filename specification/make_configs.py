@@ -36,7 +36,7 @@ def constants(ports, endpoints, slots, macs, vlans, queue=2):
 '''
 def main():
     for name,(spec,ps,es,slots,ms,vs,q) in CASES.items():
-        text = f'SPECIFICATION {spec}\n' + constants(ps,es,slots,ms,vs,q)
+        text = f'\\* TLC_MODULE TestSwitch\nSPECIFICATION {spec}\n' + constants(ps,es,slots,ms,vs,q)
         text += 'INVARIANTS TypeOK InventoryOK FdbOK JobsOK MibOK TrapsOK\n'
         text += 'PROPERTIES LearningHasSource StaleJobCannotCommit\n'
         if name == 'ActiveLiveness': text += 'PROPERTY StableSourcesProgress\n'

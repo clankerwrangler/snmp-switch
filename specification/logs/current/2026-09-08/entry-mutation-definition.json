@@ -1,0 +1,9 @@
+{
+  "name": "late_capture_reused_security",
+  "source": "SetResponseLifecycle.tla",
+  "before": "EntryCleanupView(x) == EntryCaptured(x)",
+  "after": "EntryCleanupView(x) == IF x.security = NoEntry THEN EntryCaptured(x)\n    ELSE [EntryCaptured(x) EXCEPT !.ticket.security = x.security]",
+  "correct_sha256": "dd21ffbd86e68384f83985c4aa75df9d0981297e4f8198ef64d1e299212d5914",
+  "mutant_sha256": "aa638e1a0367240e12c62205606cfa414a414e1f9414029b18774dba6a3178d2",
+  "config_sha256": "5f5c1b53cef519ea36c5d52ed8e09fbbe763f29d17f4d58c1ab46bf53f2e0163"
+}

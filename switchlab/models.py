@@ -93,7 +93,17 @@ class Port(Record):
     mtu: int = Field(default=1500, ge=64, le=9216)
     pvid: int = Field(default=1, ge=1, le=4094)
     admitted: list[int] = Field(default_factory=lambda: [1], max_length=4094)
+    untagged: list[int] = Field(default_factory=lambda: [1], max_length=4094)
+    forbidden: list[int] = Field(default_factory=list, max_length=4094)
     link_notifications: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def native_default(cls, value):
+        # Saved ports without independent egress settings retain their native VLAN.
+        if isinstance(value, dict) and "untagged" not in value:
+            return {**value, "untagged": [value.get("pvid", 1)]}
+        return value
 
 
 class Vlan(Record):
@@ -167,6 +177,10 @@ class PollingAccess(Record):
         return [str(ipaddress.ip_network(v, strict=False)) for v in values]
 
 
+class WritingAccess(PollingAccess):
+    view_id: str | None = None
+
+
 class CredentialAuth(Record):
     label: str = Field(max_length=80)
     version: Literal["2c", "3"] = "2c"
@@ -196,6 +210,7 @@ class Credential(CredentialAuth):
     id: str = Field(default_factory=uid)
     enabled: bool = True
     polling: PollingAccess = Field(default_factory=PollingAccess)
+    writing: WritingAccess = Field(default_factory=WritingAccess)
 
 
 class Target(Record):
@@ -254,6 +269,8 @@ class Configuration(Record):
         for credential in credentials.values():
             if not isinstance(credential, dict) or "polling" in credential:
                 raise ValueError("Schema 1 credentials cannot contain schema 2 polling access")
+            if "writing" in credential:
+                raise ValueError("Schema 1 credentials cannot contain SET access")
             if credential.get("purpose", "polling") not in ("polling", "notification"):
                 raise ValueError("Invalid schema 1 credential purpose")
         for target in targets.values():
@@ -288,8 +305,14 @@ class Configuration(Record):
         for key, p in self.ports.items():
             if key != p.id or p.pvid not in p.admitted or not set(p.admitted) <= set(self.vlans):
                 raise ValueError("Every PVID must be admitted; all memberships must exist")
-            if len(p.admitted) != len(set(p.admitted)):
-                raise ValueError("Duplicate VLAN membership")
+            for field in ("admitted", "untagged", "forbidden"):
+                memberships = getattr(p, field)
+                if len(memberships) != len(set(memberships)):
+                    raise ValueError("Duplicate VLAN membership")
+                if not set(memberships) <= set(self.vlans):
+                    raise ValueError("All VLAN memberships must exist")
+            if not set(p.untagged) <= set(p.admitted) or set(p.forbidden) & set(p.admitted):
+                raise ValueError("Untagged VLANs must be admitted; forbidden VLANs cannot be admitted")
             if p.mode == "direct" and list(self.attachments.values()).count(key) > 1:
                 raise ValueError("Direct ports accept one endpoint")
         if any(k != e.id for k, e in self.endpoints.items()) or any(k != v.vid for k, v in self.vlans.items()):
@@ -299,6 +322,8 @@ class Configuration(Record):
         for c in self.credentials.values():
             if c.polling.enabled and c.polling.view_id not in self.views:
                 raise ValueError("Unknown read view")
+            if c.writing.enabled and c.writing.view_id not in self.views:
+                raise ValueError("Select an existing SET view")
         users = [(c.version, c.username if c.version == "3" else c.community) for c in self.credentials.values() if c.enabled]
         if len(users) != len(set(users)):
             raise ValueError("Enabled communities and usernames must be unique")
