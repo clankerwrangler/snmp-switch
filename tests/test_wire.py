@@ -86,7 +86,7 @@ async def test_independent_view_cidr_unknown_rotation_and_gate(engine):
 
 
 async def test_independent_v3_discovery_noauth(engine):
-    a,port=await start(engine,version='3',username='fixture-noauth',community=None)
+    a,port=await start(engine,version='3',username='fixture-noauth',security_level='noAuthNoPriv',community=None)
     try:
         value=await client(port,V3('fixture-noauth')).get(OID('1.3.6.1.2.1.1.2.0'))
         assert str(value)=='1.3.999.123'
