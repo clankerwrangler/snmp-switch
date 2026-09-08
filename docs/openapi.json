@@ -45,7 +45,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Setup"
+                "$ref": "#/components/schemas/Login"
               }
             }
           },
@@ -2446,28 +2446,6 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Revision"
-      },
-      "Setup": {
-        "properties": {
-          "password": {
-            "type": "string",
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Password"
-          },
-          "setup_token": {
-            "type": "string",
-            "maxLength": 256,
-            "title": "Setup Token"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "password",
-          "setup_token"
-        ],
-        "title": "Setup"
       },
       "SnmpPatch": {
         "properties": {

@@ -72,7 +72,7 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
         with opener.open(base + asset, timeout=3) as response:
             assert response.status == 200 and response.read()
     api("/api/v1/state", expected=401)
-    setup = {"setup_token": "lan-fixture-token", "password": "lan-fixture-password"}
+    setup = {"password": "lan-fixture-password"}
     fresh = api("/api/v1/auth/status")["setup_required"]
     if fresh:
         api("/api/v1/auth/setup", "POST", setup, expected=403, origin="http://other-host.invalid")
@@ -115,7 +115,8 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
     assert state["snmp"]["port"] == snmp_port
     if fresh:
         credential = command("/snmp/credentials", {
-            "label": "LAN fixture", "community": "lan-fixture-community"})["id"]
+            "label": "LAN fixture", "community": "lan-fixture-community",
+            "networks": ["127.0.0.0/8", "::1/128"]})["id"]
     else:
         assert len(state["credentials"]) == 1
         credential = next(iter(state["credentials"]))
@@ -126,7 +127,12 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
     polling(False)
     command("/switch", {"identity": {"sys_object_id": "2.999.123"}}, "PATCH")
     assert api("/api/v1/snmp/status")["ready"]
-    polling(False)  # The credential still allows only loopback sources.
+    polling(False)  # The credential explicitly allows only loopback sources.
+    command(f"/snmp/credentials/{credential}", {"networks": []}, "PUT")
+    assert api("/api/v1/state")["credentials"][credential]["networks"] == []
+    polling(True)
+    command(f"/snmp/credentials/{credential}", {"networks": ["127.0.0.0/8"]}, "PUT")
+    polling(False)
     command(f"/snmp/credentials/{credential}", {"networks": [subnet]}, "PUT")
     polling(True)
     command("/snmp/settings", {"host": "127.0.0.1"}, "PATCH")
@@ -153,7 +159,7 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
     print(json.dumps({"non_loopback_http_and_assets": "passed", "session_login_logout": "passed",
         "same_origin_csrf": "passed", "cross_origin_and_missing_csrf_rejected": "passed",
         "snmp_identity_gate": "passed", "snmp_loopback_and_lan_listener": "passed",
-        "snmp_source_cidr_allow_and_revoke": "passed"}))
+        "snmp_source_cidr_allow_and_revoke": "passed", "snmp_empty_networks_allow_non_loopback": "passed"}))
 
 
 def check_compose():
@@ -180,7 +186,6 @@ def check_compose():
             (fixture / "empty.env").write_text("")
             override = fixture / "fixture.json"
             override.write_text(json.dumps({
-                "services": {"switchlab": {"environment": {"SWITCHLAB_SETUP_TOKEN": "lan-fixture-token"}}},
                 "networks": {"default": {"external": True, "name": network_name}}}))
             compose_args = ["docker", "compose", "--project-name", project,
                 "--project-directory", str(fixture), "--env-file", str(fixture / "empty.env"),

@@ -1,7 +1,6 @@
-"""Create the separately mounted encryption key and one-time setup token."""
+"""Create the separately mounted configuration encryption key."""
 import argparse
 import os
-import secrets
 from pathlib import Path
 from cryptography.fernet import Fernet
 
@@ -19,7 +18,7 @@ if not path.exists():
         stream.write(Fernet.generate_key())
     if args.docker:
         path.chmod(0o444)
-    print(f"Created {path}. Keep this key outside the data volume and back it up securely.")
+    print(f"Created {path}. This key decrypts the saved configuration.")
 else:
     print(f"Preserved existing key: {path}")
-print("Start the app. Its first-run console output contains the administrator setup token.")
+print("Start the app and create the administrator password in the web interface.")

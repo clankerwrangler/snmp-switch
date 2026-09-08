@@ -75,10 +75,6 @@ class Login(Record):
     password: str = Field(min_length=1, max_length=1024, repr=False)
 
 
-class Setup(Login):
-    setup_token: str = Field(max_length=256, repr=False)
-
-
 def patch_model(name, model, fields):
     return create_model(name, __base__=Revision, **{k: (model.model_fields[k].annotation | None, None) for k in fields})
 
@@ -133,11 +129,6 @@ def create_app(store=None, configuration=None):
                 app.state.startup_warning = "Invalid startup configuration; SNMP remains disabled. Repair settings."
         app.state.engine = Engine(cfg, store)
         app.state.adapter = SnmpAdapter(app.state.engine, store)
-        if not store.get("admin_hash") and not store.get("setup_token"):
-            token = os.environ.get("SWITCHLAB_SETUP_TOKEN") or secrets.token_urlsafe(24)
-            with store.db:
-                store.put("setup_token", token)
-            print("Switch Lab administrator setup token: " + token, flush=True)
         await app.state.adapter.reconcile()
         app.state.background_error = None
 
@@ -243,16 +234,9 @@ def create_app(store=None, configuration=None):
         return response
 
     @app.post("/api/v1/auth/setup")
-    async def setup(body: Setup):
-        if store.get("admin_hash"):
+    async def setup(body: Login):
+        if store.get("admin_hash") or not store.create_administrator(password_hasher.hash(body.password)):
             raise HTTPException(409, "Administrator already configured")
-        if not secrets.compare_digest(body.setup_token, store.get("setup_token", "")):
-            raise HTTPException(403, "Invalid setup token")
-        if len(body.password) < 12:
-            raise HTTPException(422, "Use a password of at least 12 characters")
-        with store.db:
-            store.put("admin_hash", password_hasher.hash(body.password))
-            store.put("setup_token", None)
         return issue_session()
 
     @app.post("/api/v1/auth/login")

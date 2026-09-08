@@ -232,9 +232,17 @@ class Engine:
     def snapshot(self):
         s = self.state
         data = s.cfg.model_dump(mode="json")
-        data["credentials"] = {k: {**{f: v for f, v in c.items() if f not in ("community", "auth_key", "priv_key")},
-                                     "has_community": bool(c["community"]), "has_auth_key": bool(c["auth_key"]), "has_priv_key": bool(c["priv_key"])}
-                               for k, c in data["credentials"].items()}
+        for c in data["credentials"].values():
+            community, auth_key, priv_key = (c.pop(k) for k in ("community", "auth_key", "priv_key"))
+            if c["version"] == "2c":
+                c.pop("username")
+                c.pop("security_level")
+                c["has_community"] = bool(community)
+            else:
+                if c["security_level"] != "noAuthNoPriv":
+                    c["has_auth_key"] = bool(auth_key)
+                if c["security_level"] == "authPriv":
+                    c["has_priv_key"] = bool(priv_key)
         data.update(revision=s.revision, configuration_revision=s.configuration_revision, simulation_ms=s.sim_ms, uptime=s.uptime(), epoch=s.epoch,
                     fdb=[dict(r, remaining_ms=max(0, r["expires_at_ms"] - s.sim_ms)) for r in s.fdb.values()],
                     counters=dict(learning_discards=s.learned_discards, notification_drops=s.notification_drops, vlan_deletes=s.vlan_deletes),
@@ -457,7 +465,22 @@ class Engine:
         elif action in ("credential-save", "view-save", "target-save"):
             cls, collection = {"credential-save": (Credential, cfg.credentials), "view-save": (View, cfg.views), "target-save": (Target, cfg.targets)}[action]
             previous = collection.get(d.get("id"))
-            obj = cls.model_validate({**(previous.model_dump() if previous else {}), **d})
+            saved = previous.model_dump() if previous else {}
+            fields = dict(d)
+            if action == "credential-save":
+                version = fields.get("version", previous.version if previous else "2c")
+                if previous is None or version != previous.version:
+                    for key in ("community", "username", "security_level", "auth_key", "priv_key"):
+                        saved.pop(key, None)
+                    if version == "2c":
+                        fields.update(username="", security_level="noAuthNoPriv", auth_key=None, priv_key=None)
+                    else:
+                        fields["community"] = None
+                else:
+                    for key in ("community", "auth_key", "priv_key"):
+                        if fields.get(key) == "":
+                            fields.pop(key)
+            obj = cls.model_validate({**saved, **fields})
             collection[obj.id] = obj
             s.event(action, resource_id=obj.id)
             return {"id": obj.id}

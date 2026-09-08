@@ -38,7 +38,7 @@ class Responder(cmdrsp.CommandResponderBase):
                      c.enabled and c.purpose == "polling" and
                      ((security_model == 2 and c.version == "2c" and wire_name(c.id) == str(name)) or
                       (security_model == 3 and c.version == "3" and c.username == str(name)))), None)
-        if cred is None or not any(peer in ipaddress.ip_network(n) for n in cred.networks):
+        if cred is None or (cred.networks and not any(peer in ipaddress.ip_network(n) for n in cred.networks)):
             return
         if cred.version == "3" and int(level) < {"noAuthNoPriv": 1, "authNoPriv": 2, "authPriv": 3}[cred.security_level]:
             return

@@ -12,17 +12,15 @@ From this directory, create the encryption key once:
 # Windows PowerShell
 .\scripts\init-key.ps1
 docker compose up --build -d
-docker compose logs switchlab
 ```
 
 ```sh
 # Linux/macOS (requires OpenSSL)
 sh scripts/init-key.sh
 docker compose up --build -d
-docker compose logs switchlab
 ```
 
-Open **http://localhost:8000**. Use the setup token printed in the first-run logs to create the administrator password (at least 12 characters). There are no default web or SNMP credentials. The generated key is mounted separately from the database volume. Restoring encrypted configuration requires both the database and its key; losing the key makes it unreadable.
+Open **http://localhost:8000** and create the administrator password. Any nonempty password up to 1,024 characters is accepted. The setup form is available only until the administrator is created; subsequent access uses that password. There are no default web or SNMP credentials. The generated key is mounted separately from the database volume. Restoring encrypted configuration requires both the database and its key; losing the key makes it unreadable.
 
 The default Compose ports are bound to localhost. The container runs as UID 10001 with all capabilities dropped, a read-only root filesystem, and no host Docker socket. Compose sets `net.ipv4.ip_unprivileged_port_start=161` in the container’s private network namespace so this process can bind UDP 161 without additional capabilities. The host setting is unchanged. Each deployment uses one backend process/worker.
 
@@ -79,7 +77,9 @@ snmpget -v3 -u "$SNMP_USER" -l authPriv -a SHA-256 -A "$AUTH_PASS" \
 
 To use another query port, set the listener port in **SNMP & settings**, set the same `SWITCHLAB_SNMP_PORT` value in `.env`, and run `docker compose up -d`. Compose uses that port on both sides; an unset or empty value uses 161. The saved listener configuration is managed through the UI and is not overwritten by this Compose option.
 
-Each polling credential has allowed source CIDRs, initially limited to loopback networks. For LAN polling, add the manager's address, such as `192.168.1.20/32`, or a subnet to that credential and poll the host LAN address on UDP 161 (or the selected query port). Requests from sources outside the credential's CIDRs are rejected. Docker NAT may change the source address seen by the agent.
+Credential forms and redacted API responses show only the selected SNMP version's settings. Blank secret fields retain saved secrets on same-version edits. Changing between v2c and v3 requires the new version's credentials and clears the old version's fields.
+
+Source-IP restrictions are optional. New credentials have an empty allowed-networks list, which accepts requests from any source IP. A nonempty list restricts requests to those CIDRs, such as `192.168.1.20/32`; requests outside the list are rejected. Saved lists remain unchanged until edited or cleared. For LAN polling, managers use the host LAN address on UDP 161 (or the selected query port). Docker NAT may change the source address seen by the agent.
 
 Traps are outbound notifications to the configured receiver, normally on UDP 162. Switch Lab does not receive traps, so Compose has no inbound UDP 162 mapping. Delivery and the source address seen by the receiver depend on container networking and routing.
 
@@ -133,7 +133,6 @@ Environment options:
 | `SWITCHLAB_DB` | `data/switch.db` | Persistent SQLite file |
 | `SWITCHLAB_KEY_FILE` | `secrets/config.key` | Separately stored Fernet key |
 | `SWITCHLAB_PORT_COUNT` | `24` | Initial fixed port count, 1–256 |
-| `SWITCHLAB_SETUP_TOKEN` | Random on first boot | Optional explicit bootstrap token; separate from the administrator password |
 | `SWITCHLAB_SECURE_COOKIES` | Unset natively; `0` in Compose | Set `1` to add the Secure cookie attribute (requires HTTPS) |
 | `SWITCHLAB_BIND_ADDRESS` | `127.0.0.1` | Compose-only host address for published HTTP and SNMP ports |
 | `SWITCHLAB_SNMP_PORT` | `161` | Compose-only SNMP port, equal on host and container; matches the saved listener port |
@@ -204,7 +203,7 @@ node node_modules/vite/bin/vite.js build --configLoader native
 
 The LAN check creates a disposable Docker bridge and binds only to localhost or that bridge's gateway, never to all host interfaces. Containers have ordinary Docker bridge outbound connectivity. The check exercises UDP 161 and an explicit UDP 1161 alternative with equal host/container ports, then verifies a saved-port transition back to 161. The alternative phase also checks host HTTP 8080 forwarded to container TCP 8000. It checks the container-only port permission and nonroot process constraints. It uses temporary fixture data and removes its containers, volume, and network. This verifies Linux Docker networking in the fixture, not a physical LAN, Docker Desktop NAT, or a host firewall configuration.
 
-The native suite skips Net-SNMP tests when its executables are absent; the Docker test image installs them. [Validation report](docs/VALIDATION.md) records actual executed checks and boundaries. `tests/ui-smoke.cjs` exercises a fresh instance using Playwright; set `SWITCHLAB_TEST_URL`, `SWITCHLAB_TEST_TOKEN` and `SWITCHLAB_TEST_PASSWORD`. Use `SWITCHLAB_BROWSER_CHANNEL=msedge` to test installed Edge, or install Playwright's Chromium.
+The native suite skips Net-SNMP tests when its executables are absent; the Docker test image installs them. [Validation report](docs/VALIDATION.md) records actual executed checks and boundaries. `tests/ui-smoke.cjs` exercises a fresh instance using Playwright; set `SWITCHLAB_TEST_URL` and `SWITCHLAB_TEST_PASSWORD`. Use `SWITCHLAB_BROWSER_CHANNEL=msedge` to test installed Edge, or install Playwright's Chromium. `SWITCHLAB_TEST_SCREENSHOTS` selects the browser test's screenshot output directory.
 
 The [technical specification and formal models](specification/) describe the design. The bundled TLC reports cover finite models; they are not proof of this application. NAC-product integration has not been tested.
 

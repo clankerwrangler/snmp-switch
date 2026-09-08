@@ -15,7 +15,7 @@ from pysnmp.hlapi.v3arch.asyncio import SnmpEngine, CommunityData, UdpTransportT
 
 with tempfile.TemporaryDirectory() as root:
     key=Path(root)/'key';key.write_bytes(Fernet.generate_key())
-    env={**os.environ,'SWITCHLAB_KEY_FILE':str(key),'SWITCHLAB_DB':str(Path(root)/'lab.db'),'SWITCHLAB_SETUP_TOKEN':'release-fixture-token'}
+    env={**os.environ,'SWITCHLAB_KEY_FILE':str(key),'SWITCHLAB_DB':str(Path(root)/'lab.db')}
     opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     csrf=''
     def request(route,method='GET',data=None):
@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory() as root:
         return request('/api/v1'+route,method,{**body,'expected_configuration_revision':rev})
     process=launch()
     try:
-        csrf=request('/api/v1/auth/setup','POST',{'setup_token':'release-fixture-token','password':'release-fixture-password'})['csrf_token']
+        csrf=request('/api/v1/auth/setup','POST',{'password':'release-fixture-password'})['csrf_token']
         state=request('/api/v1/state')
         assert state['switch']['identity']['sys_object_id'] is None and not state['snmp_status']['ready']
         assert len(state['ports'])==24

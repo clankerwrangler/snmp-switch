@@ -162,7 +162,7 @@ class Credential(Record):
     purpose: Literal["polling", "notification"] = "polling"
     enabled: bool = True
     view_id: str = "all"
-    networks: list[str] = Field(default_factory=lambda: ["127.0.0.0/8", "::1/128"], max_length=32)
+    networks: list[str] = Field(default_factory=list, max_length=32)
     username: str = Field(default="", max_length=32)
     security_level: Literal["noAuthNoPriv", "authNoPriv", "authPriv"] = "noAuthNoPriv"
     community: str | None = Field(default=None, max_length=255, repr=False)
@@ -172,8 +172,6 @@ class Credential(Record):
     @field_validator("networks")
     @classmethod
     def cidrs(cls, values):
-        if not values:
-            raise ValueError("Provide at least one allowed network")
         return [str(ipaddress.ip_network(v, strict=False)) for v in values]
 
     @model_validator(mode="after")

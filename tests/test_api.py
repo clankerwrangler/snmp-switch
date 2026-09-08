@@ -11,7 +11,7 @@ def session(store):
 
 
 def sign_in(client,store):
-    result=client.post('/api/v1/auth/setup',json={'setup_token':store.get('setup_token'),'password':'fixture-password-123'})
+    result=client.post('/api/v1/auth/setup',json={'password':'fixture-password-123'})
     assert result.status_code==200,result.text
     client.headers['X-CSRF-Token']=result.json()['csrf_token']
 
@@ -206,7 +206,7 @@ def test_lan_origin_session_and_csrf(store, monkeypatch, base_url, secure):
         assert client.get("/").status_code == 200
         assert client.get("/api/v1/state").status_code == 401
         setup = client.post("/api/v1/auth/setup", json={
-            "setup_token": store.get("setup_token"), "password": "fixture-password-123"})
+            "password": "fixture-password-123"})
         assert setup.status_code == 200
         cookie = setup.headers["set-cookie"].lower()
         assert "httponly" in cookie and "samesite=strict" in cookie
@@ -223,3 +223,175 @@ def test_lan_origin_session_and_csrf(store, monkeypatch, base_url, secure):
         assert revision(client) == before
         assert change(client, "/clock/advance", {"duration_ms": 1000}).status_code == 200
         assert client.get("/api/v1/state").json()["simulation_ms"] == 1000
+
+
+@pytest.mark.parametrize("password", ["x", " ", "é"])
+def test_direct_setup_accepts_nonempty_password_and_preserves_login(store, password):
+    with session(store) as c:
+        assert c.get('/api/v1/auth/status').json()['setup_required']
+        result = c.post('/api/v1/auth/setup', json={'password': password})
+        assert result.status_code == 200
+        assert store.get('admin_hash').startswith('$argon2id$')
+        saved = store.get('admin_hash')
+        assert c.post('/api/v1/auth/setup', json={'password': 'replacement'}).status_code == 409
+        assert store.get('admin_hash') == saved
+        c.cookies.clear()
+        assert c.post('/api/v1/auth/login', json={'password': password + 'wrong'}).status_code == 401
+        assert c.post('/api/v1/auth/login', json={'password': password}).status_code == 200
+    with session(store) as c:
+        assert not c.get('/api/v1/auth/status').json()['setup_required']
+        assert c.post('/api/v1/auth/login', json={'password': password}).status_code == 200
+
+
+def test_setup_validation_origin_and_auth_rate_limit(store):
+    with session(store) as c:
+        for password in ('', 'x' * 1025):
+            assert c.post('/api/v1/auth/setup', json={'password': password}).status_code == 422
+        assert c.post('/api/v1/auth/setup', json={'password': 'x'},
+                      headers={'Origin': 'http://other-host.invalid'}).status_code == 403
+        assert store.get('admin_hash') is None
+        assert c.post('/api/v1/auth/setup', json={'password': 'x'}).status_code == 200
+        c.cookies.clear()
+        for _ in range(16):
+            assert c.post('/api/v1/auth/login', json={'password': 'wrong'}).status_code == 401
+        assert c.post('/api/v1/auth/login', json={'password': 'x'}).status_code == 429
+
+
+def test_setup_is_atomic_across_independent_connections(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from argon2 import PasswordHasher
+    from cryptography.fernet import Fernet
+    from switchlab.storage import Store
+
+    path, key = str(tmp_path / 'setup.db'), Fernet.generate_key()
+    stores = [Store(path, key), Store(path, key)]
+    hashes = [PasswordHasher().hash(password) for password in ('a', 'b')]
+    barrier = Barrier(2)
+    try:
+        def create(index):
+            barrier.wait(timeout=5)
+            return stores[index].create_administrator(hashes[index])
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(create, (0, 1)))
+        assert sorted(outcomes) == [False, True]
+        winner = outcomes.index(True)
+        assert stores[0].get('admin_hash') == stores[1].get('admin_hash') == hashes[winner]
+        assert not stores[1 - winner].create_administrator(hashes[1 - winner])
+        assert stores[0].get('admin_hash') == hashes[winner]
+        with session(stores[0]) as c:
+            assert c.post('/api/v1/auth/setup', json={'password': 'replacement'}).status_code == 409
+            assert c.post('/api/v1/auth/login', json={'password': ('a', 'b')[winner]}).status_code == 200
+            assert c.post('/api/v1/auth/login', json={'password': ('b', 'a')[winner]}).status_code == 401
+    finally:
+        for store in stores:
+            store.close()
+
+
+def test_legacy_setup_token_cleanup_preserves_active_data(tmp_path):
+    from cryptography.fernet import Fernet
+    from switchlab.storage import Store
+
+    path, key = str(tmp_path / 'legacy.db'), Fernet.generate_key()
+    store = Store(path, key)
+    with session(store) as c:
+        sign_in(c, store)
+        change(c, '/snmp/credentials', {'label': 'saved', 'community': 'legacy-community',
+                                      'networks': ['127.0.0.0/8', '::1/128']})
+    with store.db:
+        store.put('setup_token', 'obsolete-fixture-token')
+        store.put('unrelated', {'preserved': True})
+    saved_hash = store.db.execute("SELECT value FROM kv WHERE key='admin_hash'").fetchone()[0]
+    saved_config = store.get('configuration')
+    store.close()
+    store = Store(path, key)
+    try:
+        assert store.db.execute("SELECT value FROM kv WHERE key='setup_token'").fetchone() is None
+        assert store.db.execute("SELECT value FROM kv WHERE key='admin_hash'").fetchone()[0] == saved_hash
+        assert store.get('configuration') == saved_config
+        assert store.get('unrelated') == {'preserved': True}
+        with session(store) as c:
+            assert c.post('/api/v1/auth/login', json={'password': 'fixture-password-123'}).status_code == 200
+            assert c.get('/api/v1/state').json()['snmp']['enabled'] is False
+    finally:
+        store.close()
+
+
+def test_optional_networks_and_saved_filters(store):
+    with session(store) as c:
+        sign_in(c, store)
+        created = change(c, '/snmp/credentials', {'label': 'unrestricted', 'community': 'networks-fixture'})
+        assert created.status_code == 200
+        cid = created.json()['id']
+        assert store.load().credentials[cid].networks == []
+        explicit = ['127.0.0.0/8', '::1/128']
+        assert change(c, f'/snmp/credentials/{cid}', {'networks': explicit}, 'PUT').status_code == 200
+        assert change(c, f'/snmp/credentials/{cid}', {'label': 'renamed'}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].networks == explicit
+        before = revision(c)
+        assert change(c, f'/snmp/credentials/{cid}', {'networks': ['']}, 'PUT').status_code == 422
+        assert revision(c) == before and store.load().credentials[cid].networks == explicit
+        assert change(c, f'/snmp/credentials/{cid}', {'networks': []}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].networks == []
+
+
+def test_protocol_fields_redaction_and_explicit_version_change(store):
+    with session(store) as c:
+        sign_in(c, store)
+        created = change(c, '/snmp/credentials', {'label': 'versions', 'community': 'v2-fixture',
+                         'username': 'unused', 'auth_key': 'unused-auth', 'priv_key': 'unused-priv'})
+        assert created.status_code == 200
+        cid = created.json()['id']
+        def public():
+            state = c.get('/api/v1/state').json()['credentials'][cid]
+            assert c.get('/api/v1/snmp/credentials').json()['data'][cid] == state
+            assert not {'community', 'auth_key', 'priv_key'} & state.keys()
+            return state
+        assert public()['has_community']
+        assert not {'username', 'security_level', 'has_auth_key', 'has_priv_key'} & public().keys()
+        saved = store.load().credentials[cid]
+        assert saved.username == '' and saved.auth_key is None and saved.priv_key is None
+        assert change(c, f'/snmp/credentials/{cid}', {'community': '', 'label': 'same version'}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].community == 'v2-fixture'
+        before = revision(c)
+        assert change(c, f'/snmp/credentials/{cid}', {'version': '3'}, 'PUT').status_code == 422
+        assert revision(c) == before
+        v3 = {'version': '3', 'username': 'v3-fixture', 'security_level': 'authPriv',
+              'auth_key': 'auth-fixture', 'priv_key': 'priv-fixture'}
+        assert change(c, f'/snmp/credentials/{cid}', v3, 'PUT').status_code == 200
+        assert 'has_community' not in public() and public()['has_auth_key'] and public()['has_priv_key']
+        assert store.load().credentials[cid].community is None
+        assert change(c, f'/snmp/credentials/{cid}', {'auth_key': '', 'priv_key': '', 'label': 'v3 edit'}, 'PUT').status_code == 200
+        saved = store.load().credentials[cid]
+        assert saved.auth_key == 'auth-fixture' and saved.priv_key == 'priv-fixture'
+        before = revision(c)
+        assert change(c, f'/snmp/credentials/{cid}', {'version': '2c'}, 'PUT').status_code == 422
+        assert revision(c) == before
+        assert change(c, f'/snmp/credentials/{cid}', {'version': '2c', 'community': 'new-v2-fixture'}, 'PUT').status_code == 200
+        saved = store.load().credentials[cid]
+        assert saved.username == '' and saved.security_level == 'noAuthNoPriv'
+        assert saved.auth_key is None and saved.priv_key is None
+        assert not {'username', 'security_level', 'has_auth_key', 'has_priv_key'} & public().keys()
+        assert change(c, f'/snmp/credentials/{cid}', {'version': '3', 'username': 'plain-v3'}, 'PUT').status_code == 200
+        assert not {'has_community', 'has_auth_key', 'has_priv_key'} & public().keys()
+        assert change(c, f'/snmp/credentials/{cid}', {'security_level': 'authNoPriv', 'auth_key': 'short'}, 'PUT').status_code == 422
+        assert change(c, f'/snmp/credentials/{cid}', {'security_level': 'authNoPriv', 'auth_key': 'new-auth-fixture'}, 'PUT').status_code == 200
+        assert public()['has_auth_key'] and 'has_priv_key' not in public()
+
+
+def test_legacy_inactive_fields_stay_inert_until_version_change(store):
+    cfg = initial_configuration(4).model_dump(mode='json')
+    cfg['credentials']['legacy'] = {'id': 'legacy', 'label': 'legacy', 'community': 'legacy-v2',
+        'username': 'hidden-old-user', 'auth_key': 'hidden-old-auth', 'priv_key': 'hidden-old-priv',
+        'networks': ['127.0.0.0/8', '::1/128']}
+    with store.db:
+        store.put('configuration', cfg)
+    with session(store) as c:
+        sign_in(c, store)
+        public = c.get('/api/v1/state').json()['credentials']['legacy']
+        assert 'username' not in public and 'has_auth_key' not in public
+        assert change(c, '/snmp/credentials/legacy', {'label': 'renamed'}, 'PUT').status_code == 200
+        assert store.load().credentials['legacy'].networks == ['127.0.0.0/8', '::1/128']
+        assert store.load().credentials['legacy'].auth_key == 'hidden-old-auth'
+        assert change(c, '/snmp/credentials/legacy', {'version': '3', 'security_level': 'authPriv'}, 'PUT').status_code == 422
+        assert store.load().credentials['legacy'].community == 'legacy-v2'

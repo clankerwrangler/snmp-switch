@@ -95,3 +95,31 @@ async def test_authenticated_notification_with_independent_snmptrapd(engine,tmp_
     finally:
         if process and process.returncode is None:process.kill();await process.wait()
         a.close()
+
+
+async def test_protocol_change_replaces_wire_credentials(engine):
+    e=engine;a,port=await start(e,networks=['127.0.0.0/8'])
+    try:
+        cid=next(iter(e.state.cfg.credentials))
+        address=f'127.0.0.1:{port}'
+        oid='1.3.6.1.2.1.1.2.0'
+        v2=['snmpget','-v2c','-c','fixture-poll','-On','-t','1','-r','0',address,oid]
+        assert '1.3.999.123' in await command(*v2)
+        await e.execute('credential-save',{'id':cid,'version':'3','username':'changed-v3',
+            'security_level':'authPriv','auth_key':'changed-auth-pass','priv_key':'changed-priv-pass'})
+        await a.reconcile()
+        with pytest.raises(AssertionError,match='Timeout'):
+            await command(*v2)
+        v3=['snmpget','-v3','-u','changed-v3','-l','authPriv','-a','SHA-256','-A','changed-auth-pass',
+            '-x','AES','-X','changed-priv-pass','-On','-t','1','-r','0',address,oid]
+        assert '1.3.999.123' in await command(*v3)
+        await e.execute('credential-save',{'id':cid,'label':'same-version edit','auth_key':'','priv_key':''})
+        await a.reconcile()
+        assert '1.3.999.123' in await command(*v3)
+        await e.execute('credential-save',{'id':cid,'version':'2c','community':'changed-v2'})
+        await a.reconcile()
+        with pytest.raises(AssertionError,match='Timeout|Unknown user name'):
+            await command(*v3)
+        assert '1.3.999.123' in await command('snmpget','-v2c','-c','changed-v2','-On','-t','1','-r','0',address,oid)
+        assert e.state.cfg.credentials[cid].networks==['127.0.0.0/8']
+    finally:a.close()

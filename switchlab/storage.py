@@ -22,6 +22,7 @@ class Store:
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.execute("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, data TEXT NOT NULL)")
+        self.db.execute("DELETE FROM kv WHERE key = ?", ("setup_token",))
         self.db.commit()
         self.last_event = self.db.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
 
@@ -31,6 +32,12 @@ class Store:
 
     def put(self, key, value):
         self.db.execute("INSERT OR REPLACE INTO kv VALUES (?, ?)", (key, self.cipher.encrypt(json.dumps(value).encode())))
+
+    def create_administrator(self, password_hash):
+        encrypted = self.cipher.encrypt(json.dumps(password_hash).encode())
+        with self.db:
+            result = self.db.execute("INSERT OR IGNORE INTO kv VALUES (?, ?)", ("admin_hash", encrypted))
+        return result.rowcount == 1
 
     def load(self):
         raw = self.get("configuration")
