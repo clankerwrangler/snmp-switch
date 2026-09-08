@@ -1,4 +1,4 @@
-"""Check canonical Compose bindings on a disposable internal Docker network.
+"""Check canonical Compose bindings on a disposable Docker bridge.
 
 Requires Linux Docker Engine, Compose v2, and prebuilt switchlab:0.1.0 and
 switchlab-test images. Ports 8000/tcp and 1161/udp must be free on localhost.
@@ -137,10 +137,10 @@ def check_compose():
     run("docker", "image", "inspect", "switchlab:0.1.0", "switchlab-test")
     project = "switchlab-lan-" + uuid.uuid4().hex[:12]
     network_name, probe_name = project + "-network", project + "-probe"
-    run("docker", "network", "create", "--internal", network_name)
+    run("docker", "network", "create", "--driver", "bridge", network_name)
     try:
         network = json.loads(run("docker", "network", "inspect", network_name).stdout)[0]
-        assert network["Internal"]
+        assert network["Driver"] == "bridge" and not network["Internal"]
         ipam = next(c for c in network["IPAM"]["Config"] if ":" not in c["Subnet"])
         gateway, subnet = ipam["Gateway"], ipam["Subnet"]
         address = ipaddress.IPv4Address(gateway)

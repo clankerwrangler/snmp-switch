@@ -166,7 +166,7 @@ node node_modules/typescript/bin/tsc --noEmit
 node node_modules/vite/bin/vite.js build --configLoader native
 ```
 
-The LAN check creates a disposable internal Docker network and binds only to localhost or that test network's gateway, never to all host interfaces. It uses temporary fixture data and removes its containers, volume, and network. This verifies isolated Linux Docker networking, not a physical LAN, Docker Desktop NAT, or a host firewall configuration.
+The LAN check creates a disposable Docker bridge and binds only to localhost or that bridge's gateway, never to all host interfaces. Containers have ordinary Docker bridge outbound connectivity. The check uses temporary fixture data and removes its containers, volume, and network. This verifies Linux Docker networking in the fixture, not a physical LAN, Docker Desktop NAT, or a host firewall configuration.
 
 The native suite skips Net-SNMP tests when its executables are absent; the Docker test image installs them. [Validation report](docs/VALIDATION.md) records actual executed checks and boundaries. `tests/ui-smoke.cjs` exercises a fresh instance using Playwright; set `SWITCHLAB_TEST_URL`, `SWITCHLAB_TEST_TOKEN` and `SWITCHLAB_TEST_PASSWORD`. Use `SWITCHLAB_BROWSER_CHANNEL=msedge` to test installed Edge, or install Playwright's Chromium.
 
