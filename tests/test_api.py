@@ -77,6 +77,55 @@ def test_secrets_redacted_encrypted_and_scenario_preserved(store):
         assert revision(c)==before
 
 
+def test_new_snmp_port_and_validation(store):
+    with session(store) as c:
+        sign_in(c,store)
+        assert c.get('/api/v1/state').json()['snmp']['port']==161
+        for port in (1,161,1161,65535):
+            assert change(c,'/snmp/settings',{'port':port},'PATCH').status_code==200
+            assert store.load().snmp.port==port
+        before=revision(c)
+        for port in (0,65536):
+            assert change(c,'/snmp/settings',{'port':port},'PATCH').status_code==422
+            assert revision(c)==before
+        assert c.get('/api/v1/state').json()['snmp']['enabled'] is False
+
+
+@pytest.mark.parametrize('saved_port',[1161,2161])
+def test_saved_snmp_port_and_explicit_standard_port_upgrade(store,saved_port):
+    cfg=initial_configuration(4).model_dump(mode='json')
+    cfg['snmp']['port']=saved_port
+    with store.db:store.put('configuration',cfg)
+    with session(store) as c:
+        sign_in(c,store)
+        assert c.get('/api/v1/state').json()['snmp']['port']==saved_port
+    with session(store) as c:
+        login=c.post('/api/v1/auth/login',json={'password':'fixture-password-123'})
+        assert login.status_code==200
+        c.headers['X-CSRF-Token']=login.json()['csrf_token']
+        assert c.get('/api/v1/state').json()['snmp']['port']==saved_port
+        assert change(c,'/snmp/settings',{'port':161},'PATCH').status_code==200
+        assert store.load().snmp.port==161
+    with session(store) as c:
+        assert c.post('/api/v1/auth/login',json={'password':'fixture-password-123'}).status_code==200
+        snmp=c.get('/api/v1/state').json()['snmp']
+        assert snmp['port']==161 and snmp['enabled'] is False
+
+
+def test_notification_target_default_and_configurable_port(store):
+    with session(store) as c:
+        sign_in(c,store)
+        credential=change(c,'/snmp/credentials',{'label':'trap fixture','purpose':'notification','community':'fixture-traps'})
+        assert credential.status_code==200,credential.text
+        result=change(c,'/notifications/targets',{'address':'127.0.0.1','credential_id':credential.json()['id']})
+        assert result.status_code==200,result.text
+        tid=result.json()['id']
+        assert c.get('/api/v1/state').json()['targets'][tid]['port']==162
+        assert change(c,f'/notifications/targets/{tid}',{'address':'127.0.0.1','credential_id':credential.json()['id'],'port':2162},'PUT').status_code==200
+        assert c.get('/api/v1/state').json()['targets'][tid]['port']==2162
+        assert store.load().targets[tid].port==2162
+
+
 def test_rejected_request_no_effect_and_body_limits(store):
     with session(store) as c:
         sign_in(c,store)

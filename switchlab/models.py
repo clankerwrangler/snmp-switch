@@ -210,7 +210,7 @@ class Target(Record):
 class SnmpSettings(Record):
     enabled: bool = False
     host: str = "127.0.0.1"
-    port: int = Field(default=1161, ge=1024, le=65535)
+    port: int = Field(default=161, ge=1, le=65535)
     max_varbinds: int = Field(default=256, ge=1, le=1000)
 
     @field_validator("host")

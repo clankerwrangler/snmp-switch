@@ -13,7 +13,7 @@ COPY switchlab ./switchlab
 COPY --from=ui /build/switchlab/static ./switchlab/static
 RUN pip install --no-cache-dir . && useradd --uid 10001 --create-home app && mkdir /data && chown app:app /data
 USER 10001:10001
-EXPOSE 8000/tcp 1161/udp
+EXPOSE 8000/tcp 161/udp
 HEALTHCHECK --interval=20s --timeout=3s --start-period=10s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
 CMD ["uvicorn", "switchlab.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 

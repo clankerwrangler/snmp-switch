@@ -6,9 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build --target test -t switchlab-test .
-      - run: docker run --rm --cap-drop ALL --security-opt no-new-privileges switchlab-test
+      - run: docker run --rm --cap-drop ALL --security-opt no-new-privileges --sysctl net.ipv4.ip_unprivileged_port_start=161 switchlab-test
       - run: docker build --target runtime -t switchlab -t switchlab:0.1.0 .
-      - run: docker run --rm --network none --mount type=bind,source="$PWD/scripts/release_check.py",target=/release_check.py,readonly switchlab python /release_check.py
+      - run: docker run --rm --network none --sysctl net.ipv4.ip_unprivileged_port_start=161 --mount type=bind,source="$PWD/scripts/release_check.py",target=/release_check.py,readonly switchlab python /release_check.py
       - name: Verify isolated LAN access
         timeout-minutes: 5
         run: python scripts/lan_check.py

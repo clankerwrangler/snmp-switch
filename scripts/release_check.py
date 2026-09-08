@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory() as root:
             manager=SnmpEngine()
             try:
                 return await get_cmd(manager,CommunityData('release-fixture-community',mpModel=1),
-                    await UdpTransportTarget.create(('127.0.0.1',1161),timeout=.2,retries=0),ContextData(),ObjectType(ObjectIdentity('1.3.6.1.2.1.1.2.0')))
+                    await UdpTransportTarget.create(('127.0.0.1',161),timeout=.2,retries=0),ContextData(),ObjectType(ObjectIdentity('1.3.6.1.2.1.1.2.0')))
             finally:manager.close_dispatcher()
         error,status,_,rows=asyncio.run(read_identity())
         assert not error and not status and str(rows[0][1])=='2.999.123'

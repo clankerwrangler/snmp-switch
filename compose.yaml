@@ -6,11 +6,11 @@ services:
     image: switchlab:0.1.0
     ports:
       - target: 8000
-        published: "8000"
+        published: "${SWITCHLAB_HTTP_PORT:-8000}"
         host_ip: "${SWITCHLAB_BIND_ADDRESS:-127.0.0.1}"
         protocol: tcp
-      - target: 1161
-        published: "1161"
+      - target: ${SWITCHLAB_SNMP_PORT:-161}
+        published: "${SWITCHLAB_SNMP_PORT:-161}"
         host_ip: "${SWITCHLAB_BIND_ADDRESS:-127.0.0.1}"
         protocol: udp
     environment:
@@ -19,6 +19,8 @@ services:
       - switchlab-data:/data
     secrets:
       - config_key
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "161"
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
