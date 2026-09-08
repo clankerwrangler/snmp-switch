@@ -395,3 +395,101 @@ def test_legacy_inactive_fields_stay_inert_until_version_change(store):
         assert store.load().credentials['legacy'].auth_key == 'hidden-old-auth'
         assert change(c, '/snmp/credentials/legacy', {'version': '3', 'security_level': 'authPriv'}, 'PUT').status_code == 422
         assert store.load().credentials['legacy'].community == 'legacy-v2'
+
+
+@pytest.mark.parametrize("default_host,expected", [
+    (None, "127.0.0.1"), ("", "127.0.0.1"), ("0.0.0.0", "0.0.0.0"),
+    ("127.0.0.2", "127.0.0.2"), ("::1", "::1"),
+])
+def test_fresh_listener_default(store, monkeypatch, default_host, expected):
+    monkeypatch.delenv('SWITCHLAB_CONFIG', raising=False)
+    monkeypatch.delenv('SWITCHLAB_SNMP_DEFAULT_HOST', raising=False)
+    if default_host is not None:
+        monkeypatch.setenv('SWITCHLAB_SNMP_DEFAULT_HOST', default_host)
+    with TestClient(create_app(store)) as c:
+        sign_in(c, store)
+        state = c.get('/api/v1/state').json()
+        assert state['snmp']['host'] == expected and state['snmp']['port'] == 161
+        assert state['snmp']['enabled'] is False
+        assert state['switch']['identity']['sys_object_id'] is None
+        assert state['snmp_status']['ready'] is False
+
+
+def test_supplied_listener_configuration_overrides_image_default(store, monkeypatch):
+    monkeypatch.delenv('SWITCHLAB_CONFIG', raising=False)
+    monkeypatch.setenv('SWITCHLAB_SNMP_DEFAULT_HOST', '0.0.0.0')
+    cfg = initial_configuration(4)
+    cfg.snmp.host, cfg.snmp.port = '127.0.0.2', 2161
+    with TestClient(create_app(store, cfg)) as c:
+        sign_in(c, store)
+        state = c.get('/api/v1/state').json()
+        assert state['snmp']['host'] == '127.0.0.2' and state['snmp']['port'] == 2161
+        assert state['snmp']['enabled'] is False
+        assert state['switch']['identity']['sys_object_id'] is None
+        assert not state['snmp_status']['ready']
+
+
+@pytest.mark.parametrize("supplied,overlay,expected_host,expected_port", [
+    (False, {'snmp': {'host': '127.0.0.2', 'port': 2161}}, '127.0.0.2', 2161),
+    (False, {'identity': {'sys_descr': 'Fixture identity'}}, '0.0.0.0', 161),
+    (True, {'snmp': {'host': '127.0.0.3', 'port': 1161}}, '127.0.0.3', 1161),
+    (True, {'identity': {'sys_descr': 'Fixture identity'}}, '127.0.0.2', 2161),
+])
+def test_fresh_listener_overlay_precedence(store, tmp_path, monkeypatch, supplied,
+                                           overlay, expected_host, expected_port):
+    path = tmp_path / 'startup.json'
+    path.write_text(json.dumps(overlay))
+    monkeypatch.setenv('SWITCHLAB_CONFIG', str(path))
+    monkeypatch.setenv('SWITCHLAB_SNMP_DEFAULT_HOST', '0.0.0.0')
+    cfg = initial_configuration(4) if supplied else None
+    if cfg is not None:
+        cfg.snmp.host, cfg.snmp.port = '127.0.0.2', 2161
+    with TestClient(create_app(store, cfg)) as c:
+        sign_in(c, store)
+        state = c.get('/api/v1/state').json()
+        assert state['snmp']['host'] == expected_host and state['snmp']['port'] == expected_port
+        assert state['snmp']['enabled'] is False
+        assert state['switch']['identity']['sys_object_id'] is None
+        assert not state['snmp_status']['ready']
+
+
+@pytest.mark.parametrize("host,port", [
+    ('127.0.0.1', 1161), ('0.0.0.0', 161), ('127.0.0.2', 2161), ('::1', 2161),
+])
+def test_saved_listener_binding_overrides_startup_inputs(store, tmp_path, monkeypatch, host, port):
+    cfg = initial_configuration(4)
+    cfg.snmp.host, cfg.snmp.port = host, port
+    with store.db:
+        store.put('configuration', cfg.model_dump(mode='json'))
+    path = tmp_path / 'startup.json'
+    path.write_text(json.dumps({'snmp': {'host': '127.0.0.3', 'port': 3161}}))
+    monkeypatch.setenv('SWITCHLAB_CONFIG', str(path))
+    monkeypatch.setenv('SWITCHLAB_SNMP_DEFAULT_HOST', '0.0.0.0')
+    with TestClient(create_app(store, initial_configuration(8))) as c:
+        sign_in(c, store)
+        state = c.get('/api/v1/state').json()
+        assert state['snmp']['host'] == host and state['snmp']['port'] == port
+        assert len(state['ports']) == 4
+        assert state['snmp']['enabled'] is False
+        assert state['switch']['identity']['sys_object_id'] is None
+        assert not state['snmp_status']['ready']
+
+
+def test_listener_edit_survives_startup_defaults(store, tmp_path, monkeypatch):
+    monkeypatch.delenv('SWITCHLAB_CONFIG', raising=False)
+    monkeypatch.setenv('SWITCHLAB_SNMP_DEFAULT_HOST', '0.0.0.0')
+    with TestClient(create_app(store)) as c:
+        sign_in(c, store)
+        assert c.get('/api/v1/state').json()['snmp']['host'] == '0.0.0.0'
+        assert change(c, '/snmp/settings', {'host': '127.0.0.2', 'port': 2161}, 'PATCH').status_code == 200
+    path = tmp_path / 'startup.json'
+    path.write_text(json.dumps({'snmp': {'host': '127.0.0.3', 'port': 3161}}))
+    monkeypatch.setenv('SWITCHLAB_CONFIG', str(path))
+    monkeypatch.setenv('SWITCHLAB_SNMP_DEFAULT_HOST', '127.0.0.4')
+    with TestClient(create_app(store)) as c:
+        assert c.post('/api/v1/auth/login', json={'password': 'fixture-password-123'}).status_code == 200
+        state = c.get('/api/v1/state').json()
+        assert state['snmp']['host'] == '127.0.0.2' and state['snmp']['port'] == 2161
+        assert state['snmp']['enabled'] is False
+        assert state['switch']['identity']['sys_object_id'] is None
+        assert not state['snmp_status']['ready']

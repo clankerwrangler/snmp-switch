@@ -64,8 +64,8 @@ Open **SNMP & settings**:
 
 1. Enter your full numeric **System object ID (`sysObjectID`)**. The public default is intentionally unset. Changing it affects advertised identity only.
 2. Create a polling credential. SNMPv3 supports SHA-256 authentication and AES-128 privacy. SNMPv2c and unprotected v3 modes are labeled as unencrypted.
-3. Configure the listener. **Inside Docker, select `0.0.0.0:161`**; managers use the host address and the same port. New configurations default to port 161. Native binding requirements are described in **Run natively**.
-4. Explicitly enable SNMP. Check the effective status before polling.
+3. New Docker configurations initialize the listener to `0.0.0.0:161`; managers use the host address and the same port. Native configurations default to `127.0.0.1:161`. Saved or explicitly configured addresses take precedence. **Configure** changes the listener address and port. Native binding requirements are described in **Run natively**.
+4. Select **Enable SNMP**. Check the effective status before polling.
 5. For traps, create a separate credential with purpose **Notification only**, then add a receiver address and event filters. The destination defaults to UDP 162 and can be changed per target.
 
 ```sh
@@ -87,7 +87,7 @@ Clearing identity closes the SNMP listener and cancels unsent notifications befo
 
 ### Existing deployments
 
-Saved listener ports, including 1161 and custom ports, remain unchanged on upgrade. To continue using one, set `SWITCHLAB_SNMP_PORT` in `.env` to that saved port before recreating the container. For example:
+Saved listener addresses and ports, including 1161 and custom ports, remain unchanged on upgrade. To continue using one, set `SWITCHLAB_SNMP_PORT` in `.env` to that saved port before recreating the container. For example:
 
 ```dotenv
 SWITCHLAB_SNMP_PORT=1161
@@ -133,6 +133,7 @@ Environment options:
 | `SWITCHLAB_DB` | `data/switch.db` | Persistent SQLite file |
 | `SWITCHLAB_KEY_FILE` | `secrets/config.key` | Separately stored Fernet key |
 | `SWITCHLAB_PORT_COUNT` | `24` | Initial fixed port count, 1–256 |
+| `SWITCHLAB_SNMP_DEFAULT_HOST` | `127.0.0.1` natively; `0.0.0.0` in the Docker image | Initial SNMP listen address for a fresh configuration; saved settings and explicit startup configuration take precedence. Does not enable SNMP or control Compose host publication. |
 | `SWITCHLAB_SECURE_COOKIES` | Unset natively; `0` in Compose | Set `1` to add the Secure cookie attribute (requires HTTPS) |
 | `SWITCHLAB_BIND_ADDRESS` | `127.0.0.1` | Compose-only host address for published HTTP and SNMP ports |
 | `SWITCHLAB_SNMP_PORT` | `161` | Compose-only SNMP port, equal on host and container; matches the saved listener port |

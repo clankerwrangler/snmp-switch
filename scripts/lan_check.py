@@ -113,7 +113,10 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
 
     state = api("/api/v1/state")
     assert state["snmp"]["port"] == snmp_port
+    assert state["snmp"]["host"] == "0.0.0.0"
     if fresh:
+        assert state["snmp"]["enabled"] is False
+        print(json.dumps({"fresh_docker_listener_default": "passed"}))
         credential = command("/snmp/credentials", {
             "label": "LAN fixture", "community": "lan-fixture-community",
             "networks": ["127.0.0.0/8", "::1/128"]})["id"]
@@ -122,7 +125,7 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
         credential = next(iter(state["credentials"]))
         command(f"/snmp/credentials/{credential}", {"networks": ["127.0.0.0/8", "::1/128"]}, "PUT")
         print(json.dumps({f"saved_listener_{snmp_port}_preserved": "passed"}))
-    command("/snmp/settings", {"enabled": True, "host": "0.0.0.0"}, "PATCH")
+    command("/snmp/settings", {"enabled": True}, "PATCH")
     assert not api("/api/v1/snmp/status")["ready"]
     polling(False)
     command("/switch", {"identity": {"sys_object_id": "2.999.123"}}, "PATCH")

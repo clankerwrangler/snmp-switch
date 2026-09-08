@@ -7,7 +7,7 @@ RUN node node_modules/typescript/bin/tsc --noEmit && node node_modules/vite/bin/
 
 FROM python:3.13-slim AS runtime
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 SWITCHLAB_DB=/data/switch.db SWITCHLAB_KEY_FILE=/run/secrets/config_key
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 SWITCHLAB_DB=/data/switch.db SWITCHLAB_KEY_FILE=/run/secrets/config_key SWITCHLAB_SNMP_DEFAULT_HOST=0.0.0.0
 COPY pyproject.toml LICENSE ./
 COPY switchlab ./switchlab
 COPY --from=ui /build/switchlab/static ./switchlab/static

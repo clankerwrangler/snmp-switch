@@ -110,12 +110,15 @@ def create_app(store=None, configuration=None):
             if not Path(key_path).is_file():
                 raise RuntimeError("Missing encryption key. Run python scripts/init.py before starting.")
             store = Store(os.environ.get("SWITCHLAB_DB", "data/switch.db"), Path(key_path).read_bytes().strip())
-        cfg = store.load() or configuration or initial_configuration(int(os.environ.get("SWITCHLAB_PORT_COUNT", "24")))
+        saved = store.load()
+        cfg = saved or configuration or initial_configuration(int(os.environ.get("SWITCHLAB_PORT_COUNT", "24")))
+        if saved is None and configuration is None:
+            cfg.snmp = SnmpSettings(host=os.environ.get("SWITCHLAB_SNMP_DEFAULT_HOST") or cfg.snmp.host)
         if getattr(store, "startup_warning", None):
             app.state.startup_warning = store.startup_warning
         # An explicit overlay applies only to a fresh database, never to upgrades.
         overlay = os.environ.get("SWITCHLAB_CONFIG")
-        if overlay and store.load() is None:
+        if overlay and saved is None:
             raw = json.loads(Path(overlay).read_text())
             merged = cfg.model_dump(mode="json")
             if "identity" in raw:

@@ -42,6 +42,7 @@ with tempfile.TemporaryDirectory() as root:
         state=request('/api/v1/state')
         assert state['switch']['identity']['sys_object_id'] is None and not state['snmp_status']['ready']
         assert len(state['ports'])==24
+        assert state['snmp']['host']=='0.0.0.0' and state['snmp']['enabled'] is False
         assert not Path('/app/development').exists()
         command('/clock/pause',{})
         command('/clock/advance',{'duration_ms':1000})
@@ -70,6 +71,6 @@ with tempfile.TemporaryDirectory() as root:
         csrf=request('/api/v1/auth/login','POST',{'password':'release-fixture-password'})['csrf_token']
         assert request('/api/v1/state')['switch']['identity']['sys_object_id'] is None
         assert request('/healthz')['ready']
-        print(json.dumps({'clean_runtime_image':'passed','default_identity':None,'simulation_without_snmp':'passed',
+        print(json.dumps({'clean_runtime_image':'passed','fresh_docker_listener_default':'passed','default_identity':None,'simulation_without_snmp':'passed',
             'operator_oid_roundtrip':'passed','process_restart_identity_and_usm_boots':'passed','clear_stops_polling':'passed','persist_unset_on_restart':'passed'}))
     finally:stop(process)
