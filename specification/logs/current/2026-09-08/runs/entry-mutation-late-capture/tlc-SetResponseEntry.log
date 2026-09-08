@@ -1,0 +1,168 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 910MB heap and 64MB offheap memory [pid: 203198] (Linux 6.12.101+deb13-amd64 amd64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/.scratch/snmp-switch-formal/mutation-entry-late-capture/SetResponseEntry.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/mutation-entry-late-capture/SetResponseLifecycle.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/FiniteSets.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module SetResponseLifecycle
+Semantic processing of module SetResponseEntry
+Starting... (2026-09-08 17:07:16)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Computed 64 initial states...
+Computed 128 initial states...
+Finished computing initial states: 240 distinct states generated at 2026-09-08 17:07:16.
+Error: Action property EntryForeignSafe is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ entry = [ kind |-> "change",
+  outgoing |-> FALSE,
+  security |->
+      [engine |-> "e0", owner |-> "sec0", reference |-> 0, record |-> "A"],
+  lastAction |-> "init",
+  mp |-> NoEntry,
+  engine |-> "e0",
+  stage |-> "before",
+  diagnostic |-> FALSE,
+  securityPops |-> 0,
+  mpPops |-> 0,
+  terminalCount |-> 0,
+  admission |-> TRUE ]
+/\ route = "close"
+/\ pc = 0
+/\ fault = "reused"
+/\ kind = "change"
+/\ life = NoEntry
+
+State 2: <EntryNext line 46, col 14 to line 47, col 79 of module SetResponseEntry>
+/\ entry = [ kind |-> "change",
+  outgoing |-> FALSE,
+  security |->
+      [engine |-> "e0", owner |-> "sec0", reference |-> 0, record |-> "A"],
+  lastAction |-> "insert",
+  mp |->
+      [ witness |->
+            [ security |->
+                  [ engine |-> "e0",
+                    owner |-> "sec0",
+                    reference |-> 0,
+                    record |-> "A" ],
+              lifetime |-> "e0",
+              securityOwner |-> "sec0" ],
+        identity |->
+            [ engine |-> "e0",
+              owner |-> "mp0",
+              reference |-> 0,
+              record |-> "A" ] ],
+  engine |-> "e0",
+  stage |-> "unadmitted",
+  diagnostic |-> FALSE,
+  securityPops |-> 0,
+  mpPops |-> 0,
+  terminalCount |-> 0,
+  admission |-> TRUE ]
+/\ route = "close"
+/\ pc = 1
+/\ fault = "reused"
+/\ kind = "change"
+/\ life = NoEntry
+
+State 3: <EntryNext line 46, col 14 to line 47, col 79 of module SetResponseEntry>
+/\ entry = [ kind |-> "change",
+  outgoing |-> FALSE,
+  security |-> NoEntry,
+  lastAction |-> "loss",
+  mp |->
+      [ witness |->
+            [ security |->
+                  [ engine |-> "e0",
+                    owner |-> "sec0",
+                    reference |-> 0,
+                    record |-> "A" ],
+              lifetime |-> "e0",
+              securityOwner |-> "sec0" ],
+        identity |->
+            [ engine |-> "e0",
+              owner |-> "mp0",
+              reference |-> 0,
+              record |-> "A" ] ],
+  engine |-> "e0",
+  stage |-> "unadmitted",
+  diagnostic |-> FALSE,
+  securityPops |-> 0,
+  mpPops |-> 0,
+  terminalCount |-> 0,
+  admission |-> TRUE ]
+/\ route = "close"
+/\ pc = 2
+/\ fault = "reused"
+/\ kind = "change"
+/\ life = NoEntry
+
+State 4: <EntryNext line 46, col 14 to line 47, col 79 of module SetResponseEntry>
+/\ entry = [ kind |-> "change",
+  outgoing |-> FALSE,
+  security |->
+      [engine |-> "e0", owner |-> "sec0", reference |-> 0, record |-> "B"],
+  lastAction |-> "reuse",
+  mp |->
+      [ witness |->
+            [ security |->
+                  [ engine |-> "e0",
+                    owner |-> "sec0",
+                    reference |-> 0,
+                    record |-> "A" ],
+              lifetime |-> "e0",
+              securityOwner |-> "sec0" ],
+        identity |->
+            [ engine |-> "e0",
+              owner |-> "mp0",
+              reference |-> 0,
+              record |-> "A" ] ],
+  engine |-> "e0",
+  stage |-> "unadmitted",
+  diagnostic |-> FALSE,
+  securityPops |-> 0,
+  mpPops |-> 0,
+  terminalCount |-> 0,
+  admission |-> TRUE ]
+/\ route = "close"
+/\ pc = 3
+/\ fault = "reused"
+/\ kind = "change"
+/\ life = NoEntry
+
+State 5: <EntryNext line 46, col 14 to line 47, col 79 of module SetResponseEntry>
+/\ entry = [ kind |-> "change",
+  outgoing |-> FALSE,
+  security |-> NoEntry,
+  lastAction |-> "close",
+  mp |-> NoEntry,
+  engine |-> "e0",
+  stage |-> "terminal",
+  diagnostic |-> FALSE,
+  securityPops |-> 1,
+  mpPops |-> 1,
+  terminalCount |-> 1,
+  admission |-> FALSE ]
+/\ route = "close"
+/\ pc = 4
+/\ fault = "reused"
+/\ kind = "change"
+/\ life = NoEntry
+
+991 states generated, 991 distinct states found, 239 states left on queue.
+The depth of the complete state graph search is 5.
+The average outdegree of the complete state graph is 1 (minimum is 1, the maximum 1 and the 95th percentile is 1).
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/entry-mutation-late-capture/states/SetResponseEntry/26-09-08-17-07-15
+Checkpointing completed at (2026-09-08 17:07:17)
+Finished in 01s at (2026-09-08 17:07:17)

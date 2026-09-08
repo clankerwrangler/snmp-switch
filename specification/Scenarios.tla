@@ -24,6 +24,7 @@ ScenarioLength == CASE Scenario="LiveEdit" -> 19
     [] Scenario="InstanceABA" -> 12
     [] Scenario="UnknownTag" -> 17
     [] Scenario="TrapOverflow" -> 5
+    [] Scenario="TagLifecycle" -> 13
 ScenarioNext ==
     \/ (pc=ScenarioLength /\ UNCHANGED allvars)
     \/ /\ Scenario="LiveEdit"
@@ -283,6 +284,20 @@ ScenarioNext ==
           \/ (pc=2 /\ SetPartner(1,TRUE) /\ pc'=pc+1)
           \/ (pc=3 /\ DispatchTrap /\ pc'=pc+1)
           \/ (pc=4 /\ Reboot /\ pc'=pc+1)
+    \/ /\ Scenario="TagLifecycle"
+       /\ \/ (pc=0 /\ CreateEndpoint(E1,D(Src(M1,10),NoSource,NoSource)) /\ pc'=pc+1)
+          \/ (pc=1 /\ SetActive(E1,TRUE) /\ pc'=pc+1)
+          \/ (pc=2 /\ Connect(E1,1) /\ pc'=pc+1)
+          \/ (pc=3 /\ AutoTick /\ pc'=pc+1)
+          \/ (pc=4 /\ QueueActivity(<<E1,1>>) /\ pc'=pc+1)
+          \/ (pc=5 /\ CreateVlan(10) /\ pc'=pc+1)
+          \/ (pc=6 /\ ApplyActivity(<<E1,1>>) /\ pc'=pc+1)
+          \/ (pc=7 /\ FinishStep /\ pc'=pc+1)
+          \/ (pc=8 /\ AutoTick /\ pc'=pc+1)
+          \/ (pc=9 /\ QueueActivity(<<E1,1>>) /\ pc'=pc+1)
+          \/ (pc=10 /\ DeleteVlan(10) /\ pc'=pc+1)
+          \/ (pc=11 /\ ApplyActivity(<<E1,1>>) /\ pc'=pc+1)
+          \/ (pc=12 /\ FinishStep /\ pc'=pc+1)
 ScenarioAssertions ==
     /\ pc \in 0..ScenarioLength
     /\ (Scenario="LiveEdit" /\ pc=10) => (Present(10,M1,1))
@@ -326,6 +341,10 @@ ScenarioAssertions ==
     /\ (Scenario="TrapOverflow" /\ pc=2) => (s.overflow /\ Len(s.traps)=1 /\ s.traps[1].kind="linkUp")
     /\ (Scenario="TrapOverflow" /\ pc=4) => (s.traps = <<>> /\ s.overflow)
     /\ (Scenario="TrapOverflow" /\ pc=5) => (~s.overflow)
+    /\ (Scenario="TagLifecycle" /\ pc=6) => (~ValidJob(s,<<E1,1>>,s.pending[<<E1,1>>]))
+    /\ (Scenario="TagLifecycle" /\ pc=7) => (Live(s)={})
+    /\ (Scenario="TagLifecycle" /\ pc=11) => (~ValidJob(s,<<E1,1>>,s.pending[<<E1,1>>]))
+    /\ (Scenario="TagLifecycle" /\ pc=12) => (Live(s)={})
 ScenarioSpec == ScenarioInit /\ [][ScenarioNext]_allvars /\ WF_allvars(ScenarioNext)
 Completes == <>(pc=ScenarioLength)
 =============================================================================

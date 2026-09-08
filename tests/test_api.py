@@ -529,6 +529,7 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
         assert migrated["polling"] == {"enabled": purpose != "notification", "view_id": "interfaces",
                                        "networks": legacy["networks"]}
         assert migrated["enabled"] == enabled and "purpose" not in migrated
+        assert migrated["writing"] == {"enabled": False, "view_id": None, "networks": []}
         assert not {"view_id", "networks", "community", "auth_key", "priv_key"} & migrated.keys()
         saved = store.load()
         credential = saved.credentials["legacy"]
@@ -729,3 +730,244 @@ def test_trap_credentials_do_not_require_inactive_read_views(store, globally_ena
         assert cfg.credentials[cid].community == 'synthetic-no-view'
         assert change(c, f'/snmp/credentials/{cid}', method='DELETE').status_code == 422
         assert cfg.snmp.enabled is False and cfg.switch.identity.sys_object_id is None
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_set_access_independent_sparse_permissions_and_reference_guards(store, enabled):
+    with session(store) as c:
+        sign_in(c, store)
+        result = change(c, '/snmp/credentials', {"label": "Shared writer", "community": "synthetic-writer",
+                                               "enabled": enabled, "polling": {"enabled": True}})
+        assert result.status_code == 200
+        cid = result.json()['id']
+        default = {"enabled": False, "view_id": None, "networks": []}
+        assert store.load().credentials[cid].writing.model_dump() == default
+        before, rev = store.get('configuration'), revision(c)
+        for write in ({"enabled": True}, {"enabled": True, "view_id": "missing"}):
+            denied = change(c, f'/snmp/credentials/{cid}', {"writing": write}, 'PUT')
+            assert denied.status_code == 422 and store.get('configuration') == before and revision(c) == rev
+        response = change(c, '/snmp/views', {"id": "set-only", "name": "SET only", "includes": ["1.3.6.1.2.1.17"]})
+        assert response.status_code == 200
+        access = {"enabled": True, "view_id": "set-only", "networks": ["192.0.2.0/24", "2001:db8::/32"]}
+        assert change(c, f'/snmp/credentials/{cid}', {"writing": access}, 'PUT').status_code == 200
+        assert change(c, '/snmp/views/set-only', method='DELETE').status_code == 422
+        assert change(c, f'/snmp/credentials/{cid}', {"polling": {"enabled": False}, "community": ""}, 'PUT').status_code == 200
+        saved = store.load().credentials[cid]
+        assert saved.writing.model_dump() == access and saved.community == 'synthetic-writer'
+        assert saved.enabled == enabled and not saved.polling.enabled
+        assert change(c, f'/snmp/credentials/{cid}', {"writing": {"networks": []}}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].writing.model_dump() == {**access, "networks": []}
+        assert change(c, f'/snmp/credentials/{cid}', {"writing": {"enabled": False}}, 'PUT').status_code == 200
+        assert change(c, '/snmp/views/set-only', method='DELETE').status_code == 200
+        assert store.load().credentials[cid].writing.model_dump() == {**access, "enabled": False, "networks": []}
+        assert change(c, f'/snmp/credentials/{cid}', {"writing": {"view_id": None}}, 'PUT').status_code == 200
+        assert store.load().credentials[cid].writing.model_dump() == default
+        assert 'synthetic-writer' not in c.get('/api/v1/state').text
+        assert 'synthetic-writer' not in c.get('/api/v1/events').text
+        assert c.get('/api/v1/state').json()['switch']['identity']['sys_object_id'] is None
+
+
+def test_set_access_api_auth_revision_origin_and_invalid_cidrs(store):
+    with session(store) as c:
+        assert c.post('/api/v1/snmp/credentials', json={}).status_code == 401
+        sign_in(c, store)
+        cid = change(c, '/snmp/credentials', {"label": "Restricted", "community": "synthetic-restricted"}).json()['id']
+        path = f'/api/v1/snmp/credentials/{cid}'
+        before = store.get('configuration')
+        payload = {"expected_configuration_revision": revision(c), "writing": {"enabled": True, "view_id": "all"}}
+        assert c.put(path, json={**payload, "expected_configuration_revision": 0}).status_code == 409
+        assert c.put(path, json=payload, headers={"Origin": "https://other.invalid"}).status_code == 403
+        csrf = c.headers.pop('X-CSRF-Token')
+        assert c.put(path, json=payload).status_code == 403
+        c.headers['X-CSRF-Token'] = csrf
+        assert c.put(path, json={**payload, "writing": {"networks": ["not-a-cidr"]}}).status_code == 422
+        assert store.get('configuration') == before
+        assert c.put(path, json=payload).status_code == 200
+        assert store.load().credentials[cid].writing.enabled and not store.load().credentials[cid].polling.enabled
+
+
+def test_inline_trap_does_not_grant_set_access(store):
+    with session(store) as c:
+        sign_in(c, store)
+        payload = {"address": "127.0.0.1", "new_credential": {"label": "Inline", "community": "synthetic-inline"}}
+        denied = change(c, '/notifications/targets', {**payload, "new_credential": {
+            **payload['new_credential'], "writing": {"enabled": True, "view_id": "all"}}})
+        assert denied.status_code == 422 and not store.load().credentials and not store.load().targets
+        created = change(c, '/notifications/targets', payload)
+        assert created.status_code == 200
+        credential = store.load().credentials[created.json()['credential_id']]
+        assert not credential.polling.enabled and not credential.writing.enabled and credential.writing.view_id is None
+
+
+def test_api_port_independent_vlan_fields_preserve_empty_and_native_defaults(store):
+    with session(store) as c:
+        sign_in(c, store)
+        pid = next(iter(store.load().ports))
+        for vid in (10, 20):
+            assert change(c, '/vlans', {"vid": vid}).status_code == 200
+        path = f'/ports/{pid}'
+        assert change(c, path, {"admitted": [1, 10], "untagged": [], "forbidden": [20]}, 'PATCH').status_code == 200
+        assert change(c, path, {"alias": "Unrelated", "pvid": 1}, 'PATCH').status_code == 200
+        port = store.load().ports[pid]
+        assert not port.untagged and port.forbidden == [20]
+        assert change(c, path, {"pvid": 10}, 'PATCH').status_code == 200
+        assert store.load().ports[pid].untagged == [10]
+        assert change(c, path, {"pvid": 1, "untagged": [1, 10]}, 'PATCH').status_code == 200
+        assert store.load().ports[pid].untagged == [1, 10]
+        before = store.get('configuration')
+        for patch in ({"forbidden": [1]}, {"untagged": [20]}, {"forbidden": [30]}, {"untagged": [1, 1]}):
+            assert change(c, path, patch, 'PATCH').status_code == 422
+            assert store.get('configuration') == before
+
+
+@pytest.mark.parametrize("stage", ["rollback", "commit-after", "commit-rolled-back"])
+def test_storage_fault_api_background_auth_and_existing_restart(tmp_path, monkeypatch, stage):
+    import time
+    from cryptography.fernet import Fernet
+    from switchlab.storage import Store, StorageFault
+    from test_snmp_lifetime import TransactionFault
+    path, key = str(tmp_path / "api-recovery.db"), Fernet.generate_key()
+    store = Store(path, key)
+    cfg = initial_configuration(4); cfg.paused = True
+    try:
+        app = create_app(store, cfg)
+        with TestClient(app) as c:
+            sign_in(c, store)
+            identity, boots = store.engine_boot()
+            assert change(c, '/clock/resume').status_code == 200
+            e = app.state.engine
+            original_commit, connection = store.commit, store.db
+            proxy = TransactionFault(connection, stage)
+            # Fault the requested durable API mutation, not a concurrent normal
+            # non-durable clock tick that precedes it.
+            def commit(state, idempotency, durable=True):
+                if not durable:
+                    return original_commit(state, idempotency, durable)
+                store.db = proxy
+                try:
+                    return original_commit(state, idempotency, durable)
+                finally:
+                    store.db = connection
+            with monkeypatch.context() as patcher:
+                patcher.setattr(store, "commit", commit)
+                response = change(c, '/switch', {"contact": "Unconfirmed primary"}, 'PATCH')
+            assert response.status_code == 503
+            reason = "storage_rollback_failed" if stage == "rollback" else "storage_commit_unknown"
+            assert response.json()['storage_status'] == {"healthy": False, "reason": reason, "snapshot": "last_confirmed"}
+            confirmed = e.state
+            assert confirmed.cfg.switch.contact == ""
+            # The same incarnation cannot use no-op/replayed/config/runtime or
+            # direct storage helper paths to commit stale published state.
+            for route, body, method in [('/switch', {"location": "Secondary"}, 'PATCH'),
+                    ('/clock/pause', {}, 'POST'), ('/clock/advance', {"duration_ms": 1}, 'POST'),
+                    ('/switch/reboot', {}, 'POST'), ('/endpoints', {"name": "Blocked"}, 'POST')]:
+                assert change(c, route, body, method).status_code == 503
+                assert e.state is confirmed
+            for operation in (lambda: store.put("blocked", True), store.engine_boot,
+                              lambda: store.create_administrator("unconfirmed"), store.load):
+                with pytest.raises(StorageFault):
+                    operation()
+            time.sleep(.25)
+            assert e.state is confirmed  # Automatic clock stops while storage is faulted.
+            state = c.get('/api/v1/state').json()
+            assert state['switch']['contact'] == "" and state['storage_status']['snapshot'] == 'last_confirmed'
+            assert reason in state['warning']
+            assert c.get('/api/v1/events').json()['events'] == confirmed.events
+            assert c.get('/api/v1/scenarios/export').status_code == 200
+            assert c.get('/api/v1/snmp/status').json()['storage_status']['healthy'] is False
+            assert c.post('/api/v1/auth/logout').status_code == 200
+            assert c.get('/api/v1/auth/status').json()['setup_required'] is False
+            login = c.post('/api/v1/auth/login', json={"password": "fixture-password-123"})
+            assert login.status_code == 200
+            c.headers['X-CSRF-Token'] = login.json()['csrf_token']
+            assert c.get('/api/v1/state').json()['storage_status']['reason'] == reason
+        store.close()
+        # Existing startup reloads actual durable bytes, not the old object's
+        # cache or the failed candidate. No recovery endpoint or reset is used.
+        store = Store(path, key)
+        with TestClient(create_app(store, initial_configuration(8))) as c:
+            login = c.post('/api/v1/auth/login', json={"password": "fixture-password-123"})
+            assert login.status_code == 200
+            c.headers['X-CSRF-Token'] = login.json()['csrf_token']
+            state = c.get('/api/v1/state').json()
+            assert len(state['ports']) == 4
+            assert state['switch']['contact'] == ("Unconfirmed primary" if stage == "commit-after" else "")
+            assert state['switch']['location'] == "" and state['storage_status']['healthy'] is True
+            assert store.get('engine_identity') == identity.hex() and store.get('engine_boots') == boots
+            assert change(c, '/switch', {"location": "Fresh secondary"}, 'PATCH').status_code == 200
+            assert store.load().switch.contact == state['switch']['contact']
+            assert store.load().switch.location == "Fresh secondary"
+    finally:
+        if not store.closed:
+            store.close()
+
+
+@pytest.mark.parametrize("owner", ["setup", "engine_boot"])
+@pytest.mark.parametrize("stage", ["rollback", "commit-after", "commit-rolled-back"])
+def test_direct_storage_helper_faults_keep_confirmed_auth_and_block_writes(store, owner, stage, monkeypatch):
+    from switchlab.storage import StorageFault, RollbackFailed, CommitUncertain
+    from test_snmp_lifetime import TransactionFault
+    connection = store.db
+    operation = (lambda: store.create_administrator("synthetic-unconfirmed-hash")) if owner == "setup" else store.engine_boot
+    with monkeypatch.context() as patcher:
+        patcher.setattr(store, 'db', TransactionFault(connection, stage))
+        with pytest.raises(RollbackFailed if stage == "rollback" else CommitUncertain):
+            operation()
+    assert store.administrator_hash() is None
+    assert store.fault_reason == ("storage_rollback_failed" if stage == "rollback" else "storage_commit_unknown")
+    for blocked in (lambda: store.create_administrator("another"), store.engine_boot, lambda: store.put("anything", True)):
+        with pytest.raises(StorageFault):
+            blocked()
+    # A failed close does not clear the fault or declare the connection closed.
+    class CloseFailure:
+        def close(self):
+            raise OSError("Synthetic close failure")
+    with monkeypatch.context() as patcher:
+        patcher.setattr(store, 'db', CloseFailure())
+        with pytest.raises(OSError):
+            store.close()
+    assert not store.closed and store.fault_reason is not None
+    connection.rollback()
+    with pytest.raises(StorageFault):
+        store.put("still-blocked", True)
+
+
+@pytest.mark.parametrize("failure", ["invalid", "unavailable", "wrong-key"])
+def test_failed_owned_startup_closes_without_replacing_durable_configuration(tmp_path, monkeypatch, failure):
+    import sqlite3
+    from cryptography.fernet import Fernet, InvalidToken
+    from pydantic import ValidationError
+    import switchlab.api as api_module
+    from switchlab.storage import Store
+    path, key = str(tmp_path / "startup.db"), Fernet.generate_key()
+    saved = initial_configuration(4).model_dump(mode='json')
+    if failure == "invalid":
+        saved['schema_version'] = 999
+    store = Store(path, key)
+    with store.transaction():
+        store.put('configuration', saved)
+    encrypted = store.db.execute("SELECT value FROM kv WHERE key='configuration'").fetchone()[0]
+    store.close()
+    key_path = tmp_path / 'key'
+    key_path.write_bytes(Fernet.generate_key() if failure == 'wrong-key' else key)
+    instances = []
+    class ObservedStore(Store):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            instances.append(self)
+        def load(self):
+            if failure == 'unavailable':
+                raise OSError("Synthetic unavailable storage")
+            return super().load()
+    monkeypatch.setattr(api_module, 'Store', ObservedStore)
+    monkeypatch.setenv('SWITCHLAB_DB', path)
+    monkeypatch.setenv('SWITCHLAB_KEY_FILE', str(key_path))
+    with pytest.raises((ValidationError, OSError, InvalidToken)):
+        with TestClient(create_app()):
+            pytest.fail('Failed startup became a usable application')
+    assert len(instances) == 1 and instances[0].closed
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute("SELECT value FROM kv WHERE key='configuration'").fetchone()[0] == encrypted
+    finally:
+        db.close()

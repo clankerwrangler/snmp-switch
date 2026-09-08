@@ -2054,6 +2054,16 @@
                 "type": "null"
               }
             ]
+          },
+          "writing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WritingPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -2488,6 +2498,34 @@
               }
             ],
             "title": "Admitted"
+          },
+          "untagged": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Untagged"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
           },
           "link_notifications": {
             "anyOf": [
@@ -3153,6 +3191,49 @@
           "name"
         ],
         "title": "VlanEdit"
+      },
+      "WritingPatch": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Id"
+          },
+          "networks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Networks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WritingPatch"
       }
     }
   }

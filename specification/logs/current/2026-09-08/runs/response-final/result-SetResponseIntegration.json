@@ -1,0 +1,38 @@
+{
+  "model": "SetResponseIntegration",
+  "module": "SetResponseScenarios.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 2.145,
+  "counts": {
+    "generated": 115,
+    "distinct": 101,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx1g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/response-final/states/SetResponseIntegration",
+    "-config",
+    "configs/SetResponseIntegration.cfg",
+    "SetResponseScenarios.tla"
+  ],
+  "log": "tlc-SetResponseIntegration.log",
+  "log_sha256": "bcb6922ae82bd84248152e06b6723e831dd7f6e7e53f963e8f69941dc436c140",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

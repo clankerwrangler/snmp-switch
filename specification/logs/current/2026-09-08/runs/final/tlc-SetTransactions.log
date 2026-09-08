@@ -1,0 +1,48 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 1820MB heap and 64MB offheap memory [pid: 189051] (Linux 6.12.101+deb13-amd64 amd64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/.scratch/snmp-switch-formal/check-final/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-final/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-final/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-final/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+Starting... (2026-09-08 14:43:31)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Computed 2 initial states...
+Finished computing initial states: 4 distinct states generated at 2026-09-08 14:43:32.
+Checking temporal properties for the current state space with 21099 total distinct states at (2026-09-08 14:43:35)
+Finished checking temporal properties in 00s at 2026-09-08 14:43:35
+Progress(3) at 2026-09-08 14:43:35: 31,289 states generated (31,289 s/min), 21,099 distinct states found (21,099 ds/min), 19,207 states left on queue.
+Checking temporal properties for the current state space with 304653 total distinct states at (2026-09-08 14:44:35)
+Finished checking temporal properties in 03s at 2026-09-08 14:44:39
+Progress(5) at 2026-09-08 14:44:39: 1,096,843 states generated (1,065,554 s/min), 304,653 distinct states found (283,554 ds/min), 210,165 states left on queue.
+Checking temporal properties for the current state space with 541840 total distinct states at (2026-09-08 14:45:39)
+Finished checking temporal properties in 08s at 2026-09-08 14:45:47
+Progress(6) at 2026-09-08 14:45:47: 2,564,167 states generated (1,467,324 s/min), 541,841 distinct states found (237,188 ds/min), 317,004 states left on queue.
+Checking temporal properties for the current state space with 748987 total distinct states at (2026-09-08 14:46:47)
+Finished checking temporal properties in 13s at 2026-09-08 14:47:01
+Progress(7) at 2026-09-08 14:47:01: 4,081,292 states generated (1,517,125 s/min), 748,987 distinct states found (207,146 ds/min), 396,743 states left on queue.
+Checking temporal properties for the current state space with 957469 total distinct states at (2026-09-08 14:48:01)
+Finished checking temporal properties in 19s at 2026-09-08 14:48:21
+Progress(7) at 2026-09-08 14:48:21: 5,620,063 states generated (1,538,771 s/min), 957,469 distinct states found (208,482 ds/min), 472,039 states left on queue.
+Checking temporal properties for the current state space with 1150704 total distinct states at (2026-09-08 14:49:21)
+Finished checking temporal properties in 23s at 2026-09-08 14:49:44
+Progress(7) at 2026-09-08 14:49:44: 7,161,185 states generated (1,541,122 s/min), 1,150,704 distinct states found (193,235 ds/min), 532,051 states left on queue.
+Checking temporal properties for the current state space with 1353455 total distinct states at (2026-09-08 14:50:44)
+Finished checking temporal properties in 30s at 2026-09-08 14:51:14
+Progress(8) at 2026-09-08 14:51:14: 8,725,619 states generated (1,564,434 s/min), 1,353,455 distinct states found (202,751 ds/min), 605,682 states left on queue.
+Progress(8) at 2026-09-08 14:52:14: 10,237,543 states generated (1,511,924 s/min), 1,560,666 distinct states found (207,211 ds/min), 681,798 states left on queue.
+Checking temporal properties for the current state space with 1755642 total distinct states at (2026-09-08 14:53:14)
+
+RUNNER: TIMEOUT; exploration incomplete.

@@ -1,0 +1,60 @@
+{
+  "status": "PASS",
+  "jar_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+  "java": "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+  "java_version": "openjdk version \"21.0.12.1\" 2026-08-18 LTS\nOpenJDK Runtime Environment Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS, mixed mode, sharing)\n",
+  "java_version_returncode": 0,
+  "formal_input_sha256": {
+    "Good.tla": "ee90bdbfff7a4ffdef389db202d26ca1a43b24435c9b6495aa3dd48ae708afb9",
+    "configs/Routine.cfg": "ad6c40b67494935570deaf060b5ee0b2ad18c8a51819e17bda0a58159f3bf1e2",
+    "configs/SetTransactions.cfg": "ad6c40b67494935570deaf060b5ee0b2ad18c8a51819e17bda0a58159f3bf1e2",
+    "configs/SetTransactionsEquality.cfg": "ad6c40b67494935570deaf060b5ee0b2ad18c8a51819e17bda0a58159f3bf1e2"
+  },
+  "runner_sha256": "f935b677309deea9bd2f26ff8b1035a032b1e9c70ffb45e6d037fb247593b581",
+  "results": [
+    {
+      "model": "SetTransactions",
+      "module": "Good.tla",
+      "status": "PASS",
+      "returncode": 0,
+      "elapsed_seconds": 0.871,
+      "counts": {
+        "generated": 2,
+        "distinct": 1,
+        "queue": 0
+      },
+      "command": [
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2g",
+        "-Dutil.ExecutionStatisticsCollector.id=",
+        "-cp",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "tlc2.TLC",
+        "-checkpoint",
+        "30",
+        "-workers",
+        "1",
+        "-seed",
+        "20260907",
+        "-fp",
+        "0",
+        "-metadir",
+        "/workspace/.scratch/snmp-switch-formal/runs/runner-normal-routing/diagnostic-with-missing-replacement/states/SetTransactions",
+        "-config",
+        "configs/SetTransactions.cfg",
+        "Good.tla"
+      ],
+      "log": "tlc-SetTransactions.log",
+      "log_sha256": "edb7acad0ff36b43538c762d18f03baf4aee8d478eab1b0c06bbb1f428f3efe0",
+      "inputs_unchanged": true,
+      "resource_failure": null
+    }
+  ],
+  "timeout_seconds": 600,
+  "batch_timeout_seconds": 3600,
+  "max_state_mib": null,
+  "min_free_mib": 0,
+  "elapsed_seconds": 0.872,
+  "formal_inputs_unchanged": true
+}

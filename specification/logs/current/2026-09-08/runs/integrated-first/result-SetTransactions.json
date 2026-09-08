@@ -1,0 +1,31 @@
+{
+  "model": "SetTransactions",
+  "module": "SetTransactions.tla",
+  "status": "FAIL",
+  "returncode": 143,
+  "elapsed_seconds": 408.25,
+  "counts": {},
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/integrated-first/states/SetTransactions",
+    "-config",
+    "configs/SetTransactions.cfg",
+    "SetTransactions.tla"
+  ],
+  "log": "tlc-SetTransactions.log",
+  "log_sha256": "d3a77890a6cb884ee9945a8d4da56fcee5259cd7f3d32d77d6e25766b8cc9f4f",
+  "inputs_unchanged": true
+}

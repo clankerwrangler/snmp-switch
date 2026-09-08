@@ -1,0 +1,38 @@
+{
+  "model": "SetTransactionsEquality",
+  "module": "SetTokenEquivalence.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 349.003,
+  "counts": {
+    "generated": 6708324,
+    "distinct": 526688,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/set-token-equality/states/SetTransactionsEquality",
+    "-config",
+    "configs/SetTransactionsEquality.cfg",
+    "SetTokenEquivalence.tla"
+  ],
+  "log": "tlc-SetTransactionsEquality.log",
+  "log_sha256": "8155d7617c2b36240ab7b4eed02a8b3377b3d73cee12774700e77b44a14fa1e0",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

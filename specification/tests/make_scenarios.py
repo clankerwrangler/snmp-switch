@@ -122,6 +122,15 @@ q.add('SetMode(1,"shared")').add('SetPartner(1,FALSE)','s.overflow /\\ Len(s.tra
 q.add('SetPartner(1,TRUE)').add('DispatchTrap','s.traps = <<>> /\\ s.overflow')
 q.add('Reboot','~s.overflow')
 
+
+r=Case('TagLifecycle')
+setup(r,defs(src('M1','10'))).add('AutoTick').add(f'QueueActivity({K1})')
+r.add('CreateVlan(10)',f'~ValidJob(s,{K1},s.pending[{K1}])')
+r.add(f'ApplyActivity({K1})','Live(s)={}').add('FinishStep')
+r.add('AutoTick').add(f'QueueActivity({K1})')
+r.add('DeleteVlan(10)',f'~ValidJob(s,{K1},s.pending[{K1}])')
+r.add(f'ApplyActivity({K1})','Live(s)={}').add('FinishStep')
+
 header=r'''--------------------------- MODULE Scenarios ---------------------------
 EXTENDS TestSwitch
 CONSTANTS Scenario, E1, E2, M1, M2, M3
@@ -146,7 +155,7 @@ parts.append('ScenarioSpec == ScenarioInit /\\ [][ScenarioNext]_allvars /\\ WF_a
 parts.append('Completes == <>(pc=ScenarioLength)\n=============================================================================\n')
 (ROOT/'Scenarios.tla').write_text(''.join(parts))
 for c in cases:
-    text='SPECIFICATION ScenarioSpec\n'+constants([1,2],['e1','e2'],[1,2,3],['macA','macB','macC'],[1,10,20,30],1 if c.name=='TrapOverflow' else 8)
+    text='\\* TLC_MODULE Scenarios\nSPECIFICATION ScenarioSpec\n'+constants([1,2],['e1','e2'],[1,2,3],['macA','macB','macC'],[1,10,20,30],1 if c.name=='TrapOverflow' else 8)
     text+=f'    Scenario = "{c.name}"\n    E1 = e1\n    E2 = e2\n    M1 = macA\n    M2 = macB\n    M3 = macC\n'
     text+='INVARIANTS TypeOK InventoryOK FdbOK JobsOK MibOK TrapsOK ScenarioAssertions\n'
     text+='PROPERTIES LearningHasSource StaleJobCannotCommit Completes\n'

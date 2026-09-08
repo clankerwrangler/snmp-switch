@@ -238,3 +238,181 @@ async def test_inline_target_storage_failure_rolls_back(engine, store, monkeypat
     result = await e.execute("target-save", {"address": "127.0.0.1", "new_credential": {
         "label": "Atomic", "community": "synthetic-atomic"}}, key="atomic")
     assert store.load().targets[result["id"]].credential_id == result["credential_id"]
+
+
+from pysnmp.proto import rfc1902 as a
+from switchlab.mib import plan_set, SetError, Projection, oid
+from switchlab.models import Credential, View
+
+
+async def apply_set(e, bindings):
+    async with e.lock:
+        return e.set_locked(bindings, ["1.3.6.1.2.1"])
+
+
+def set_binding(suffix, value):
+    return oid("1.3.6.1.2.1." + suffix), value
+
+
+def stored_state(store):
+    return ({key: store.get(key) for key in ("configuration", "configuration_revision", "revision",
+                                            "outbox", "idempotency")}, store.events(), store.last_event)
+
+
+async def test_set_one_transition_learning_notifications_and_noop(engine):
+    e = engine
+    await e.execute("switch-edit", {"identity": {"sys_object_id": "1.3.6.1.4.1.32473.1"}})
+    cred = await e.execute("credential-save", {"label": "Synthetic trap", "community": "synthetic-trap"})
+    await e.execute("target-save", {"credential_id": cred["id"], "address": "127.0.0.1"})
+    await e.execute("snmp-settings", {"enabled": True})
+    eid = await endpoint(e)
+    await tick(e)
+    assert e.state.fdb
+    before = e.state
+    commands = [set_binding("2.2.1.7.101", a.Integer32(2)), set_binding("17.7.1.4.3.1.1.1", a.OctetString(b"Renamed"))]
+    plan = await apply_set(e, commands)
+    assert plan.changed and e.state is not before
+    assert e.state.revision == before.revision + 1
+    assert e.state.configuration_revision == before.configuration_revision + 1
+    assert not e.state.fdb and eid not in {key[0] for key in e.state.jobs}
+    assert e.state.cfg.endpoints == before.cfg.endpoints and e.state.cfg.attachments == before.cfg.attachments
+    assert [x["event"]["kind"] for x in e.state.outbox] == ["linkUp", "linkDown"]
+    assert e.idempotency == {} and e.store.load() == e.state.cfg
+    before, persisted = e.state, stored_state(e.store)
+    for request in (commands, [], [set_binding("17.7.1.4.3.1.5.200", a.Integer32(6))]):
+        assert not (await apply_set(e, request)).changed
+        assert e.state is before and stored_state(e.store) == persisted
+    await apply_set(e, [set_binding("2.2.1.7.101", a.Integer32(1))])
+    await tick(e)
+    assert e.state.fdb and e.state.outbox[-1]["event"]["kind"] == "linkUp"
+
+
+async def test_set_rejected_candidate_preserves_whole_runtime_and_storage(engine):
+    await endpoint(engine)
+    await tick(engine)
+    before, persisted = engine.state, stored_state(engine.store)
+    request = [set_binding("2.2.1.7.101", a.Integer32(2)),
+               set_binding("17.7.1.4.3.1.3.1", a.OctetString(b"\x80")),
+               set_binding("17.7.1.4.3.1.1.1", a.OctetString(b"Not committed"))]
+    with pytest.raises(SetError) as failure:
+        await apply_set(engine, request)
+    assert (failure.value.status, failure.value.index) == ("inconsistentValue", 2)
+    assert engine.state is before and stored_state(engine.store) == persisted
+
+
+@pytest.mark.parametrize("failure_key", ["configuration", "outbox"])
+async def test_set_real_midtransaction_rollback_and_retry(engine, monkeypatch, failure_key):
+    import sqlite3
+    e = engine
+    await endpoint(e)
+    await tick(e)
+    before, persisted = e.state, stored_state(e.store)
+    request = [set_binding("2.2.1.7.102", a.Integer32(1)),
+               set_binding("2.2.1.7.101", a.Integer32(2)),
+               set_binding("17.7.1.4.3.1.1.1", a.OctetString(b"Atomic"))]
+    assert plan_set(before.cfg, request, ["1.3.6.1.2.1"]).first_effective == 2
+    original_put = e.store.put
+    def injected(key, value):
+        original_put(key, value)
+        if key == failure_key:
+            raise sqlite3.OperationalError("Synthetic midtransaction failure")
+    with monkeypatch.context() as patch:
+        patch.setattr(e.store, "put", injected)
+        with pytest.raises(sqlite3.OperationalError) as failure:
+            await apply_set(e, request)
+    assert failure.value.switchlab_rolled_back is True
+    assert e.state is before and stored_state(e.store) == persisted
+    await apply_set(e, request)
+    assert not e.state.fdb and e.state.cfg.vlans[1].name == "Atomic"
+    assert e.store.load() == e.state.cfg
+
+
+async def test_absent_destroy_does_not_rearm_unrelated_tagged_sources(engine):
+    e = engine
+    eid = await endpoint(e, tag=10, port=1)
+    pid = list(e.state.cfg.ports)[1]
+    job = next(iter(e.state.jobs.values()))
+    before = e.state
+    await apply_set(e, [set_binding("17.7.1.4.3.1.5.10", a.Integer32(6)),
+                       set_binding("2.2.1.7.101", a.Integer32(2))])
+    assert e.state.jobs[(eid, job.source_id)] == job
+    assert e.state.egens[eid] == before.egens[eid] and e.state.pgens[pid] == before.pgens[pid]
+    assert e.state.vlan_deletes == before.vlan_deletes
+    assert not any(event["kind"] == "vlan-delete" for event in e.state.events[len(before.events):])
+    # An effective create, unlike absent destroy, invalidates captured tagged work.
+    await apply_set(e, [set_binding("17.7.1.4.3.1.5.10", a.Integer32(4))])
+    assert e.state.egens[eid] != before.egens[eid] and not e.state.valid(job)
+
+
+@pytest.mark.parametrize("initial,expected", [([1, 20], {10, 20}), ([20], {10, 20}), ([], {10})])
+async def test_native_api_formula_and_raw_set_pvid_are_distinct(engine, initial, expected):
+    e = engine
+    for vid in (10, 20):
+        await e.execute("vlan-create", {"vid": vid})
+    pid = next(iter(e.state.cfg.ports))
+    await e.execute("port-edit", {"id": pid, "patch": {"admitted": [1, 10, 20], "untagged": initial}})
+    await apply_set(e, [set_binding("17.7.1.4.5.1.1.1", a.Gauge32(10))])
+    assert e.state.cfg.ports[pid].untagged == initial
+    await apply_set(e, [set_binding("17.7.1.4.5.1.1.1", a.Gauge32(1))])
+    await e.execute("port-edit", {"id": pid, "patch": {"pvid": 10}})
+    assert set(e.state.cfg.ports[pid].untagged) == expected
+    await e.execute("port-edit", {"id": pid, "patch": {"pvid": 20, "untagged": []}})
+    await e.execute("port-edit", {"id": pid, "patch": {"pvid": 20, "alias": "Unrelated"}})
+    assert e.state.cfg.ports[pid].untagged == []
+
+
+async def test_write_generation_distinct_shared_views_and_reboot(engine):
+    e = engine
+    await e.execute("view-save", {"id": "write", "name": "SET objects", "includes": ["1.3.6.1.2.1.17"]})
+    ids = []
+    for number in (1, 2):
+        result = await e.execute("credential-save", {"label": str(number), "community": "synthetic-" + str(number),
+            "polling": {"enabled": number == 1, "view_id": "interfaces"},
+            "writing": {"enabled": True, "view_id": "write"}})
+        ids.append(result["id"])
+    first = dict(e.state.credential_generations)
+    same = e.state.cfg.views["write"].model_dump()
+    await e.execute("view-save", same)
+    assert e.state.credential_generations == first
+    await e.execute("view-save", {"id": "interfaces", "name": "Different read view", "includes": ["1.3.6.1.2.1.2"]})
+    assert e.state.credential_generations == first
+    await e.execute("view-save", {**same, "includes": ["1.3.6.1.2.1.47"]})
+    middle = dict(e.state.credential_generations)
+    assert all(middle[c] != first[c] for c in ids)
+    await e.execute("view-save", same)
+    assert all(e.state.credential_generations[c] not in (first[c], middle[c]) for c in ids)
+    old = dict(e.state.credential_generations)
+    await e.execute("credential-save", {"id": ids[0], "writing": {"networks": ["192.0.2.0/24"]}})
+    assert e.state.credential_generations[ids[0]] != old[ids[0]]
+    assert e.state.credential_generations[ids[1]] == old[ids[1]]
+    before = e.state
+    await e.execute("reboot")
+    assert e.state.activation != before.activation
+    assert all(e.state.credential_generations[c] != before.credential_generations[c] for c in ids)
+    assert e.state.cfg == before.cfg
+
+
+async def test_vlan_permission_persistence_scenario_and_legacy_defaults(engine):
+    e = engine
+    raw = e.state.cfg.model_dump()
+    for p in raw["ports"].values():
+        del p["untagged"], p["forbidden"]
+    raw["credentials"] = {"legacy": {"id": "legacy", "label": "Read", "community": "synthetic-read",
+                                     "polling": {"enabled": True}}}
+    from switchlab.models import Configuration
+    loaded = Configuration.model_validate(raw)
+    assert all(p.untagged == [p.pvid] and not p.forbidden for p in loaded.ports.values())
+    assert loaded.credentials["legacy"].writing.model_dump() == {"enabled": False, "view_id": None, "networks": []}
+    await e.execute("vlan-create", {"vid": 10})
+    pid = next(iter(e.state.cfg.ports))
+    await e.execute("port-edit", {"id": pid, "patch": {"untagged": [], "forbidden": [10]}})
+    result = await e.execute("credential-save", {"label": "Write", "community": "synthetic-write",
+                                               "writing": {"enabled": True, "view_id": "all"}})
+    scenario = e.export()
+    assert scenario["schema_version"] == 1 and "credentials" not in scenario
+    await e.execute("import", scenario)
+    assert e.state.cfg.ports[pid].untagged == [] and e.state.cfg.ports[pid].forbidden == [10]
+    restored = Engine(e.store.load(), e.store)
+    assert restored.state.cfg == e.state.cfg
+    assert restored.state.cfg.credentials[result["id"]].writing.enabled
+    assert restored.state.cfg.credentials[result["id"]].polling.enabled is False

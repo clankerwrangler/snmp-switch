@@ -1,0 +1,38 @@
+{
+  "model": "ResponseLossProbe",
+  "module": "ResponseLossProbe.tla",
+  "status": "FAIL",
+  "returncode": 12,
+  "elapsed_seconds": 1.073,
+  "counts": {
+    "generated": 25,
+    "distinct": 25,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx1g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/response-eight-losses-repro/states/ResponseLossProbe",
+    "-config",
+    "configs/ResponseLossProbe.cfg",
+    "ResponseLossProbe.tla"
+  ],
+  "log": "tlc-ResponseLossProbe.log",
+  "log_sha256": "d444f4858de23c417ddbcc2f554bfa4ce751d84234ce19c521ff84ac7c554a68",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

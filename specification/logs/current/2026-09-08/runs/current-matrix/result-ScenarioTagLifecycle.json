@@ -1,0 +1,38 @@
+{
+  "model": "ScenarioTagLifecycle",
+  "module": "Scenarios.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 1.224,
+  "counts": {
+    "generated": 15,
+    "distinct": 14,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/current-matrix/states/ScenarioTagLifecycle",
+    "-config",
+    "configs/ScenarioTagLifecycle.cfg",
+    "Scenarios.tla"
+  ],
+  "log": "tlc-ScenarioTagLifecycle.log",
+  "log_sha256": "23199b253ea8562bbb44738ea5b3031f9510e2ed04fb40214a20551796950847",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

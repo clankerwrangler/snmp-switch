@@ -1,0 +1,38 @@
+{
+  "model": "SetTokenEquivalence",
+  "module": "Good.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 0.871,
+  "counts": {
+    "generated": 2,
+    "distinct": 1,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/runner-normal-routing/normal/states/SetTokenEquivalence",
+    "-config",
+    "configs/SetTokenEquivalence.cfg",
+    "Good.tla"
+  ],
+  "log": "tlc-SetTokenEquivalence.log",
+  "log_sha256": "167fea742a72d8064650e3f1db51f4cf2301f3506c8eb776e14bf8f2ff2c6a18",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

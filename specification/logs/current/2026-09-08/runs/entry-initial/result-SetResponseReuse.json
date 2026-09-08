@@ -1,0 +1,38 @@
+{
+  "model": "SetResponseReuse",
+  "module": "SetResponseScenarios.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 1.383,
+  "counts": {
+    "generated": 109,
+    "distinct": 90,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx1g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/entry-initial/states/SetResponseReuse",
+    "-config",
+    "configs/SetResponseReuse.cfg",
+    "SetResponseScenarios.tla"
+  ],
+  "log": "tlc-SetResponseReuse.log",
+  "log_sha256": "054df585ad263c217f87da7d8dbc43115a0443ebfaa7e4420e0d731465667aa5",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

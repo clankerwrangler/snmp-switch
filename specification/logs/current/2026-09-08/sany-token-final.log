@@ -1,0 +1,21 @@
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-token-final/SetTokenEquivalence.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-token-final/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-token-final/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-token-final/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-token-final/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+Semantic processing of module SetTokenEquivalence

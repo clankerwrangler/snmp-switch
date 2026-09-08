@@ -1,0 +1,10 @@
+{
+  "name": "stale_published_overwrites_committed",
+  "source": "StorageOutcomes.tla",
+  "before": "CommitAllowed == Gate",
+  "after": "CommitAllowed == Gate \\/ (store.open /\\ store.health = \"commitUnknown\" /\\ store.durable # store.published)",
+  "correct_sha256": "1d149f16d4aa55c5b1ea2bd3bb47502cdda76ec525a80747456e6cf1f7d0023a",
+  "mutant_sha256": "3aa20bf86b9661d358c7852b43e33f66dec865704cd49a05ecc32255a3ec92de",
+  "config_sha256": "21beea58636eb6b564d28f2ef52e6a97a76da7bbba35abadf634ed45fb206c66",
+  "expected": "Bypass health only for the actual committed-but-unconfirmed case. All40 input branches and assertions remain. Primary TRUE durable is overwritten FALSE by an unrelated secondary edit derived from stale publication."
+}

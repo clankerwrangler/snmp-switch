@@ -1,15 +1,13 @@
 # SNMP Switch Emulator
-## Technical specification · revision 2.1
+## Technical specification · revision 3
 
-**Date:** 2026-09-07
+**Date:** 2026-09-08
 
-**Implementation target:** first functional release
+**Implementation target:** current application
 
 **Scope:** application requirements and executable formal model
 
-**Revision 2.1:** identity and setup requirements, outside the revision-2 formal model
-
-`Switch.tla` defines the core transition semantics; this document specifies the application and wire adapter around them. `docs/mib-coverage.csv` is the initial object manifest. `VERIFICATION.md` records the model-checking results. These are design requirements, not implementation test results. See the [application README](../README.md) for installation and use, and the [application validation report](../docs/VALIDATION.md) for executed checks and their limits.
+`Switch.tla` defines the core transition semantics; this document specifies the application and wire adapter around them. `docs/mib-coverage.csv` is the generated object manifest. [Current model contract](CURRENT_MODEL.md) and [current verification](CURRENT_VERIFICATION.md) describe the checked inputs and boundaries. `VERIFICATION.md` retains historical revision-2 results. These are design requirements, not implementation test results. See the [application README](../README.md) for installation and use, and the [application validation report](../docs/VALIDATION.md) for executed checks and their limits.
 
 ## 1. Purpose and boundaries
 
@@ -17,7 +15,7 @@ Build one configurable, vendor-neutral Ethernet-switch management simulation per
 
 There is no Ethernet forwarding, routing, real VLAN isolation, spanning-tree execution, RADIUS, EAPOL, DHCP, or reachability for endpoint IP addresses. The only required real networking is the HTTP interface, the SNMP listener, and outgoing notifications. Endpoint addresses and names are simulation data. The agent must not expose the container host's interfaces as switch ports.
 
-The first release includes a web UI, an automation API, SNMPv2c and SNMPv3 reads, standard link notifications, BRIDGE-MIB and Q-BRIDGE-MIB subsets, a persistent endpoint library, deterministic activity and aging, pause/manual advancement, and simulated reboot. SNMP SET, multiple switches, LLDP, vendor compatibility, and a graphical scenario timeline are deferred. No direct access to a NAC product is an acceptance prerequisite; no product-specific compatibility claim is permitted without testing that product.
+The first release includes a web UI, an automation API, SNMPv2c and SNMPv3 reads and authorized SET, standard link notifications, BRIDGE-MIB, Q-BRIDGE-MIB, and read-only ENTITY-MIB subsets, a persistent endpoint library, deterministic activity and aging, pause/manual advancement, and simulated reboot. Multiple switches, LLDP, vendor compatibility, and a graphical scenario timeline are deferred. No direct access to a NAC product is an acceptance prerequisite; no product-specific compatibility claim is permitted without testing that product.
 
 ### 1.1 Fixed decisions
 
@@ -50,15 +48,15 @@ Numeric defaults can change without changing the behavioral contract. Port count
 | Record | Required fields and rules |
 |---|---|
 | Switch | Stable UUID; name, description, contact, location; `identity.sys_descr`; nullable `identity.sys_object_id`; base MAC; listener binding and SNMP enablement; port count; selected legacy VLAN; aging configuration; limits; schema version. |
-| Port | Stable internal ID, bridge-port number, `ifIndex`, name/alias, admin flag, direct/shared mode, shared-partner presence, forced-link-down flag, speed, MTU, PVID, admitted VLAN set, link-notification enablement. |
+| Port | Stable internal ID, bridge-port number, `ifIndex`, name/alias, admin flag, direct/shared mode, shared-partner presence, forced-link-down flag, speed, MTU, PVID, independent admitted/untagged/forbidden VLAN sets, link-notification enablement. |
 | VLAN | VID, name, FDB ID, management creation/change times. VLAN 1 always exists. |
 | Endpoint | UUID, display name, optional metadata, active/silent setting, source entries, configuration revision. An attachment is stored separately. |
 | Source entry | Stable source ID within an endpoint; unicast MAC; `untagged` or one explicit VID; activity timing. Empty endpoints are valid. |
 | Attachment | Endpoint ID, port ID, attachment generation. One attachment per endpoint. |
-| Credential | ID, label, protocol/security settings, credential-wide enabled flag, protected secrets; independent polling access with enabled flag, optional source networks, and read-view reference. |
+| Credential | ID, label, protocol/security settings, credential-wide enabled flag, protected secrets; independent polling and writing access, each with an enabled flag, optional source networks, and an OID-view reference. |
 | Notification target | ID, address, UDP port, shared credential reference (which determines the version), enabled flag, notification types, and optional source binding. |
 
-VIDs are 1–4094. Explicit endpoint tags may refer to an unconfigured VID. VLAN 0/priority-tagged frames, stacked tags, and multiple untagged egress VLANs are outside this release. One port's PVID is also its sole untagged egress VLAN; all other admitted memberships are tagged. This is a deliberate product restriction, not a general statement about every possible VLAN implementation. [R2]
+VIDs are 1–4094. Explicit endpoint tags may refer to an unconfigured VID. VLAN 0/priority-tagged frames and stacked tags are not implemented. Each port has independent admitted, untagged, and forbidden sets. All memberships refer to existing VLANs; untagged is a subset of admitted, forbidden is disjoint from admitted, and PVID is admitted. Zero or multiple untagged memberships are supported. A new port starts with its PVID untagged and no forbidden memberships. [R2]
 
 MAC input accepts conventional hex notation and normalizes to six bytes. Multicast, broadcast, zero, and malformed source MACs are rejected. Duplicate unicast MACs between endpoints, between source entries, or between VLANs are allowed. Labels and endpoint metadata are not used to decide forwarding-table ownership.
 
@@ -110,20 +108,22 @@ The first release uses independent VLAN learning. It does not share FDBs between
 | Explicit clear | Remove entries in the requested port and/or VLAN scope; invalidate affected pending learning. |
 | Age expiration | Remove expired dynamic entries without changing attachments or link state. |
 
+Raw SNMP PVID SET changes ingress classification without changing untagged egress. For API `port-edit`, an actually changed PVID with omitted `untagged` uses `(old_untagged - {old_pvid}) union {new_pvid}`, including when the old PVID was not untagged. Explicit `untagged`, including an empty list, is exact. An omitted or unchanged PVID leaves the untagged set untouched. Final membership and forbidden constraints still apply.
+
 These are emulator policies. They are not advertised as a universal flush policy implemented by all switches. A configuration change cannot manufacture a source observation or migrate an old row into another FDB.
 
 ### 4.2 Atomic VLAN deletion and fallback
 
 Deleting VID `v` other than 1 performs one state transaction:
 
-1. Remove `v` from the VLAN inventory and every port's membership set.
-2. For each port whose PVID was `v`, set PVID to 1 and ensure VLAN 1 is admitted and untagged. Preserve all unrelated memberships.
+1. Remove `v` from the VLAN inventory and every port's admitted, untagged, and forbidden sets.
+2. For each port whose PVID was `v`, use VLAN 1 unless the same SET supplies an explicit replacement PVID. Implicit fallback admits VLAN 1 and makes it untagged only if the deleted PVID was untagged. Explicit final bitmap assignments take precedence. Reject forbidden/membership conflicts instead of clearing restrictions. Preserve unrelated memberships.
 3. Remove every dynamic entry in `v`'s FDB. Preserve other FDB entries and their deadlines.
 4. Fall the selected legacy VLAN back to 1 if it was `v`.
 5. Invalidate jobs based on affected port configurations and update relevant MIB row metadata.
 6. Leave endpoint definitions, explicit tags, attachments, carrier, and admin flags unchanged.
 
-VLAN 1 deletion is rejected. Untagged activity on fallback ports can subsequently learn in VLAN 1. Explicit activity tagged with deleted `v` remains configured but cannot learn there. Recreating `v` does not restore old membership or learning. The default FDB-ID mapping may be reused, but no outstanding pre-deletion job may become valid again.
+VLAN 1 deletion is rejected. SNMP destroy of an absent row is a no-op, including its deletion counter, jobs, generations, and events. Untagged activity on fallback ports can subsequently learn in VLAN 1. Explicit activity tagged with deleted `v` remains configured but cannot learn there. Recreating `v` does not restore old membership or learning. The default FDB-ID mapping may be reused, but no outstanding pre-deletion job may become valid again.
 
 ### 4.3 Aging, capacity, and counters
 
@@ -165,7 +165,7 @@ Relevant configuration commands invalidate pending observations and restart affe
 
 Implement SNMPv2c and SNMPv3 `GET`, `GETNEXT`, and `GETBULK`, including correct ASN.1 types, scalar suffixes, numeric OID order, exceptions, and response limits. A PDU is evaluated against one coherent state snapshot and one authorization decision. A walk consists of several requests and is not an atomic snapshot. Never expose `not-accessible` indexes as readable columns. [R4]
 
-Resolve the accessible view before choosing a `GETNEXT`/bulk successor. Unknown credentials do not receive an unrestricted view. Missing objects and missing instances receive the appropriate protocol exceptions; unsupported subtrees must not be filled with invented zeros. Bounded bulk handling must preserve valid protocol behavior rather than truncate BER bytes or loop indefinitely. Every SNMP SET is rejected in this release, including objects whose MIB maximum access is read-write or read-create. [R4, R5]
+Resolve the accessible view before choosing a `GETNEXT`/bulk successor. Unknown credentials do not receive an unrestricted view. Missing objects and missing instances receive the appropriate protocol exceptions; unsupported subtrees must not be filled with invented zeros. Bounded bulk handling must preserve valid protocol behavior rather than truncate BER bytes or loop indefinitely. SET is limited to the seven objects and explicit writing permissions in section 6.5. MIB maximum access does not grant implementation access to other objects. [R4, R5]
 
 ### 6.2 Identity and object coverage
 
@@ -210,7 +210,7 @@ The value changes advertised identity only. It does not load a vendor profile, a
 
 The gate also applies to notification test buttons and background sender tasks. Events occurring while disabled may appear in local history but must not accumulate a backlog for later SNMP replay. Already-transmitted packets cannot be recalled; acknowledgment of an identity clear means no further application send occurs under the previous activation. Coordinate in-flight work at the adapter boundary.
 
-The core TLA+ model does not contain this identity gate or configuration field. Their behavior requires implementation-level tests, not a claim of additional TLC coverage. [Setup and release guidance](docs/IDENTITY_SETUP.md) gives the development/public separation and test cases.
+The SET and response models represent gate/activation invalidation abstractly. The nullable identity field, OID parsing, startup loading, and actual listener behavior still require implementation-level tests. [Setup and release guidance](docs/IDENTITY_SETUP.md) gives the development/public separation and test cases.
 
 The adapter exposes configured physical switch ports only. Identity, interface counters, and bridge address are simulated values, not host OS data. First-release interface types are Ethernet and operational states are up/down; broader IF-MIB interface layering and inventory are not claimed.
 
@@ -218,7 +218,7 @@ The adapter exposes configured physical switch ports only. Identity, interface c
 
 Q-BRIDGE exposes the full VLAN-aware FDB. Its index is the FDB ID followed by the fixed-length MAC index. BRIDGE exposes only the configured legacy VLAN's FDB, defaulting to VLAN 1. There is no community-string VLAN selection and no flattening of multiple VLANs into a conflicting MAC-only table. The UI and access summary must show the legacy scope explicitly.
 
-Configured VLAN names and memberships appear through the static table even though SNMP writes are disabled. The current table reflects the configured operational VLAN inventory. Every configured VLAN is permanent and active in this release; dynamic VLAN registration is not implemented. [R2]
+Configured VLAN names and independent membership sets appear through the static table and the approved SET subset. The current table reflects the configured operational VLAN inventory. Every configured VLAN is permanent and active in this release; dynamic VLAN registration is not implemented. [R2]
 
 Serialize a `PortList` as bridge-port bits, most-significant bit first within each octet. Use a stable length sufficient for the highest bridge port. Do not use `ifIndex` as the bit position. FDB MAC indexes use six octet subidentifiers without an added length subidentifier. OID keys are integer sequences, never strings sorted lexically.
 
@@ -232,19 +232,84 @@ Implement the single-traversal behavior permitted by the updated TimeFilter guid
 
 Management-uptime wrap invalidates the previous filter epoch. Rebuild conceptual current rows and their timestamps in the new epoch from persistent VLAN configuration; do not delete that configuration or rewind USM security state. This adapter behavior is not represented by the VLAN-keyed TLA+ projection and needs separate wire tests.
 
+### 6.5 Atomic SET
+
+The writable columns are:
+
+| Object | Base OID | Exact index / syntax |
+|---|---|---|
+| `ifAdminStatus` | `1.3.6.1.2.1.2.2.1.7` | `ifIndex`; INTEGER up(1)/down(2) |
+| `dot1qVlanStaticName` | `1.3.6.1.2.1.17.7.1.4.3.1.1` | VID; UTF-8 OCTET STRING, 0–32 octets |
+| `dot1qVlanStaticEgressPorts` | `1.3.6.1.2.1.17.7.1.4.3.1.2` | VID; PortList |
+| `dot1qVlanForbiddenEgressPorts` | `1.3.6.1.2.1.17.7.1.4.3.1.3` | VID; PortList |
+| `dot1qVlanStaticUntaggedPorts` | `1.3.6.1.2.1.17.7.1.4.3.1.4` | VID; PortList |
+| `dot1qVlanStaticRowStatus` | `1.3.6.1.2.1.17.7.1.4.3.1.5` | VID; RowStatus INTEGER |
+| `dot1qPvid` | `1.3.6.1.2.1.17.7.1.4.5.1.1` | bridgePort; Unsigned32/Gauge32 tag |
+
+`ifOperStatus` stays derived and read-only. The RFC-defined admin testing(3) value is unsupported under the permitted up/down profile, so SET returns `wrongValue`. VLAN indexes and PVIDs above 4095 are valid local-scope possibilities in the MIB but are unsupported by this global-VID-only product. [R2, R3]
+
+A PortList uses bridge-port bits, not interface indexes. GET retains canonical width; SET accepts shorter zero-extended input and additional zero padding. A set bit for an absent port is `wrongValue`. Validate ASN.1 tags before converting values. Invalid UTF-8 is rejected without normalization. Identical decoded duplicate assignments coalesce; conflicting duplicates fail at the second original occurrence. Row look-ahead uses only the first row assignment, without bypassing validation of later bindings.
+
+| Existing row | RowStatus SET | Result |
+|---|---|---|
+| Absent | 4 | Create active row; default empty name and bitmaps, filled by same-PDU assignments |
+| Absent | 6 | Successful no-op |
+| Absent | 1 or 2 | `inconsistentValue` |
+| Absent | 5 | `wrongValue` |
+| Present | 1 | Successful no-op |
+| Present | 4 or 5 | `inconsistentValue` |
+| Present | 2 | `wrongValue` |
+| Present, not VLAN 1 | 6 | Delete with final-candidate fallback |
+| VLAN 1 | 6 | `inconsistentValue` |
+| Either | 3 or outside 1–6 | `wrongValue` |
+
+Other columns of an absent row require explicit creation in the same PDU or fail `inconsistentName`. All assignments are validated against the final candidate, not OID-order-dependent intermediate states. Cross-field errors identify an actual participant in the violated relation; unrelated PVID changes and no-op row commands do not take its error index. Only effective creates/deletes invalidate tagged-source work.
+
+Invalid authentication, registration, lifecycle, or source restrictions are dropped or handled by the existing security report path. For a valid current request, preflight the complete worst-case response before ordinary write authorization or binding processing. Insufficient budget or the varbind cap produces `tooBig`, index 0, with no bindings. Missing write grant produces `authorizationError`, index 0. Excluded objects produce `noAccess`; unsupported families produce `notWritable`; type, length, value, instance, row-state, and final-relation failures retain original 1-based positions. Responses otherwise echo the original request bindings, including createAndGo(4). [R4, R5, R17]
+
+The adapter retains at most 128 pending SET requests outside PySNMP's base responder cache. It captures authenticated metadata and the original wire request ID, acquires `io_lock` then the engine lock, and rechecks current credential/view/source/security level and generation. Detached BER sizing does not consume MP/security state or run speculative encryption. A version/layout-checked per-engine lifetime owner ties each request to the original opaque MP/security records, including before admission. Existing expiry boundaries, cancellation, and close retire only exact owned state. There is no side response cache or independent timer.
+
+After the final ready claim, one synchronous interval commits, publishes, materializes the public response, and finalizes its ticket without an await. A confirmed rollback returns `commitFailed` at the first effective assignment; an actual rollback failure returns `undoFailed`, index 0. Unconfirmed commit outcome is not labeled rollback. A committed configuration survives a subsequent response-delivery failure; there is no second effect or response attempt. Empty/no-op SET changes no engine state or idempotency data. Request IDs are not durable API idempotency keys. Section 9.1 defines storage-fault recovery.
+
+### 6.6 Read-only ENTITY inventory
+
+Let `E = 1.3.6.1.2.1.47` and `P = E.1.1.1.1`. Physical cells are `P.<column>.<physicalIndex>`. Chassis index 1 and port index `bridge_port + 1` are stable and independent of `ifIndex`, names, VLANs, and attachments. Only the emulated chassis and fixed ports appear. [R16]
+
+| Physical columns | Syntax / value |
+|---|---|
+| 2 Descr | UTF-8 SnmpAdminString: saved switch description or `Emulated Ethernet port` |
+| 3 VendorType | OBJECT IDENTIFIER `0.0`, unknown registration |
+| 4 ContainedIn | Integer32: chassis 0, ports 1 |
+| 5 Class | INTEGER: chassis(3), port(10) |
+| 6 ParentRelPos | Integer32: chassis -1, ports' saved bridge-port number |
+| 7 Name | UTF-8 saved switch/port name |
+| 8–15 HardwareRev/FirmwareRev/SoftwareRev/SerialNum/MfgName/ModelName/Alias/AssetID | Empty strings for unavailable inventory; physical Alias is not the 64-octet IF-MIB alias |
+| 16 IsFRU | TruthValue false(2) |
+| 17 MfgDate | DateAndTime unknown sentinel: eight binary zero octets |
+| 18 Uris | Canonical `urn:uuid:` from the saved entity UUID, or empty |
+| 19 UUID | UUIDorZero: 16 network-order bytes from the same saved UUID, or empty |
+
+Physical column 1 is an inaccessible index; RFC 6933 ends at column 19. Invalid UUID strings yield unknown values without rewriting or rejecting otherwise valid saved IDs. No manufacturer, serial, vendor registration, host inventory, or advertised management address is invented.
+
+`E.1.3.2.1.2.<physicalPortIndex>.0` is a wildcard alias RowPointer to `ifIndex.<saved ifIndex>`. `E.1.3.3.1.1.1.<physicalPortIndex>` returns each direct chassis child index; this child index is readable. Filtering applies to the pointer object's OID and grants no dereference privilege. `E.1.4.1.0` is `entLastChangeTime`: actual projected-row changes update it in the engine transaction, no-op/irrelevant/rejected changes preserve it, management reboot resets it to zero, and uptime wrap does not reset it. Multiple changes in one centisecond may share its numeric value. [R16, R18]
+
+Logical and LP tables, ENTITY writes, `entConfigChange`, and conformance registration are unsupported. The physical/mapping/general subset does not claim complete `entity4Compliance`, mapping-group support, or constrained-resource compliance. The generated manifest separately records normative maximum access, including ENTITY's writable declarations, and this implementation's read-only access.
+
 ## 7. Credentials and notifications
 
 ### 7.1 Credentials
 
-Allow multiple independently enabled communities and SNMPv3 users, with named read views and optional source CIDR restrictions. A view can include identity/interfaces only or all implemented operational objects. Protocol-required SNMPv3 discovery and reports are handled by the security library; they do not grant operational-table access. SNMP credentials are reusable for polling and notification targets; web authentication remains separate. Polling requires both credential-wide enablement and polling-access enablement. A target reference does not grant polling access. Enabled polling access requires an existing read view even when the credential-wide flag is disabled. Inactive polling retains its view ID and source networks without requiring that view to exist, so trap-only credentials remain usable with no read views. Target forms select an existing version-compatible credential or create one atomically with polling disabled; incoming source networks and read views belong to polling access. Revocation or secret rotation affects requests when they are handled, including requests previously queued. A response already completed against an authorized snapshot is not retroactively invalidated.
+Allow multiple independently enabled communities and SNMPv3 users, with independently selected polling and SET views and optional per-use source CIDR restrictions. A view can include identity/interfaces only or all implemented operational objects. Protocol-required SNMPv3 discovery and reports are handled by the security library; they do not grant operational-table access. SNMP credentials are reusable for polling, SET, and notification targets; web authentication remains separate. Incoming access requires credential-wide enablement and the corresponding permission. Read-only credentials do not gain writes, write-only credentials do not gain reads, and target association grants neither. Enabled access requires an existing selected view even when the credential-wide flag is disabled. Inactive access retains its view ID and source networks; writing may retain null. Trap-only credentials require no views.
+
+Target forms select an existing version-compatible credential or create one atomically with polling and writing disabled. Empty per-use networks mean no source-IP restriction; nonempty CIDRs restrict that operation. Revocation, rotation, write-view changes, and activation changes invalidate pending SET work. Any genuine edit of a selected write-view definition changes the request generation for every referencing credential, including remove/restore ABA; same-value saves and unrelated views do not. This queued-view invalidation is product lifecycle behavior, not an RFC VACM requirement. Handling-time view checks remain. A completed response is not retroactively invalidated.
 
 SNMPv3 supports explicitly selected `noAuthNoPriv`, `authNoPriv`, and `authPriv` configurations. Target interoperable SHA-256 authentication and AES-128 privacy; enable additional algorithms only after library support and independent tests are established. Legacy or unauthenticated modes must be visibly identified. Do not implement cryptography in the emulator state engine. [R8, R9, R10]
 
 Store web passwords using a vetted password-hashing implementation. Store SNMP secrets/key material in a protected secret store or encrypted configuration with a separately mounted key, because authentication needs more than a web-password hash. Redact secrets in APIs, logs, traces, errors, exports, and source-controlled examples. The application must be able to restart without silently resetting SNMPv3 identity.
 
-Configuration uses schema 2. Scenario schema 1 remains independent and cannot replace these deployment settings. The shared-credential relationships, inline creation, and schema conversion are application behavior outside the recorded `ReadAccess.tla` verification scope.
+Configuration uses schema 2. Credentials contain `polling: {enabled, view_id, networks}` and `writing: {enabled, view_id, networks}`; writing defaults to disabled with null view and empty networks. Sparse updates preserve omitted nested fields and saved secrets. Scenario schema 1 remains independent and cannot replace deployment settings. Current `ReadAccess` and `SetTransactions` checks cover bounded shared relationships and independent permissions; actual decoding and saved-state loading remain implementation tests.
 
-One enabled credential identifies each community or v3 username in the single SNMP engine. Shared v3 polling and traps use the same username, security level, keys, and local engine identity. Credential-wide disablement stops both uses; disabling polling alone does not stop traps.
+One enabled credential identifies each community or v3 username in the single SNMP engine. Shared v3 reads, writes, and traps use the same username, security level, keys, and local engine identity. Credential-wide disablement stops all uses. Either an enabled reader or writer can hold the incoming listener; traps use independent outgoing transport.
 
 ### 7.2 Notification semantics
 
@@ -280,6 +345,14 @@ Use optimistic revision checks for UI/API writes. Multiple browser tabs still ex
 
 SQLite transactions cover durable configuration and event/outbox metadata where applicable. Operational cache state may remain in memory because restart semantics deliberately clear it. Audit/event storage needs bounded retention; do not turn per-source activity into unbounded database writes. A crash between a network send and recording its result may leave send status uncertain; do not promise exactly-once UDP notifications.
 
+### 9.1 Uncertain storage and existing startup recovery
+
+A confirmed rollback leaves the incarnation healthy. Only actual rollback failure or a COMMIT exception without a confirmed outcome latches a nonsecret storage-fault reason. The published Runtime remains the last confirmed snapshot; a connection-local candidate or a possibly committed value is not presented as confirmed state. Equality with the old value does not establish a successful rollback.
+
+The Store and common engine transaction reject further configuration/runtime/storage mutations, including API, SET, clock/background work, setup, engine-boot helpers, and notification-result updates. Pending SETs cannot acquire effects, and queued traps are not sent when their durable result cannot be recorded. Existing authorized SNMP reads, UI/state/export, and read-only authentication remain available with explicit last-confirmed/storage-health labels. API mutations return 503; the initial SET retains its `undoFailed` or unknown/drop outcome. There is no in-place health clear or automatic retry.
+
+Recovery closes the old connection/process and uses normal application startup: reopen the actual durable database, validate configuration, and load revisions, events, idempotency, outbox, and engine identity. A fresh successfully initialized incarnation resumes writes and sends. Failed close, unavailable/invalid loading, or persistent storage failure does not enable defaults as recovery. Existing management reboot semantics reset volatile learning/counters and cancel the prior outbox; no exact volatile-state restoration is claimed. There is no recovery endpoint, restart service, or new database/key.
+
 ## 10. API and UI contract
 
 ### 10.1 HTTP API
@@ -308,13 +381,13 @@ Return 401/403 for web authorization failures, 404 for unknown resources, 409 fo
 
 ### 10.2 Web UI
 
-Provide a switch port grid, a reusable endpoint library with a source editor, a VLAN editor, SNMP/target settings, live interface/FDB/VLAN tables, clock controls, and an event history. The port panel distinguishes admin state, carrier, forced-down state, PVID/memberships, shared partner, attachments, and learned MAC count.
+Provide a switch port grid, a reusable endpoint library with a source editor, a VLAN editor, SNMP/target settings, live interface/FDB/VLAN tables, clock controls, and an event history. The port panel distinguishes admin state, carrier, forced-down state, ingress PVID and independent admitted/untagged/forbidden sets, shared partner, attachments, and learned MAC count. Untouched Untagged VLANs preview the API native-PVID formula; a user-edited field is exact, including empty. The credential page provides separate **Polling** and **SET access** forms; **Allow SET** requires an explicit selected view and includes no auth fields.
 
 The SNMP settings page labels the identity field **System object ID (`sysObjectID`)** and asks for a full numeric OID. Do not prefill it with a placeholder in the public UI. Explain that it changes advertised identity only. When unset, show **SNMP disabled: configure a system object ID** without hiding simulation controls. Warn when the documentation-only development placeholder is selected, including when an operator deliberately enters it in a public build. [R15]
 
 The live FDB view shows MAC, VID, FDB ID, bridge port, joined `ifIndex`, last observation, and remaining simulated age. Cached entries without current endpoint instances remain visible; do not remove them merely because no library row can be joined.
 
-Before VLAN deletion, show which native ports fall back to 1 and which memberships disappear. The operation remains atomic regardless of the size of the preview. Show explicit invalid tagging/admission conditions without silently correcting them. Keep configured endpoint metadata visually distinct from switch-observed learning.
+Before VLAN deletion, show which ingress PVIDs fall back to 1 and which memberships disappear. The operation remains atomic regardless of the size of the preview. Show explicit invalid tagging/admission conditions without silently correcting them. Keep configured endpoint metadata visually distinct from switch-observed learning.
 
 Optional SNMP request tracing shows manager, operation, OIDs, view/result, snapshot revision, and latency. Never display raw community/user secrets. Normal operation favors meaningful changes over a log entry for every routine MAC refresh.
 
@@ -346,15 +419,17 @@ A clean-install release test must inspect the **effective** loaded configuration
 | Obsolete callbacks and ABA races | Generation invariants and five targeted race families | Pause worker, mutate/revert, release old callback, assert no commit. |
 | Active learning, aging, queue drain | Separate finite liveness fixtures with fairness | Scheduler timing, pause/manual advancement, backlog limits. |
 | MIB joins | `MibOK` semantic projections | Numeric indexing, MAC encoding, bridge-port bitmaps, `ifIndex` joins. |
-| Credentials | Separate ReadAccess model | Independent v2c/v3 clients; revoked queued request; restricted GETNEXT/BULK. |
-| Development/public identity, setup gate | Outside the formal model; documentation revision 2.1 | Clean public default, explicit development overlay, typed OID response, validation, clearing, gated test sends, persistence, and unchanged generic behavior; see section 12.2. |
+| Credentials | Current ReadAccess and SetTransactions bounded composition | Independent v2c/v3 clients; revoked queued request; restricted GETNEXT/BULK. |
+| Development/public identity, setup gate | SET activation is abstractly modeled; concrete identity loading/parsing remains outside | Clean public default, explicit development overlay, typed OID response, validation, clearing, gated test sends, persistence, and unchanged generic behavior; see section 12.2. |
 | Notifications | Link queue invariants/scenarios; drain liveness | Independent receiver checks PDU type, varbind order, values and timestamps. |
-| Restart | `Reboot` plus queued-work scenario | Process restart, persisted identities, USM boots, coldStart, relearning. |
-| Wire protocol, TimeFilter, capacity, import, crash atomicity | Not covered by core TLA+ | Dedicated unit/integration/fault tests. |
+| Restart | `Reboot`, queued-work scenarios, and StorageOutcomes recovery | Process restart, persisted identities, USM boots, coldStart, relearning. |
+| SET transaction/lifetime/storage health | SetTransactions, SetResponseLifecycle/Entry, StorageOutcomes | Actual BER, cache ownership, SQL exceptions, stale requests, and recovery. |
+| ENTITY inventory | Stable core joins and EntityInventory snapshots/change clock | Exact OIDs/types/sentinels, UTF-8, UUIDs, filtering, no-op/wrap/reboot. |
+| Wire protocol, TimeFilter, capacity, import, OS durability | Not proved by core TLA+ | Dedicated unit/integration/fault tests. |
 
 Use Net-SNMP polling tools and `snmptrapd`, or equivalent independently implemented clients, for integration tests. Check good/bad credentials, view traversal, empty tables, nonidentical indexes, duplicate MACs across VLANs, absent VLAN tags, table edits during a walk, response limits, and reboot. A reference script can assert the end-to-end MAC → FDB → bridge port → interface join without access to a NAC product. [R13]
 
-Model checking is finite and configuration-specific. The full-core fixture is intentionally small; focused fixtures and scripted traces cover larger combinations. The source model and credential model have not been formally composed or refined into an application. Passing TLC does not establish ASN.1 correctness, security implementation correctness, crash safety, unlimited-scale correctness, or NAC compatibility. Exact executed configurations, outcomes, limits, and tool hashes are recorded in `VERIFICATION.md` and `logs/verification.json`.
+Model checking is finite and configuration-specific. The full-core fixture is intentionally small; focused fixtures and scripted traces cover larger combinations. Current SET checks compose bounded core and credential contracts; none is a formal refinement proof of the Python application. Passing TLC does not establish ASN.1 correctness, security implementation correctness, crash safety, unlimited-scale correctness, or NAC compatibility. Exact current configurations, outcomes, limits, and tool hashes are linked from `CURRENT_VERIFICATION.md`. Historical `VERIFICATION.md` and its logs retain their original scope and measurements.
 
 ### 12.1 Integrated validation
 
@@ -395,3 +470,7 @@ The references define protocol/object semantics. Choices such as selective flush
 - **[R13]** Net-SNMP manual index: https://www.net-snmp.org/docs/man/
 - **[R14]** TLA+ tools: https://github.com/tlaplus/tlaplus
 - **[R15]** IETF RFC 5612, documentation-only enterprise number 32473: https://www.rfc-editor.org/rfc/rfc5612.html
+
+- **[R16]** IETF RFC 6933, ENTITY-MIB: https://www.rfc-editor.org/rfc/rfc6933.html
+- **[R17]** IETF RFC 3413, command responder applications: https://www.rfc-editor.org/rfc/rfc3413.html
+- **[R18]** IETF RFC 2579, RowStatus and TimeStamp conventions: https://www.rfc-editor.org/rfc/rfc2579.html

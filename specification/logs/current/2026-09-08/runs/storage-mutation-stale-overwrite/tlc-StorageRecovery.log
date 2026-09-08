@@ -1,0 +1,186 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 910MB heap and 64MB offheap memory [pid: 218386] (Linux 6.12.101+deb13-amd64 amd64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/.scratch/snmp-switch-formal/mutation-storage-stale-overwrite/StorageOutcomes.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module StorageOutcomes
+Starting... (2026-09-08 18:15:29)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Finished computing initial states: 40 distinct states generated at 2026-09-08 18:15:29.
+Error: Invariant RecoveryAssertions is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ actualOutcome = "candidate"
+/\ work = NoWork
+/\ store = [ open |-> TRUE,
+  health |-> "healthy",
+  durable |-> [primary |-> FALSE, secondary |-> FALSE],
+  published |-> [primary |-> FALSE, secondary |-> FALSE],
+  incarnation |-> 0,
+  transaction |-> NoVersion,
+  runtime |-> FALSE,
+  sent |-> FALSE ]
+/\ pc = 0
+/\ scenario = "commitUnknown"
+/\ deliveryStage = "afterRestart"
+/\ result = [status |-> "none", index |-> 0]
+/\ anchor = NoRead
+/\ workKind = "api"
+/\ seen = NoRead
+
+State 2: <RecoveryNext line 184, col 17 to line 187, col 71 of module StorageOutcomes>
+/\ actualOutcome = "candidate"
+/\ work = [incarnation |-> 0, kind |-> "api"]
+/\ store = [ open |-> TRUE,
+  health |-> "healthy",
+  durable |-> [primary |-> FALSE, secondary |-> FALSE],
+  published |-> [primary |-> FALSE, secondary |-> FALSE],
+  incarnation |-> 0,
+  transaction |-> NoVersion,
+  runtime |-> FALSE,
+  sent |-> FALSE ]
+/\ pc = 1
+/\ scenario = "commitUnknown"
+/\ deliveryStage = "afterRestart"
+/\ result = [status |-> "queued", index |-> 0]
+/\ anchor = NoRead
+/\ workKind = "api"
+/\ seen = NoRead
+
+State 3: <RecoveryNext line 184, col 17 to line 187, col 71 of module StorageOutcomes>
+/\ actualOutcome = "candidate"
+/\ work = [incarnation |-> 0, kind |-> "api"]
+/\ store = [ open |-> TRUE,
+  health |-> "commitUnknown",
+  durable |-> [primary |-> TRUE, secondary |-> FALSE],
+  published |-> [primary |-> FALSE, secondary |-> FALSE],
+  incarnation |-> 0,
+  transaction |-> NoVersion,
+  runtime |-> FALSE,
+  sent |-> FALSE ]
+/\ pc = 2
+/\ scenario = "commitUnknown"
+/\ deliveryStage = "afterRestart"
+/\ result = [status |-> "dropped", index |-> 0]
+/\ anchor = [ outcome |-> [status |-> "dropped", index |-> 0],
+  state |->
+      [ open |-> TRUE,
+        health |-> "commitUnknown",
+        durable |-> [primary |-> TRUE, secondary |-> FALSE],
+        published |-> [primary |-> FALSE, secondary |-> FALSE],
+        incarnation |-> 0,
+        transaction |-> NoVersion,
+        runtime |-> FALSE,
+        sent |-> FALSE ] ]
+/\ workKind = "api"
+/\ seen = NoRead
+
+State 4: <RecoveryNext line 184, col 17 to line 187, col 71 of module StorageOutcomes>
+/\ actualOutcome = "candidate"
+/\ work = [incarnation |-> 0, kind |-> "api"]
+/\ store = [ open |-> TRUE,
+  health |-> "commitUnknown",
+  durable |-> [primary |-> TRUE, secondary |-> FALSE],
+  published |-> [primary |-> FALSE, secondary |-> FALSE],
+  incarnation |-> 0,
+  transaction |-> NoVersion,
+  runtime |-> FALSE,
+  sent |-> FALSE ]
+/\ pc = 3
+/\ scenario = "commitUnknown"
+/\ deliveryStage = "afterRestart"
+/\ result = [status |-> "read", index |-> 0]
+/\ anchor = [ outcome |-> [status |-> "dropped", index |-> 0],
+  state |->
+      [ open |-> TRUE,
+        health |-> "commitUnknown",
+        durable |-> [primary |-> TRUE, secondary |-> FALSE],
+        published |-> [primary |-> FALSE, secondary |-> FALSE],
+        incarnation |-> 0,
+        transaction |-> NoVersion,
+        runtime |-> FALSE,
+        sent |-> FALSE ] ]
+/\ workKind = "api"
+/\ seen = [ health |-> "commitUnknown",
+  value |-> [primary |-> FALSE, secondary |-> FALSE],
+  confirmed |-> TRUE,
+  writable |-> FALSE ]
+
+State 5: <RecoveryNext line 184, col 17 to line 187, col 71 of module StorageOutcomes>
+/\ actualOutcome = "candidate"
+/\ work = [incarnation |-> 0, kind |-> "api"]
+/\ store = [ open |-> TRUE,
+  health |-> "commitUnknown",
+  durable |-> [primary |-> TRUE, secondary |-> FALSE],
+  published |-> [primary |-> FALSE, secondary |-> FALSE],
+  incarnation |-> 0,
+  transaction |-> NoVersion,
+  runtime |-> FALSE,
+  sent |-> FALSE ]
+/\ pc = 4
+/\ scenario = "commitUnknown"
+/\ deliveryStage = "afterRestart"
+/\ result = [status |-> "inspected", index |-> 0]
+/\ anchor = [ outcome |-> [status |-> "dropped", index |-> 0],
+  state |->
+      [ open |-> TRUE,
+        health |-> "commitUnknown",
+        durable |-> [primary |-> TRUE, secondary |-> FALSE],
+        published |-> [primary |-> FALSE, secondary |-> FALSE],
+        incarnation |-> 0,
+        transaction |-> NoVersion,
+        runtime |-> FALSE,
+        sent |-> FALSE ] ]
+/\ workKind = "api"
+/\ seen = [ health |-> "commitUnknown",
+  value |-> [primary |-> TRUE, secondary |-> FALSE],
+  confirmed |-> FALSE,
+  writable |-> FALSE ]
+
+State 6: <RecoveryNext line 184, col 17 to line 187, col 71 of module StorageOutcomes>
+/\ actualOutcome = "candidate"
+/\ work = [incarnation |-> 0, kind |-> "api"]
+/\ store = [ open |-> TRUE,
+  health |-> "commitUnknown",
+  durable |-> [primary |-> FALSE, secondary |-> TRUE],
+  published |-> [primary |-> FALSE, secondary |-> TRUE],
+  incarnation |-> 0,
+  transaction |-> NoVersion,
+  runtime |-> TRUE,
+  sent |-> FALSE ]
+/\ pc = 5
+/\ scenario = "commitUnknown"
+/\ deliveryStage = "afterRestart"
+/\ result = [status |-> "noError", index |-> 0]
+/\ anchor = [ outcome |-> [status |-> "dropped", index |-> 0],
+  state |->
+      [ open |-> TRUE,
+        health |-> "commitUnknown",
+        durable |-> [primary |-> TRUE, secondary |-> FALSE],
+        published |-> [primary |-> FALSE, secondary |-> FALSE],
+        incarnation |-> 0,
+        transaction |-> NoVersion,
+        runtime |-> FALSE,
+        sent |-> FALSE ] ]
+/\ workKind = "api"
+/\ seen = [ health |-> "commitUnknown",
+  value |-> [primary |-> TRUE, secondary |-> FALSE],
+  confirmed |-> FALSE,
+  writable |-> FALSE ]
+
+226 states generated, 226 distinct states found, 39 states left on queue.
+The depth of the complete state graph search is 6.
+The average outdegree of the complete state graph is 1 (minimum is 1, the maximum 1 and the 95th percentile is 1).
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/storage-mutation-stale-overwrite/states/StorageRecovery/26-09-08-18-15-28
+Checkpointing completed at (2026-09-08 18:15:29)
+Finished in 00s at (2026-09-08 18:15:29)

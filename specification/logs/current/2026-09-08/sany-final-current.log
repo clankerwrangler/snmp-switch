@@ -1,0 +1,145 @@
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/EntityScenarios.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/EntityInventory.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module EntityInventory
+Semantic processing of module EntityScenarios
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/AccessScenarios.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/ReadAccess.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module ReadAccess
+Semantic processing of module AccessScenarios
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Scenarios.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module Scenarios
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/ReadAccess.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module ReadAccess
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/EntityInventory.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module EntityInventory
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+
+****** SANY2 Version 2.1 created 24 February 2014
+
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/SetScenarios.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+Semantic processing of module SetScenarios

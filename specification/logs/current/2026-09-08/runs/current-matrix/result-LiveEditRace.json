@@ -1,0 +1,38 @@
+{
+  "model": "LiveEditRace",
+  "module": "TestSwitch.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 4.094,
+  "counts": {
+    "generated": 81313,
+    "distinct": 10164,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/current-matrix/states/LiveEditRace",
+    "-config",
+    "configs/LiveEditRace.cfg",
+    "TestSwitch.tla"
+  ],
+  "log": "tlc-LiveEditRace.log",
+  "log_sha256": "e98ac376b241a1f4e2de867b95c5403512e46d1e696a35bc8b7415e878b4a8cf",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

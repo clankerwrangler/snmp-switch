@@ -1,98 +1,65 @@
 # SNMP Switch Emulator: model and technical specification
 
-A vendor-neutral switch-management emulator design with reusable endpoints, BRIDGE-MIB/Q-BRIDGE-MIB views, and standard notifications. No Ethernet forwarding is implemented or required.
-
-This directory contains an executable TLA+ model, TLC configurations, targeted scenarios, and application requirements. For installation and use, see the [application README](../README.md). The original models, scripts, and documentation use the [project MIT License](../LICENSE). External tools and referenced standards retain their own terms.
-
-Documentation revision **2.1** defines identity configuration and first-run setup. The identity gate is outside the verification scope of the revision-2 `.tla` and `.cfg` files.
+This directory contains the current TLA+ contract, bounded TLC configurations, behavioral negative controls, and application requirements for one vendor-neutral switch-management emulator. There is no Ethernet forwarding. Original project material uses the [MIT License](../LICENSE); external tools and standards retain their terms.
 
 ## Start here
 
-- [Technical specification](TECHNICAL_SPECIFICATION.md): behavior, data structures, wire protocol, API/UI, persistence, deployment, and acceptance tests.
-- [Identity setup and release checks](docs/IDENTITY_SETUP.md): development placeholder, unset public default, operator setup, and release checks.
-- [Verification report](VERIFICATION.md): actual TLC results, finite bounds, and exclusions.
-- [Core model](Switch.tla): state transitions and semantic MIB projections.
-- [Object manifest](docs/mib-coverage.csv): 72 first-release object/index definitions. This is a target manifest, not a full-MIB conformance claim.
+- [Application README](../README.md): installation, controls, and supported SNMP operations.
+- [Technical specification](TECHNICAL_SPECIFICATION.md): state, VLAN/SET/ENTITY behavior, API/UI, and storage recovery.
+- [Current model contract](CURRENT_MODEL.md): model ownership, selected profiles, finite bounds, and implementation boundaries.
+- [Current verification](CURRENT_VERIFICATION.md): exact checked inputs, outcomes, negative controls, and preserved failures.
+- [Object manifest](docs/mib-coverage.csv): 95 definitions, comprising 89 readable objects (seven writable) and six inaccessible indexes. Maximum MIB access and implemented access are separate.
+- [Identity setup](docs/IDENTITY_SETUP.md): explicit identity configuration and public defaults.
+- [Historical verification](VERIFICATION.md): original revision-2 evidence, with its original scope and measurements.
 
-## Identity configuration
+## Current contract
 
-Public defaults leave `identity.sys_object_id` unset. The web UI and simulation remain available, but SNMP listening and notifications stay disabled until the operator supplies a valid full numeric OID and completes normal SNMP setup. No project-owned enterprise-number registration is required to publish the application.
+One state engine owns endpoints, stable ports, VLANs, learned addresses, generations, and notification events. Endpoints have editable MAC/tag sources and independent attachments. Direct/shared carrier behavior, selective flushing, deterministic source activity and aging, pause/manual advancement, and reboot semantics remain explicit.
 
-The explicit development overlay loads `1.3.6.1.4.1.32473.1`. This is a documentation-only placeholder, not an assigned operational identity. Public runtime defaults remain unset. Any syntactically valid operator OID is accepted without ownership checks. Changing it changes advertised identity only, not supported MIBs or behavior.
+Ports have independent admitted, untagged, and forbidden VLAN sets. Raw SNMP PVID changes ingress classification only; the API's native-PVID convenience is modeled separately. Seven SET objects use simultaneous final-candidate validation and one transaction. Polling and writing grants are independent and default-denied, while reusable credentials can also serve trap destinations.
 
-The [setup guide](docs/IDENTITY_SETUP.md) describes the placeholder and the standards for allocated identifiers. Public defaults stay null in the source configuration; a development overlay supplies the placeholder only when explicitly selected.
+The read-only ENTITY subset contains emulated chassis/port inventory, stable interface pointers, direct containment, and an actual-row-change timestamp. It does not invent host devices or implement logical tables, inventory SET, or ENTITY notifications.
 
-## Endpoint and VLAN behavior
-
-Endpoint definitions are mutable, with multiple MAC/tag sources per instance. They can be edited while attached. Historical learned rows survive edits and age normally.
-
-VLAN membership changes flush only invalidated entries. Deleting a VLAN falls native ports back to VLAN 1, preserves unrelated memberships and learning, and leaves explicit endpoint tags unchanged. VLAN 1 cannot be deleted.
-
-The model also includes runtime endpoint/VLAN lifecycle, direct/shared link modes, persistent forced-down state, source scheduling, pause/manual ticks, reboot invalidation, and late callbacks that survive cancellation. Generation tokens prevent old activity becoming valid after values change and later return to their original values.
-
-The source, interface, VLAN, and FDB views have one state owner. No vendor profile, vendor trap, or vendor community-indexing behavior is included.
+SET models include original-position errors, current authorization and generation invalidation, exact response-record ownership, expiry/cancellation, commit versus delivery outcomes, and fault-only storage recovery through existing startup. The concrete BER, USM, SQLite, API, and browser boundaries still require implementation tests.
 
 ## Run the checks
 
-Requirements: Python 3.10 or later, a Java runtime suitable for the selected TLA+ tools, and the official `tla2tools.jar`. The recorded run used OpenJDK 21 and the tool version identified in the verification report. No third-party Python packages are required.
-
-Obtain the tools from the [official TLA+ project](https://github.com/tlaplus/tlaplus). The JAR is not bundled. Pass its actual path:
+Use Python, a Java runtime suitable for the selected official TLA+ tools, and `tla2tools.jar`. The JAR is not bundled. Tool versions and integrity evidence are recorded in the current verification report.
 
 ```powershell
 python .\run_tlc.py --jar C:\tools\tla2tools.jar --timeout 600
 ```
 
-On Linux:
-
 ```sh
 python3 ./run_tlc.py --jar /path/to/tla2tools.jar --timeout 600
 ```
 
-Run only selected configurations:
+For selected configurations:
 
-```powershell
-python .\run_tlc.py --jar C:\tools\tla2tools.jar --models VlanLifecycle ScenarioDeleteFallback ScenarioAttachmentABA
+```sh
+python3 ./run_tlc.py --jar /path/to/tla2tools.jar --models SetResponseEntry StorageRecovery
 ```
 
-Check the intentional defect variants:
+The normal catalog contains 48 configurations. Current verification joins the original and affected runs; it does not claim one combined 48-configuration rerun. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
 
-```powershell
-python .\tests\check_mutations.py --jar C:\tools\tla2tools.jar
+```sh
+python3 ./tests/check_mutations.py --jar /path/to/tla2tools.jar
 ```
 
-Mutation checks operate on temporary copies. Success means the intentionally broken copies were rejected by behavioral checks; a parse failure or timeout does not count as detecting a defect.
+Mutation checks use temporary copies. Current verification also retains the targeted lifetime, entry-association, and storage-recovery counterexamples. Historical logs describe the exact inputs recorded with each run.
 
-The verification report records the revision-2 model checks for the inputs identified in that report. Each checker run records fresh logs and JSON outcomes. A timeout is an incomplete result, not a pass. Increase the timeout or use a focused configuration when needed. `states/` is disposable local TLC scratch. The `run_tlc.py` runner uses one worker and a fixed seed; symmetry reduction is not used for liveness.
-
-## Model organization
+## Main owners
 
 | File | Role |
 |---|---|
-| `Switch.tla` | Core state machine, invariants, source validity, and conditional progress properties. |
-| `ReadAccess.tla` | Separate abstraction of configurable credentials and handling-time read authorization. |
-| `TestSwitch.tla` | Small fixture initial states and restricted transition families. |
-| `Scenarios.tla` | Sixteen scripted traces using actual core actions and explicit checkpoints. |
-| `configs/*.cfg` | Twenty-five executed finite TLC configurations. |
-| `make_configs.py` | Rebuild the general fixture configurations. |
-| `tests/make_scenarios.py` | Rebuild scenario module and configurations. |
-| `tests/check_mutations.py` | Three deliberately defective copies and behavioral rejection checks. |
-| `run_tlc.py` | Portable TLC runner with per-model outcome logs. |
-| `docs/make_mib_manifest.py` | Rebuild the CSV object manifest. |
-| `docs/example-endpoint.json` | Illustrative endpoint payload with untagged and tagged sources. |
-| `docs/IDENTITY_SETUP.md` | Development/public identity configuration and setup behavior. |
-| `docs/config/*.yaml` | Proposed identity fragments, not a working application configuration format. |
-| `DOCUMENTATION_CHANGES.md` | Revision-2.1 change summary and verification boundaries. |
+| `Switch.tla` | Core state, VLAN sets, stable ENTITY joins, invariants, and source progress |
+| `ReadAccess.tla` | Shared credentials and independent polling/writing/target references |
+| `SetTransactions.tla` | Final-candidate SET, original-position errors, authorization, and generations |
+| `EntityInventory.tla` | Inventory snapshots and change-clock behavior |
+| `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original response ownership, stage-aware finalization, and pre-admission association |
+| `StorageOutcomes.tla` | Confirmed/uncertain durability, faulted mutation/send gates, and existing-startup recovery |
+| `configs/*.cfg` | Finite graph and scripted scenario selections |
+| `run_tlc.py` | Bounded runner and current replacement/certificate checks |
+| `docs/make_mib_manifest.py` | Canonical object-manifest generator |
 
-The generators are development conveniences, not prerequisites for running the checked-in configurations. `ReadAccess.cfg` is maintained directly. The example JSON is a proposed API payload, not a presently executable importer format.
-
-## Formal boundaries
-
-The model uses finite endpoint/source slots for runtime objects, short aging countdowns instead of absolute timestamps, equality generations instead of an unbounded ID allocator, and one semantic notification queue. Some fixtures restrict which action families may occur. These bounds are listed in the verification report.
-
-MIB operators represent semantic sets/maps, not ASN.1 encoders. Index objects are not necessarily readable columns; the object manifest distinguishes them. The current VLAN table's TimeFilter semantics, notification encoding, counters, persistence transactions, import/reset behavior, capacity, and SNMPv3 cryptography require implementation-level tests.
-
-`ReadAccess.tla` is not formally composed with `Switch.tla`. Successful finite model checking does not prove application correctness, cover every possible system size, or establish NAC-product compatibility.
-
-## Initial implementation scope
-
-One switch, Docker-first, one web administrator, multiple read credentials, direct/shared ports, an editable endpoint library, live tables, deterministic source activity and aging, standard notifications, and controlled restart behavior. Public release uses operator-supplied `sysObjectID` configuration rather than requiring a project-owned allocation. Identity setup and release behavior require application-level tests; the model-checking results do not cover them.
+Model checking is finite and configuration-specific. Semantic sets/maps do not prove ASN.1 encoding, cryptography, OS durability, unlimited-scale behavior, or NAC-product compatibility. The implementation has not been formally refined from these models. The current verification report identifies the exact assumptions and remaining boundaries.

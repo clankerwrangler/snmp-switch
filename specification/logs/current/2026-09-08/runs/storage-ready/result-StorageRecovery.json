@@ -1,0 +1,38 @@
+{
+  "model": "StorageRecovery",
+  "module": "StorageOutcomes.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 1.244,
+  "counts": {
+    "generated": 768,
+    "distinct": 736,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx1g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/storage-ready/states/StorageRecovery",
+    "-config",
+    "configs/StorageRecovery.cfg",
+    "StorageOutcomes.tla"
+  ],
+  "log": "tlc-StorageRecovery.log",
+  "log_sha256": "d3c429eab692bdc5c07e0163827532e6f5d9c27e190c901436b53d65d06c97cf",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

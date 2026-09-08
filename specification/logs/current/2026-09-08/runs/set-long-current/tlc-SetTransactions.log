@@ -1,0 +1,117 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 1820MB heap and 64MB offheap memory [pid: 191012] (Linux 6.12.101+deb13-amd64 amd64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-current/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+Starting... (2026-09-08 14:57:45)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Computed 2 initial states...
+Finished computing initial states: 4 distinct states generated at 2026-09-08 14:57:46.
+Checking temporal properties for the current state space with 17459 total distinct states at (2026-09-08 14:57:49)
+Finished checking temporal properties in 00s at 2026-09-08 14:57:49
+Progress(3) at 2026-09-08 14:57:49: 25,994 states generated (25,994 s/min), 17,459 distinct states found (17,459 ds/min), 15,949 states left on queue.
+Checking temporal properties for the current state space with 298250 total distinct states at (2026-09-08 14:58:49)
+Finished checking temporal properties in 03s at 2026-09-08 14:58:53
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 14:58:53)
+Progress(5) at 2026-09-08 14:58:53: 1,079,089 states generated (1,053,095 s/min), 298,264 distinct states found (280,805 ds/min), 205,849 states left on queue.
+Checking temporal properties for the current state space with 517801 total distinct states at (2026-09-08 14:59:53)
+Finished checking temporal properties in 08s at 2026-09-08 15:00:01
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:00:01)
+Progress(6) at 2026-09-08 15:00:01: 2,361,588 states generated (1,282,499 s/min), 517,808 distinct states found (219,544 ds/min), 314,220 states left on queue.
+Checking temporal properties for the current state space with 713242 total distinct states at (2026-09-08 15:01:01)
+Finished checking temporal properties in 14s at 2026-09-08 15:01:15
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:01:15)
+Progress(6) at 2026-09-08 15:01:15: 3,879,129 states generated (1,517,541 s/min), 713,262 distinct states found (195,454 ds/min), 377,869 states left on queue.
+Checking temporal properties for the current state space with 921913 total distinct states at (2026-09-08 15:02:15)
+Finished checking temporal properties in 17s at 2026-09-08 15:02:32
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:02:32)
+Progress(7) at 2026-09-08 15:02:32: 5,382,581 states generated (1,503,452 s/min), 921,921 distinct states found (208,659 ds/min), 460,190 states left on queue.
+Checking temporal properties for the current state space with 1119748 total distinct states at (2026-09-08 15:03:32)
+Finished checking temporal properties in 23s at 2026-09-08 15:03:56
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:03:56)
+Progress(7) at 2026-09-08 15:03:56: 7,002,864 states generated (1,620,283 s/min), 1,119,802 distinct states found (197,881 ds/min), 517,630 states left on queue.
+Checking temporal properties for the current state space with 1312014 total distinct states at (2026-09-08 15:04:56)
+Finished checking temporal properties in 30s at 2026-09-08 15:05:27
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:05:27)
+Progress(8) at 2026-09-08 15:05:27: 8,630,674 states generated (1,627,810 s/min), 1,312,026 distinct states found (192,224 ds/min), 574,095 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:06:27)
+Progress(8) at 2026-09-08 15:06:27: 10,033,266 states generated (1,402,592 s/min), 1,533,417 distinct states found (221,391 ds/min), 674,581 states left on queue.
+Checking temporal properties for the current state space with 1723956 total distinct states at (2026-09-08 15:07:27)
+Finished checking temporal properties in 38s at 2026-09-08 15:08:05
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:08:05)
+Progress(8) at 2026-09-08 15:08:05: 11,643,919 states generated (1,610,653 s/min), 1,723,968 distinct states found (190,551 ds/min), 725,252 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:09:05)
+Progress(8) at 2026-09-08 15:09:05: 13,123,724 states generated (1,479,805 s/min), 1,922,872 distinct states found (198,904 ds/min), 796,521 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:10:05)
+Progress(8) at 2026-09-08 15:10:05: 14,585,029 states generated (1,461,305 s/min), 2,101,794 distinct states found (178,922 ds/min), 846,983 states left on queue.
+Checking temporal properties for the current state space with 2322542 total distinct states at (2026-09-08 15:11:05)
+Finished checking temporal properties in 53s at 2026-09-08 15:11:59
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:11:59)
+Progress(9) at 2026-09-08 15:11:59: 15,907,784 states generated (1,322,755 s/min), 2,322,544 distinct states found (220,750 ds/min), 955,407 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:12:59)
+Progress(9) at 2026-09-08 15:12:59: 17,268,294 states generated (1,360,510 s/min), 2,515,870 distinct states found (193,326 ds/min), 1,028,621 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:13:59)
+Progress(9) at 2026-09-08 15:13:59: 18,919,759 states generated (1,651,465 s/min), 2,697,128 distinct states found (181,258 ds/min), 1,066,561 states left on queue.
+Checking temporal properties for the current state space with 2911616 total distinct states at (2026-09-08 15:14:59)
+Finished checking temporal properties in 01min 11s at 2026-09-08 15:16:10
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:16:10)
+Progress(9) at 2026-09-08 15:16:10: 20,422,669 states generated (1,502,910 s/min), 2,911,639 distinct states found (214,511 ds/min), 1,147,315 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:17:10)
+Progress(9) at 2026-09-08 15:17:10: 21,970,559 states generated (1,547,890 s/min), 3,108,454 distinct states found (196,815 ds/min), 1,209,537 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:18:10)
+Progress(9) at 2026-09-08 15:18:10: 23,535,497 states generated (1,564,938 s/min), 3,310,392 distinct states found (201,938 ds/min), 1,277,454 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:19:10)
+Progress(10) at 2026-09-08 15:19:10: 25,087,569 states generated (1,552,072 s/min), 3,516,216 distinct states found (205,824 ds/min), 1,346,979 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:20:10)
+Progress(10) at 2026-09-08 15:20:10: 26,498,065 states generated (1,410,496 s/min), 3,751,473 distinct states found (235,257 ds/min), 1,460,244 states left on queue.
+Checking temporal properties for the current state space with 3964366 total distinct states at (2026-09-08 15:21:10)
+Finished checking temporal properties in 01min 43s at 2026-09-08 15:22:53
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:22:54)
+Progress(10) at 2026-09-08 15:22:54: 27,907,484 states generated (1,409,419 s/min), 3,964,374 distinct states found (212,901 ds/min), 1,551,707 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:23:54)
+Progress(10) at 2026-09-08 15:23:54: 29,077,839 states generated (1,170,355 s/min), 4,108,681 distinct states found (144,307 ds/min), 1,593,086 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:24:54)
+Progress(10) at 2026-09-08 15:24:54: 30,334,317 states generated (1,256,478 s/min), 4,242,142 distinct states found (133,461 ds/min), 1,616,986 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:25:54)
+Progress(10) at 2026-09-08 15:25:54: 31,493,339 states generated (1,159,022 s/min), 4,364,233 distinct states found (122,091 ds/min), 1,639,560 states left on queue.
+Checkpointing of run /workspace/.scratch/snmp-switch-formal/runs/set-long-current/states/SetTransactions/26-09-08-14-57-45
+Checkpointing completed at (2026-09-08 15:26:54)
+Progress(10) at 2026-09-08 15:26:54: 32,429,244 states generated (935,905 s/min), 4,501,741 distinct states found (137,508 ds/min), 1,690,258 states left on queue.
+
+RUNNER: TIMEOUT; exploration incomplete.

@@ -1,0 +1,2010 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 20260907 with 1 worker on 4 cores with 1820MB heap and 64MB offheap memory [pid: 188605] (Linux 6.12.101+deb13-amd64 amd64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/.scratch/snmp-switch-formal/check-reboot-aba/SetScenarios.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-reboot-aba/SetTransactions.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-reboot-aba/TestSwitch.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-reboot-aba/Switch.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /workspace/.scratch/snmp-switch-formal/check-reboot-aba/ReadAccess.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Switch
+Semantic processing of module TestSwitch
+Semantic processing of module ReadAccess
+Semantic processing of module SetTransactions
+Semantic processing of module SetScenarios
+Starting... (2026-09-08 14:43:12)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-08 14:43:12.
+Error: Invariant ScenarioAssertions is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 0
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> NoView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 2: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 1
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 3: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 0,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerB,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 2
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 4: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 3
+/\ result = [status |-> "authorizationError", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 5: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 4
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 6: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 5
+/\ result = [status |-> "noError", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 7: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 6
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 8: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 7
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 9: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 8
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 10: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<FALSE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<1>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 9
+/\ result = [status |-> "noError", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 11: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<FALSE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<1>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 1, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 10
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 12: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 11
+/\ result = [status |-> "noError", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 13: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> FALSE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 12
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 14: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 13
+/\ result = [status |-> "tooBig", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 15: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 14
+/\ result = [status |-> "tooBig", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 16: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 0,
+  activation |-> 0,
+  ops |->
+      << [kind |-> "admin", key |-> 1, value |-> 1, error |-> "noError"],
+         [kind |-> "name", key |-> 1, value |-> 1, error |-> "noError"] >>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 15
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 17: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 16
+/\ result = [status |-> "noAccess", index |-> 2]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 18: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 17
+/\ result = [status |-> "noAccess", index |-> 2]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 19: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 18
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 20: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 19
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 21: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 2 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 20
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 22: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 2 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 21
+/\ result = [status |-> "dropped", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 23: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 2 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 2,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 22
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 24: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 0 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretB @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 2,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 23
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 25: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 2,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 24
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 26: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 25
+/\ result = [status |-> "dropped", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 27: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 0
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 26
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 28: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 1
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 27
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = FALSE
+
+State 29: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 2
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 0,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 28
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 30: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 2
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 29
+/\ result = [status |-> "dropped", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 31: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> TRUE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 2
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 2,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 30
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 32: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 1,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 2
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 2,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 31
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 33: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<TRUE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |-> <<>>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<0>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 2
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = [ secret |-> secretA,
+  registration |-> 1,
+  activation |-> 2,
+  ops |-> <<[kind |-> "admin", key |-> 1, value |-> 2, error |-> "noError"]>>,
+  credential |-> readerA,
+  budget |-> TRUE,
+  persist |-> TRUE,
+  boot |-> 0 ]
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 32
+/\ result = [status |-> "none", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+State 34: <ScenarioNext line 104, col 8 to line 148, col 53 of module SetScenarios>
+/\ viewOf = (readerA :> portView @@ readerB :> vlanView)
+/\ targetCredential = (targetA :> NoCredential)
+/\ s = [ pending |-> (<<e1, 1>> :> NoJob),
+  pvid |-> <<1>>,
+  untagged |-> <<{1}>>,
+  admin |-> <<FALSE>>,
+  allowed |-> <<{1}>>,
+  vlans |-> {1},
+  vlanNames |-> (1 :> 0 @@ 10 :> 0 @@ 20 :> 0),
+  forbidden |-> <<{}>>,
+  fdb |->
+      ( <<1001, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1010, macA>> :> [port |-> NoPort, ttl |-> 0] @@
+        <<1020, macA>> :> [port |-> NoPort, ttl |-> 0] ),
+  legacy |-> 1,
+  boot |-> 0,
+  exists |-> {e1},
+  sources |-> (<<e1, 1>> :> [mac |-> macA, tag |-> Untagged]),
+  active |-> {e1},
+  attached |-> (e1 :> 1),
+  mode |-> <<"shared">>,
+  partner |-> <<TRUE>>,
+  due |-> (<<e1, 1>> :> 1),
+  traps |->
+      << [ admin |-> FALSE,
+           port |-> 1,
+           kind |-> "linkDown",
+           ifIndex |-> 101,
+           before |-> TRUE,
+           after |-> FALSE ] >>,
+  egen |-> (e1 :> 0),
+  pgen |-> <<1>>,
+  fault |-> <<FALSE>>,
+  overflow |-> FALSE,
+  paused |-> FALSE,
+  phase |-> "idle" ]
+/\ presentViews = {portView, vlanView}
+/\ registration = (readerA :> 1 @@ readerB :> 0)
+/\ enabled = {readerA, readerB}
+/\ targetEnabled = {}
+/\ activation = 2
+/\ writing = {readerA}
+/\ response = NoResponse
+/\ secret = (readerA :> secretA @@ readerB :> secretA)
+/\ pending = NoPdu
+/\ polling = {readerA, readerB}
+/\ snapshot = snapshotA
+/\ request = NoRequest
+/\ pc = 33
+/\ result = [status |-> "noError", index |-> 0]
+/\ writeViewOf = (readerA :> portView @@ readerB :> NoView)
+/\ includes = (portView :> {portView, vlanView} @@ vlanView :> {portView, vlanView})
+/\ existing = {readerA, readerB}
+/\ gate = TRUE
+
+34 states generated, 34 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 34.
+The average outdegree of the complete state graph is 1 (minimum is 1, the maximum 1 and the 95th percentile is 1).
+Finished in 01s at (2026-09-08 14:43:13)

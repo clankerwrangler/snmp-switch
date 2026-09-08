@@ -1,8 +1,32 @@
 # Implementation validation
 
+## Current ENTITY and SET checks
+
+Executed locally on 2026-09-08 with the pinned Python 3.12 environment and PySNMP 7.1.29:
+
+| Check | Actual result |
+|---|---|
+| API, engine, MIB planner/projection, response lifetime, and storage recovery | 649 passed; one real-listener API case excluded; 137 upstream warnings; 97.38 s |
+| Network boundary for those tests | AF_INET/AF_INET6 creation prohibited; real BER/security serialization uses in-memory transport sinks |
+| MIB manifest | Generator reproduces 95 definitions exactly; 89 readable, seven writable, six inaccessible indexes; complete projection/writer equality checks pass |
+| UI | TypeScript 5.9.3 and Vite 7.1.12 build passes; CSS and third-party notices unchanged |
+| Actual headless Chromium browser | Passed in 33.026 s; 1440 px desktop and 390 px mobile; no screenshots or page errors |
+
+The browser uses synthetic state with SNMP disabled and identity unset, a prebound ephemeral `127.0.0.1` HTTP listener, and exact-origin requests. It covers independent SET access and optional CIDRs, explicit/missing views, secret-free forms, literal HTML-like labels, independent admitted/untagged/forbidden sets, native-PVID preview, empty untagged membership, atomic errors, and the existing endpoint-disconnect, trap, authentication, and mobile flows. Browser/app processes exit, the HTTP socket closes, and synthetic database/key files are removed.
+
+The backend checks cover all seven typed SET objects, final-candidate and original-index rules, no-op preservation, actual SQLite rollback, current authorization/generation checks, queued revocation/expiry, and commit-versus-response delivery. Storage tests distinguish actual failed rollback from both possible no-active-transaction unknown outcomes. Faulted API/SET/background/setup/boot/send paths remain blocked while reads use the last confirmed snapshot; two normal fresh startups reload actual durable data and restore writes and serialized notifications.
+
+Separate prerequisite evidence covers 2,230 fresh BER responses across v2c and all three v3 security levels, original request-ID widths, peer minimum size 484, and response-budget boundaries. The pinned inbound-lifetime correction retains its reproduced stock expiry failure and late-association counterexample; successful corrected tests do not erase those failures. No local SNMP wire listener or Net-SNMP command was run for this change. The existing Docker suite contains the independent wire/restart/receiver checks.
+
+The current model checks ran before their corresponding implementation changes. [Current formal verification](../specification/CURRENT_VERIFICATION.md) identifies exact inputs, separate runs, bounded proofs, and negative controls. Neither those models nor in-memory protocol tests prove OS durability or independent-client wire compatibility.
+
+## Recorded baseline application validation
+
+The following measurements and descriptions retain the scope of the original application run; they are not measurements of the ENTITY/SET implementation.
+
 Executed on 2026-09-08. These results concern the application. The TLC reports under `specification/` cover the formal models and were not rerun during application validation; they are not implementation proof.
 
-## Automated checks
+### Automated checks
 
 | Check | Result |
 |---|---|
@@ -26,7 +50,7 @@ Browser checks create the administrator, pause time, create and attach an endpoi
 
 The clean-image check uses the actual public runtime image, temporary data, and an isolated network namespace. It verifies null effective identity, working health/setup/simulation, operator identity on the wire, process-restart persistence, USM boot increments, listener shutdown after clearing identity, and persistence of the unset state. It confirms the development overlay is absent from the runtime image.
 
-## Measured load case
+### Measured load case
 
 One run in Docker Desktop's Linux/WSL2 environment:
 
@@ -44,7 +68,7 @@ One run in Docker Desktop's Linux/WSL2 environment:
 
 This measures the in-memory engine and projection, excluding SQLite, HTTP, UI, and network latency. It is not a full-deployment throughput or latency guarantee. Reproduce with `docker run --rm switchlab-test python scripts/load_case.py`.
 
-## Boundaries
+### Boundaries
 
 - NAC-product integration and vendor compatibility were not tested.
 - These runs tested Docker's isolated loopback networking and native Windows localhost. They did not cover published-port NAT behavior, LAN source-CIDR matching, IPv6 deployment paths, or notification source addresses on a deployment network.

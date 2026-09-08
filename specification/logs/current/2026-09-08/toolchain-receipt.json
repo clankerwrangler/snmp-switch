@@ -1,0 +1,36 @@
+{
+  "phase": "verified",
+  "free_space_before_bytes": 89307598848,
+  "started_at": "2026-09-08T14:07:56.113964+00:00",
+  "download_budget_bytes": 209715200,
+  "extracted_budget_bytes": 629145600,
+  "jre": {
+    "version": "jdk-21.0.12.1+1",
+    "release_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.12.1%2B1",
+    "asset_url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jre_x64_linux_hotspot_21.0.12.1_1.tar.gz",
+    "checksum_url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jre_x64_linux_hotspot_21.0.12.1_1.tar.gz.sha256.txt",
+    "official_sha256": "2413149700df0f7d440500a84a8f764c535f21e5a5e87d38328b64eec2c5b500",
+    "expected_size": 52059408,
+    "downloaded_sha256": "2413149700df0f7d440500a84a8f764c535f21e5a5e87d38328b64eec2c5b500",
+    "verified_size": 52059408,
+    "extracted_bytes": 165240383,
+    "archive_members": 320,
+    "internal_links": 145,
+    "java_path": "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "java_version_smoke": "PASS: Temurin 21.0.12.1+1-LTS, exit 0"
+  },
+  "tlc": {
+    "version": "v1.7.4",
+    "release_url": "https://github.com/tlaplus/tlaplus/releases/tag/v1.7.4",
+    "asset_url": "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar",
+    "official_sha1": "bee4a54f3ee3d4afc347c3240ec2d9e93b075104",
+    "official_sha256": null,
+    "trust_decision": "Root approved exact official v1.7.4 release asset over verified HTTPS plus matching publisher SHA-1 and size. Local SHA-256 is a content identifier, not publisher authenticity evidence.",
+    "verified_size": 2274532,
+    "downloaded_sha1": "bee4a54f3ee3d4afc347c3240ec2d9e93b075104",
+    "local_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+    "smoke": "Help rendered TLC Version 2.19 of 08 August 2024; help exits 1, not counted as a model pass."
+  },
+  "downloaded_total_bytes": 54884471,
+  "source_base_commit": "d75c960ccd66d99413e9287aae557ae32b47440b"
+}

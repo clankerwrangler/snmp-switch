@@ -1,0 +1,38 @@
+{
+  "model": "ReadAccess",
+  "module": "ReadAccess.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 42.232,
+  "counts": {
+    "generated": 3435528,
+    "distinct": 95744,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/current-matrix/states/ReadAccess",
+    "-config",
+    "configs/ReadAccess.cfg",
+    "ReadAccess.tla"
+  ],
+  "log": "tlc-ReadAccess.log",
+  "log_sha256": "b0ab42a1d9fa990645567a1f0d491b966d4f7506b034200805449944bcf477e2",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

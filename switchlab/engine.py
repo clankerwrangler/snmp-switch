@@ -8,6 +8,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 
+from .mib import entity_inventory, plan_set
 from .models import Configuration, Credential, CredentialAuth, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, uid
 
 
@@ -37,8 +38,9 @@ def merge_credential(previous, fields):
         for key in ("community", "auth_key", "priv_key"):
             if fields.get(key) == "":
                 fields.pop(key)
-    if previous and isinstance(fields.get("polling"), dict):
-        fields["polling"] = {**saved["polling"], **fields["polling"]}
+    for use in ("polling", "writing"):
+        if previous and isinstance(fields.get(use), dict):
+            fields[use] = {**saved[use], **fields[use]}
     return Credential.model_validate({**saved, **fields})
 
 
@@ -64,8 +66,11 @@ class Runtime:
     epoch: str = field(default_factory=uid)
     boot_start: float = field(default_factory=time.monotonic)
     uptime_epoch: int = 0
+    entity_last_change: int = 0
     egens: dict = field(default_factory=dict)
     pgens: dict = field(default_factory=dict)
+    credential_generations: dict = field(default_factory=dict)
+    activation: str = field(default_factory=uid)
     jobs: dict = field(default_factory=dict)
     fdb: dict = field(default_factory=dict)
     counters: dict = field(default_factory=dict)
@@ -219,8 +224,11 @@ class Runtime:
         self.fdb.clear()
         self.jobs.clear()
         if reboot:
+            self.activation = uid()
+            self.credential_generations = {cid: uid() for cid in self.cfg.credentials}
             self.boot_start = time.monotonic()
             self.uptime_epoch = 0
+            self.entity_last_change = 0
             self.vlan_deletes = 0
             self.vlan_times = {vid: [0, 0] for vid in self.cfg.vlans}
         self.learned_discards = 0
@@ -235,6 +243,8 @@ class Runtime:
 class Engine:
     def __init__(self, cfg, store=None):
         self.store = store
+        if store:
+            store.require_healthy()
         self.lock = asyncio.Lock()
         self.idempotency = store.get("idempotency", {}) if store else {}
         self.state = Runtime(cfg, revision=store.get("revision", 0) if store else 0)
@@ -248,6 +258,18 @@ class Engine:
         self.state.revision += 1
         if store:
             store.commit(self.state, self.idempotency)
+
+    @property
+    def storage_fault(self):
+        return (self.store.fault_reason or ("storage_closed" if self.store.closed else None)) if self.store else None
+
+    def require_storage(self):
+        if self.store:
+            self.store.require_healthy()
+
+    def storage_status(self):
+        return dict(healthy=not self.storage_fault, reason=self.storage_fault,
+                    snapshot="last_confirmed" if self.storage_fault else "current")
 
     def snapshot(self):
         s = self.state
@@ -266,7 +288,7 @@ class Engine:
         data.update(revision=s.revision, configuration_revision=s.configuration_revision, simulation_ms=s.sim_ms, uptime=s.uptime(), epoch=s.epoch,
                     fdb=[dict(r, remaining_ms=max(0, r["expires_at_ms"] - s.sim_ms)) for r in s.fdb.values()],
                     counters=dict(learning_discards=s.learned_discards, notification_drops=s.notification_drops, vlan_deletes=s.vlan_deletes),
-                    queued_notifications=len(s.outbox))
+                    queued_notifications=len(s.outbox), storage_status=self.storage_status())
         for pid, p in data["ports"].items():
             p.update(carrier=s.carrier(pid), operational_up=s.up(pid), attachments=s.attached(pid),
                      learned_count=sum(1 for r in s.fdb.values() if r["port_id"] == pid), counters=s.counters[pid].copy())
@@ -282,68 +304,107 @@ class Engine:
     async def execute(self, action, payload=None, expected=None, key=None, expected_config=None):
         payload = payload or {}
         async with self.lock:
-            signature = hashlib.sha256(json.dumps([action, payload], sort_keys=True).encode()).hexdigest()
-            if key and key in self.idempotency:
-                prior = self.idempotency[key]
-                require(prior["signature"] == signature, "Idempotency key was used for another command")
-                return prior["result"]
-            require(expected is None or expected == self.state.revision, "Stale state revision; reload and retry")
-            require(expected_config is None or expected_config == self.state.configuration_revision, "Configuration changed while editing; reload and retry")
-            old = self.state
-            s = copy.deepcopy(old)
-            affected_e, affected_p = set(), set()
-            result = self._apply(s, action, payload, affected_e, affected_p)
-            s.cfg = Configuration.model_validate(s.cfg.model_dump(mode="json"))
-            require(len(s.cfg.endpoints) <= s.cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
-            require(sum(len(e.sources) for e in s.cfg.endpoints.values()) <= s.cfg.switch.source_limit, "Source capacity reached", 429)
-            if action not in ("advance", "job", "reboot", "notification-result", "coldStart", "test-notification"):
-                for pid in s.cfg.ports:
-                    if old.up(pid) != s.up(pid):
-                        affected_p.add(pid)
-                        s.counters[pid]["last_change"] = s.uptime()
-                        if s.cfg.ports[pid].link_notifications:
-                            p = s.cfg.ports[pid]
-                            s.notify("linkUp" if s.up(pid) else "linkDown", port_id=pid, if_index=p.if_index,
-                                     admin=1 if p.admin_up else 2, before=1 if old.up(pid) else 2, after=1 if s.up(pid) else 2)
-                for fkey, row in list(s.fdb.items()):
-                    if row["vid"] not in s.cfg.vlans or not s.up(row["port_id"]) or row["vid"] not in s.cfg.ports[row["port_id"]].admitted:
-                        del s.fdb[fkey]
-                for pid in affected_p:
-                    s.pgens[pid] = uid()
-                for eid in affected_e:
-                    s.egens[eid] = uid()
-                affected_e.update(eid for eid, pid in old.cfg.attachments.items() if pid in affected_p)
-                affected_e.update(eid for eid, pid in s.cfg.attachments.items() if pid in affected_p)
-                for eid in affected_e:
-                    s.schedule(eid)
-                for vid in s.cfg.vlans:
-                    if vid not in old.cfg.vlans:
-                        s.vlan_times[vid] = [s.uptime(), s.uptime()]
-                    elif s.cfg.vlans[vid] != old.cfg.vlans[vid] or any((vid in old.cfg.ports[p].admitted, old.cfg.ports[p].pvid == vid) !=
-                            (vid in s.cfg.ports[p].admitted, s.cfg.ports[p].pvid == vid) for p in s.cfg.ports):
-                        s.vlan_times[vid][1] = s.uptime()
-            for vid in list(s.vlan_times):
-                if vid not in s.cfg.vlans:
-                    del s.vlan_times[vid]
-            current_epoch = int((time.monotonic() - s.boot_start) * 100) // 2**32
-            if current_epoch != s.uptime_epoch:
-                s.uptime_epoch = current_epoch
-                s.vlan_times = {v: [0, 0] for v in s.cfg.vlans}
-            if not s.gate() or s.cfg.credentials != old.cfg.credentials or s.cfg.targets != old.cfg.targets:
-                s.cancel_outbox("canceled-on-configuration")
-            s.revision += 1
-            durable = action not in ("advance", "job", "notification-result", "coldStart", "test-notification")
-            if durable:
-                s.configuration_revision += 1
-            result = dict(result or {}, revision=s.revision, configuration_revision=s.configuration_revision, simulation_ms=s.sim_ms)
-            idem = self.idempotency.copy()
-            if key:
-                idem[key] = dict(signature=signature, result=result)
-                idem = dict(list(idem.items())[-256:])
-            if self.store:
-                self.store.commit(s, idem, durable=durable)
-            self.state, self.idempotency = s, idem
-            return result
+            return self._execute(action, payload, expected, key, expected_config)
+
+    def set_locked(self, bindings, includes):
+        """Plan and commit while the caller holds io_lock then this engine's lock.
+
+        The adapter claims its response ticket before entering this synchronous
+        transaction. There is no await between this method and response completion.
+        """
+        self.require_storage()
+        require(self.lock.locked(), "SET requires the engine lock", 500)
+        plan = plan_set(self.state.cfg, bindings, includes)
+        self.commit_set_locked(plan)
+        return plan
+
+    def commit_set_locked(self, plan):
+        self.require_storage()
+        require(self.lock.locked() and plan.before is self.state.cfg, "Stale SET plan", 500)
+        if plan.changed:
+            self._execute("snmp-set", plan)
+
+    def _execute(self, action, payload, expected=None, key=None, expected_config=None):
+        self.require_storage()
+        signature = hashlib.sha256(json.dumps([action, payload], sort_keys=True).encode()).hexdigest() if key else None
+        if key and key in self.idempotency:
+            prior = self.idempotency[key]
+            require(prior["signature"] == signature, "Idempotency key was used for another command")
+            return prior["result"]
+        require(expected is None or expected == self.state.revision, "Stale state revision; reload and retry")
+        require(expected_config is None or expected_config == self.state.configuration_revision, "Configuration changed while editing; reload and retry")
+        old = self.state
+        s = copy.deepcopy(old)
+        affected_e, affected_p = set(), set()
+        result = self._apply(s, action, payload, affected_e, affected_p)
+        s.cfg = Configuration.model_validate(s.cfg.model_dump(mode="json"))
+        if action != "reboot":
+            lifecycle = lambda c: (c.snmp, c.switch.identity.sys_object_id)
+            if lifecycle(s.cfg) != lifecycle(old.cfg):
+                s.activation = uid()
+            s.credential_generations = {}
+            for cid, credential in s.cfg.credentials.items():
+                before = old.cfg.credentials.get(cid)
+                view_id = credential.writing.view_id
+                # Definition changes invalidate every referencing writer, including
+                # remove/restore ABA. Unrelated and same-value saves do not.
+                changed_view = s.cfg.views.get(view_id) != old.cfg.views.get(view_id)
+                s.credential_generations[cid] = (uid() if credential != before or changed_view
+                    else old.credential_generations[cid])
+        if entity_inventory(s.cfg) != entity_inventory(old.cfg):
+            s.entity_last_change = s.uptime()
+        require(len(s.cfg.endpoints) <= s.cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
+        require(sum(len(e.sources) for e in s.cfg.endpoints.values()) <= s.cfg.switch.source_limit, "Source capacity reached", 429)
+        if action not in ("advance", "job", "reboot", "notification-result", "coldStart", "test-notification"):
+            for pid in s.cfg.ports:
+                if old.up(pid) != s.up(pid):
+                    affected_p.add(pid)
+                    s.counters[pid]["last_change"] = s.uptime()
+                    if s.cfg.ports[pid].link_notifications:
+                        p = s.cfg.ports[pid]
+                        s.notify("linkUp" if s.up(pid) else "linkDown", port_id=pid, if_index=p.if_index,
+                                 admin=1 if p.admin_up else 2, before=1 if old.up(pid) else 2, after=1 if s.up(pid) else 2)
+            for fkey, row in list(s.fdb.items()):
+                if row["vid"] not in s.cfg.vlans or not s.up(row["port_id"]) or row["vid"] not in s.cfg.ports[row["port_id"]].admitted:
+                    del s.fdb[fkey]
+            for pid in affected_p:
+                s.pgens[pid] = uid()
+            for eid in affected_e:
+                s.egens[eid] = uid()
+            affected_e.update(eid for eid, pid in old.cfg.attachments.items() if pid in affected_p)
+            affected_e.update(eid for eid, pid in s.cfg.attachments.items() if pid in affected_p)
+            for eid in affected_e:
+                s.schedule(eid)
+            for vid in s.cfg.vlans:
+                if vid not in old.cfg.vlans:
+                    s.vlan_times[vid] = [s.uptime(), s.uptime()]
+                elif s.cfg.vlans[vid] != old.cfg.vlans[vid] or any(
+                        tuple(vid in getattr(old.cfg.ports[p], field) for field in ("admitted", "untagged", "forbidden")) !=
+                        tuple(vid in getattr(s.cfg.ports[p], field) for field in ("admitted", "untagged", "forbidden")) or
+                        (old.cfg.ports[p].pvid == vid) != (s.cfg.ports[p].pvid == vid) for p in s.cfg.ports):
+                    s.vlan_times[vid][1] = s.uptime()
+        for vid in list(s.vlan_times):
+            if vid not in s.cfg.vlans:
+                del s.vlan_times[vid]
+        current_epoch = int((time.monotonic() - s.boot_start) * 100) // 2**32
+        if current_epoch != s.uptime_epoch:
+            s.uptime_epoch = current_epoch
+            s.vlan_times = {v: [0, 0] for v in s.cfg.vlans}
+        if not s.gate() or s.cfg.credentials != old.cfg.credentials or s.cfg.targets != old.cfg.targets:
+            s.cancel_outbox("canceled-on-configuration")
+        s.revision += 1
+        durable = action not in ("advance", "job", "notification-result", "coldStart", "test-notification")
+        if durable:
+            s.configuration_revision += 1
+        result = dict(result or {}, revision=s.revision, configuration_revision=s.configuration_revision, simulation_ms=s.sim_ms)
+        idem = self.idempotency.copy()
+        if key:
+            idem[key] = dict(signature=signature, result=result)
+            idem = dict(list(idem.items())[-256:])
+        if self.store:
+            self.store.commit(s, idem, durable=durable)
+        self.state, self.idempotency = s, idem
+        return result
 
     def _apply(self, s, action, d, es, ps):
         cfg = s.cfg
@@ -352,6 +413,18 @@ class Engine:
             require(ident in collection, "Resource not found", 404)
             return collection[ident]
 
+        if action == "snmp-set":
+            cfg = s.cfg = d.candidate.model_copy(deep=True)
+            ps.update(d.affected_ports)
+            es.update(e.id for e in cfg.endpoints.values()
+                      if any(src.tag in d.creates | d.deletes for src in e.sources))
+            s.vlan_deletes += len(d.deletes)
+            for vid in sorted(d.creates):
+                s.event("vlan-create", vid=vid)
+            for vid in sorted(d.deletes):
+                s.event("vlan-delete", vid=vid)
+            s.event("snmp-set", assignments=len(d.assignments))
+            return
         if action == "endpoint-create":
             ep = Endpoint.model_validate(d)
             require(ep.id not in cfg.endpoints, "Endpoint ID already exists")
@@ -394,11 +467,13 @@ class Engine:
         if action == "port-edit":
             pid, patch = d["id"], d["patch"]
             p = get(cfg.ports, pid)
-            require(not set(patch) - {"name", "alias", "admin_up", "mode", "shared_partner", "forced_down", "speed", "mtu", "pvid", "admitted", "link_notifications"}, "Unsupported port field", 422)
+            require(not set(patch) - {"name", "alias", "admin_up", "mode", "shared_partner", "forced_down", "speed", "mtu", "pvid", "admitted", "untagged", "forbidden", "link_notifications"}, "Unsupported port field", 422)
             if patch.get("mode") == "shared" and p.mode != "shared":
                 patch = {**patch, "shared_partner": True}
             if patch.get("mode") == "direct":
                 require(len(s.attached(pid)) <= 1, "Disconnect extra endpoints before selecting direct mode")
+            if "pvid" in patch and patch["pvid"] != p.pvid and "untagged" not in patch:
+                patch = {**patch, "untagged": sorted((set(p.untagged) - {p.pvid}) | {patch["pvid"]})}
             cfg.ports[pid] = Port.model_validate({**p.model_dump(), **patch})
             if set(patch) - {"name", "alias", "link_notifications"}:
                 ps.add(pid)
@@ -421,11 +496,15 @@ class Engine:
                 del cfg.vlans[vid]
                 s.vlan_deletes += 1
                 for pid, p in cfg.ports.items():
-                    if vid in p.admitted or p.pvid == vid:
-                        p.admitted = [x for x in p.admitted if x != vid]
+                    if any(vid in getattr(p, field) for field in ("admitted", "untagged", "forbidden")) or p.pvid == vid:
+                        native = vid in p.untagged
+                        for field in ("admitted", "untagged", "forbidden"):
+                            setattr(p, field, [x for x in getattr(p, field) if x != vid])
                         if p.pvid == vid:
                             p.pvid = 1
                             p.admitted = sorted(set(p.admitted + [1]))
+                            if native:
+                                p.untagged = sorted(set(p.untagged + [1]))
                         ps.add(pid)
                 if cfg.switch.legacy_vlan == vid:
                     cfg.switch.legacy_vlan = 1

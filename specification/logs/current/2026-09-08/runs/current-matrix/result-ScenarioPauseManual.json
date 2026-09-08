@@ -1,0 +1,38 @@
+{
+  "model": "ScenarioPauseManual",
+  "module": "Scenarios.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 1.398,
+  "counts": {
+    "generated": 15,
+    "distinct": 14,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx2g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/current-matrix/states/ScenarioPauseManual",
+    "-config",
+    "configs/ScenarioPauseManual.cfg",
+    "Scenarios.tla"
+  ],
+  "log": "tlc-ScenarioPauseManual.log",
+  "log_sha256": "cf2218de11eca04d20ab66df6854d08e85eeabf33c65009bb0393c37b3be2f28",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

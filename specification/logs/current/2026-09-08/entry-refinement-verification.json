@@ -1,0 +1,396 @@
+{
+  "status": "PASS",
+  "scope": "Insertion-time original association, unadmitted expiry/close and delayed admission, plus unchanged admitted response lifecycle checks. No application execution.",
+  "candidate": "/workspace/.scratch/snmp-switch-formal/entry-candidate/specification",
+  "source_inventory": [
+    {
+      "path": "specification/SetResponseLifecycle.tla",
+      "bytes": 10852,
+      "sha256": "dd21ffbd86e68384f83985c4aa75df9d0981297e4f8198ef64d1e299212d5914",
+      "old_sha256": "478d91dbfa1ef25a8a61c686db1c985ead6605d03614bd1a05168b122988a592"
+    },
+    {
+      "path": "specification/SetResponseEntry.tla",
+      "bytes": 6826,
+      "sha256": "f4e20ca341d728b0ab050a3f48c88f7297672d0bfb94529179d4c48c52739bfb",
+      "old_sha256": null
+    },
+    {
+      "path": "specification/configs/SetResponseEntry.cfg",
+      "bytes": 403,
+      "sha256": "5f5c1b53cef519ea36c5d52ed8e09fbbe763f29d17f4d58c1ab46bf53f2e0163",
+      "old_sha256": null
+    }
+  ],
+  "results": [
+    {
+      "model": "SetResponseLifecycle",
+      "module": "SetResponseLifecycle.tla",
+      "status": "PASS",
+      "returncode": 0,
+      "elapsed_seconds": 4.497,
+      "counts": {
+        "generated": 210495,
+        "distinct": 23175,
+        "queue": 0
+      },
+      "command": [
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx1g",
+        "-Dutil.ExecutionStatisticsCollector.id=",
+        "-cp",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "tlc2.TLC",
+        "-checkpoint",
+        "30",
+        "-workers",
+        "1",
+        "-seed",
+        "20260907",
+        "-fp",
+        "0",
+        "-metadir",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-initial/states/SetResponseLifecycle",
+        "-config",
+        "configs/SetResponseLifecycle.cfg",
+        "SetResponseLifecycle.tla"
+      ],
+      "log": "tlc-SetResponseLifecycle.log",
+      "log_sha256": "05b77332a7b65655418266b7ab0c4874bd550b6d0affee719af0f7c21222e583",
+      "inputs_unchanged": true,
+      "resource_failure": null,
+      "receipt": "runs/entry-initial/verification.json",
+      "source_dependencies": {
+        "SetResponseLifecycle.tla": "dd21ffbd86e68384f83985c4aa75df9d0981297e4f8198ef64d1e299212d5914",
+        "configs/SetResponseLifecycle.cfg": "34e302c289a3fd558ea93889da877937e3a3e059d5ba0d42acde7403864cd183"
+      }
+    },
+    {
+      "model": "SetResponseReuse",
+      "module": "SetResponseScenarios.tla",
+      "status": "PASS",
+      "returncode": 0,
+      "elapsed_seconds": 1.383,
+      "counts": {
+        "generated": 109,
+        "distinct": 90,
+        "queue": 0
+      },
+      "command": [
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx1g",
+        "-Dutil.ExecutionStatisticsCollector.id=",
+        "-cp",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "tlc2.TLC",
+        "-checkpoint",
+        "30",
+        "-workers",
+        "1",
+        "-seed",
+        "20260907",
+        "-fp",
+        "0",
+        "-metadir",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-initial/states/SetResponseReuse",
+        "-config",
+        "configs/SetResponseReuse.cfg",
+        "SetResponseScenarios.tla"
+      ],
+      "log": "tlc-SetResponseReuse.log",
+      "log_sha256": "054df585ad263c217f87da7d8dbc43115a0443ebfaa7e4420e0d731465667aa5",
+      "inputs_unchanged": true,
+      "resource_failure": null,
+      "receipt": "runs/entry-initial/verification.json",
+      "source_dependencies": {
+        "ReadAccess.tla": "9eea9b44658f49d77c4833e46e176d6a3c0e43e35c30a2a9ece65b0b101eeb5b",
+        "SetResponseLifecycle.tla": "dd21ffbd86e68384f83985c4aa75df9d0981297e4f8198ef64d1e299212d5914",
+        "SetResponseScenarios.tla": "0b898df5babb10d67b6b419bf75a281d747368ba5494f1178ab6d7a9b0b22c4d",
+        "SetTransactions.tla": "6dff4cf5382682f5309b381f35d7a89a7c79f0fcf67a838e2ce414b7e5d638ef",
+        "Switch.tla": "6ed9f4cf2ba5075cef23ba5108ce8d0515d3b73f35082f5271fae629a0b2c08b",
+        "TestSwitch.tla": "0e9cf97ff18e350eaedbc478c5ab130d6bc7b0fa6235bd8d110c107c7f4dbf57",
+        "configs/SetResponseReuse.cfg": "daae096eb2ff1429f20d06f615222798669de37817aad3dde4b675b6732bb0bc"
+      }
+    },
+    {
+      "model": "SetResponseIntegration",
+      "module": "SetResponseScenarios.tla",
+      "status": "PASS",
+      "returncode": 0,
+      "elapsed_seconds": 1.476,
+      "counts": {
+        "generated": 115,
+        "distinct": 101,
+        "queue": 0
+      },
+      "command": [
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx1g",
+        "-Dutil.ExecutionStatisticsCollector.id=",
+        "-cp",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "tlc2.TLC",
+        "-checkpoint",
+        "30",
+        "-workers",
+        "1",
+        "-seed",
+        "20260907",
+        "-fp",
+        "0",
+        "-metadir",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-initial/states/SetResponseIntegration",
+        "-config",
+        "configs/SetResponseIntegration.cfg",
+        "SetResponseScenarios.tla"
+      ],
+      "log": "tlc-SetResponseIntegration.log",
+      "log_sha256": "f4dbbc4a83f9e9ec80aa8807577bd9bcedf6fe4ba9c68b0bf75a1bece8918215",
+      "inputs_unchanged": true,
+      "resource_failure": null,
+      "receipt": "runs/entry-initial/verification.json",
+      "source_dependencies": {
+        "ReadAccess.tla": "9eea9b44658f49d77c4833e46e176d6a3c0e43e35c30a2a9ece65b0b101eeb5b",
+        "SetResponseLifecycle.tla": "dd21ffbd86e68384f83985c4aa75df9d0981297e4f8198ef64d1e299212d5914",
+        "SetResponseScenarios.tla": "0b898df5babb10d67b6b419bf75a281d747368ba5494f1178ab6d7a9b0b22c4d",
+        "SetTransactions.tla": "6dff4cf5382682f5309b381f35d7a89a7c79f0fcf67a838e2ce414b7e5d638ef",
+        "Switch.tla": "6ed9f4cf2ba5075cef23ba5108ce8d0515d3b73f35082f5271fae629a0b2c08b",
+        "TestSwitch.tla": "0e9cf97ff18e350eaedbc478c5ab130d6bc7b0fa6235bd8d110c107c7f4dbf57",
+        "configs/SetResponseIntegration.cfg": "6d5e803f7f5edf8b34c44f96f0bda1d079cda06f19122f5d44b9b012a8ca1a3f"
+      }
+    },
+    {
+      "model": "SetResponseEntry",
+      "module": "SetResponseEntry.tla",
+      "status": "PASS",
+      "returncode": 0,
+      "elapsed_seconds": 1.437,
+      "counts": {
+        "generated": 2640,
+        "distinct": 2400,
+        "queue": 0
+      },
+      "command": [
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx1g",
+        "-Dutil.ExecutionStatisticsCollector.id=",
+        "-cp",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "tlc2.TLC",
+        "-checkpoint",
+        "30",
+        "-workers",
+        "1",
+        "-seed",
+        "20260907",
+        "-fp",
+        "0",
+        "-metadir",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-final/states/SetResponseEntry",
+        "-config",
+        "configs/SetResponseEntry.cfg",
+        "SetResponseEntry.tla"
+      ],
+      "log": "tlc-SetResponseEntry.log",
+      "log_sha256": "59b54610fe4988f18fe710ab4d803b1f99b5590081122e3a851f44ba03350702",
+      "inputs_unchanged": true,
+      "resource_failure": null,
+      "receipt": "runs/entry-final/verification.json",
+      "source_dependencies": {
+        "SetResponseEntry.tla": "f4e20ca341d728b0ab050a3f48c88f7297672d0bfb94529179d4c48c52739bfb",
+        "SetResponseLifecycle.tla": "dd21ffbd86e68384f83985c4aa75df9d0981297e4f8198ef64d1e299212d5914",
+        "configs/SetResponseEntry.cfg": "5f5c1b53cef519ea36c5d52ed8e09fbbe763f29d17f4d58c1ab46bf53f2e0163"
+      }
+    }
+  ],
+  "mutation": {
+    "name": "late_capture_reused_security",
+    "status": "DETECTED",
+    "receipt": "runs/entry-mutation-late-capture/verification.json",
+    "returncode": 13,
+    "property": "EntryForeignSafe",
+    "log_sha256": "d2034e2564133d02c64de2ef4bd871b090a953a673981caa4cb03749c8dd9028",
+    "definition": "entry-mutation-definition.json"
+  },
+  "prior_batches": [
+    {
+      "path": "runs/entry-initial/verification.json",
+      "status": "FAIL"
+    },
+    {
+      "path": "runs/entry-fixed/verification.json",
+      "status": "FAIL"
+    },
+    {
+      "path": "runs/entry-ready/verification.json",
+      "status": "PASS"
+    },
+    {
+      "path": "runs/entry-mutation-late-capture/verification.json",
+      "status": "FAIL"
+    },
+    {
+      "path": "runs/entry-final/verification.json",
+      "status": "PASS"
+    }
+  ],
+  "source_note": "Three existing checks use the exact final loaded-module/config dependencies; the only later source change is a parse correction to new SetResponseEntry.tla, which those checks do not load. Initial overall batch remains FAIL.",
+  "preserved_baseline_files": 65,
+  "canonical_baseline_unchanged": true,
+  "normal_configs": 46,
+  "processes": [
+    {
+      "job_id": "bg-34cfcb511f89",
+      "pid": 202483,
+      "command": [
+        "/home/node/.pi/agent/harness/kernel-runtime/environments/00fbfe15252a3e987366/bin/python",
+        "/workspace/.scratch/snmp-switch-formal/check-entry-initial/run_tlc.py",
+        "--java",
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "--jar",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "--models",
+        "SetResponseLifecycle",
+        "SetResponseReuse",
+        "SetResponseIntegration",
+        "SetResponseEntry",
+        "--timeout",
+        "120",
+        "--batch-timeout",
+        "480",
+        "--heap",
+        "1g",
+        "--max-state-mib",
+        "8192",
+        "--min-free-mib",
+        "20480",
+        "--output",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-initial"
+      ]
+    },
+    {
+      "job_id": "bg-e7ed39de78c3",
+      "pid": 202712,
+      "command": [
+        "/home/node/.pi/agent/harness/kernel-runtime/environments/00fbfe15252a3e987366/bin/python",
+        "/workspace/.scratch/snmp-switch-formal/check-entry-fixed/run_tlc.py",
+        "--java",
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "--jar",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "--models",
+        "SetResponseEntry",
+        "--timeout",
+        "120",
+        "--batch-timeout",
+        "120",
+        "--heap",
+        "1g",
+        "--max-state-mib",
+        "8192",
+        "--min-free-mib",
+        "20480",
+        "--output",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-fixed"
+      ]
+    },
+    {
+      "job_id": "bg-d4e9ce7838a4",
+      "pid": 202811,
+      "command": [
+        "/home/node/.pi/agent/harness/kernel-runtime/environments/00fbfe15252a3e987366/bin/python",
+        "/workspace/.scratch/snmp-switch-formal/check-entry-ready/run_tlc.py",
+        "--java",
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "--jar",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "--models",
+        "SetResponseEntry",
+        "--timeout",
+        "120",
+        "--batch-timeout",
+        "120",
+        "--heap",
+        "1g",
+        "--max-state-mib",
+        "8192",
+        "--min-free-mib",
+        "20480",
+        "--output",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-ready"
+      ]
+    },
+    {
+      "job_id": "bg-16a0f0aa7b25",
+      "pid": 203173,
+      "command": [
+        "/home/node/.pi/agent/harness/kernel-runtime/environments/00fbfe15252a3e987366/bin/python",
+        "/workspace/.scratch/snmp-switch-formal/mutation-entry-late-capture/run_tlc.py",
+        "--java",
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "--jar",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "--models",
+        "SetResponseEntry",
+        "--timeout",
+        "120",
+        "--batch-timeout",
+        "120",
+        "--heap",
+        "1g",
+        "--max-state-mib",
+        "8192",
+        "--min-free-mib",
+        "20480",
+        "--output",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-mutation-late-capture"
+      ]
+    },
+    {
+      "job_id": "bg-08a9ffaccd11",
+      "pid": 203451,
+      "command": [
+        "/home/node/.pi/agent/harness/kernel-runtime/environments/00fbfe15252a3e987366/bin/python",
+        "/workspace/.scratch/snmp-switch-formal/check-entry-ready/run_tlc.py",
+        "--java",
+        "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+        "--jar",
+        "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+        "--models",
+        "SetResponseEntry",
+        "--timeout",
+        "120",
+        "--batch-timeout",
+        "120",
+        "--heap",
+        "1g",
+        "--max-state-mib",
+        "8192",
+        "--min-free-mib",
+        "20480",
+        "--output",
+        "/workspace/.scratch/snmp-switch-formal/runs/entry-final"
+      ]
+    }
+  ],
+  "actual_run_seconds": 13.399,
+  "bounds": {
+    "per_config_seconds": 120,
+    "total_seconds": 600,
+    "heap": "1g",
+    "workers": 1,
+    "max_state_mib": 8192,
+    "min_free_mib": 20480
+  },
+  "application_boundaries": [
+    "opaque nonexpanding repr and no secret copying",
+    "private pinned insertion/cache shapes",
+    "named-key compatibility and report/discovery/BER",
+    "actual expiry/outbound timer and no-await locks",
+    "pre-admission report serialization after original MP pop is not covered"
+  ]
+}

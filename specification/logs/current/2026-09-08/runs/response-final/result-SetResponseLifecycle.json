@@ -1,0 +1,38 @@
+{
+  "model": "SetResponseLifecycle",
+  "module": "SetResponseLifecycle.tla",
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_seconds": 4.304,
+  "counts": {
+    "generated": 210495,
+    "distinct": 23175,
+    "queue": 0
+  },
+  "command": [
+    "/workspace/.scratch/snmp-switch-formal/runtime/jdk-21.0.12.1+1-jre/bin/java",
+    "-XX:+UseParallelGC",
+    "-Xmx1g",
+    "-Dutil.ExecutionStatisticsCollector.id=",
+    "-cp",
+    "/workspace/.scratch/snmp-switch-formal/tla2tools-1.7.4.jar",
+    "tlc2.TLC",
+    "-checkpoint",
+    "30",
+    "-workers",
+    "1",
+    "-seed",
+    "20260907",
+    "-fp",
+    "0",
+    "-metadir",
+    "/workspace/.scratch/snmp-switch-formal/runs/response-final/states/SetResponseLifecycle",
+    "-config",
+    "configs/SetResponseLifecycle.cfg",
+    "SetResponseLifecycle.tla"
+  ],
+  "log": "tlc-SetResponseLifecycle.log",
+  "log_sha256": "5c31fb0e9b5551bc8cd330e48b414389f2bf29fc7df4bfcfede371aec4a0c1ab",
+  "inputs_unchanged": true,
+  "resource_failure": null
+}

@@ -1,5 +1,5 @@
 ----------------------------- MODULE Switch -----------------------------
-EXTENDS Naturals, FiniteSets, Sequences
+EXTENDS Integers, FiniteSets, Sequences
 
 (***************************************************************************
  Generic SNMP switch emulator, revision 2.
@@ -131,8 +131,9 @@ InitialState == [exists |-> {},
     sources |-> [sk \in SourceKeys |-> NoSource], active |-> {},
     attached |-> [e \in Endpoints |-> NoPort],
     egen |-> [e \in Endpoints |-> Token0],
-    vlans |-> {1}, pvid |-> [p \in Ports |-> 1],
-    allowed |-> [p \in Ports |-> {1}], legacy |-> 1,
+    vlans |-> {1}, vlanNames |-> [v \in VLANs |-> 0], pvid |-> [p \in Ports |-> 1],
+    allowed |-> [p \in Ports |-> {1}],
+    untagged |-> [p \in Ports |-> {1}], forbidden |-> [p \in Ports |-> {}], legacy |-> 1,
     admin |-> [p \in Ports |-> TRUE], mode |-> [p \in Ports |-> "direct"],
     partner |-> [p \in Ports |-> FALSE], fault |-> [p \in Ports |-> FALSE],
     pgen |-> [p \in Ports |-> Token0], boot |-> Token0,
@@ -183,21 +184,34 @@ SetPartner(p, on) ==
     /\ s.mode[p] = "shared" /\ s.partner[p] # on
     /\ Mutate([s EXCEPT !.partner[p] = on], {}, {p})
 
+TaggedEndpoints(v) == {e \in s.exists : \E slot \in Slots :
+    IF s.sources[<<e, slot>>] = NoSource THEN FALSE
+    ELSE s.sources[<<e, slot>>].tag = v}
 CreateVlan(v) ==
-    /\ v \notin s.vlans /\ Mutate([s EXCEPT !.vlans = @ \cup {v}], {}, {})
+    /\ v \notin s.vlans
+    /\ Mutate([s EXCEPT !.vlans = @ \cup {v}], TaggedEndpoints(v), {})
 DeleteVlan(v) ==
     /\ v \in s.vlans /\ v # 1
+    /\ \A p \in Ports : s.pvid[p] = v => 1 \notin s.forbidden[p]
     /\ LET ps == {p \in Ports : v \in s.allowed[p]}
-           x == [s EXCEPT !.vlans = @ \ {v},
+           x == [s EXCEPT !.vlans = @ \ {v}, !.vlanNames[v] = 0,
                 !.pvid = [p \in Ports |-> IF s.pvid[p] = v THEN 1 ELSE s.pvid[p]],
                 !.allowed = [p \in Ports |-> (s.allowed[p] \ {v}) \cup
                                             (IF s.pvid[p] = v THEN {1} ELSE {})],
+                !.untagged = [p \in Ports |-> (s.untagged[p] \ {v}) \cup
+                    (IF s.pvid[p] = v /\ v \in s.untagged[p] THEN {1} ELSE {})],
+                !.forbidden = [p \in Ports |-> s.forbidden[p] \ {v}],
                 !.legacy = IF s.legacy = v THEN 1 ELSE s.legacy]
-       IN Mutate(x, {}, ps)
+       IN Mutate(x, TaggedEndpoints(v), ps)
 ConfigurePort(p, native, members) ==
     /\ native \in members /\ members \subseteq s.vlans
     /\ s.pvid[p] # native \/ s.allowed[p] # members
-    /\ Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members], {}, {p})
+    /\ members \cap s.forbidden[p] = {}
+    /\ LET tags == IF native = s.pvid[p] THEN s.untagged[p]
+                   ELSE (s.untagged[p] \ {s.pvid[p]}) \cup {native}
+       IN /\ tags \subseteq members
+          /\ Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members,
+                              !.untagged[p] = tags], {}, {p})
 SetLegacy(v) ==
     /\ v \in s.vlans /\ s.legacy # v
     /\ Mutate([s EXCEPT !.legacy = v], {}, {})
@@ -271,7 +285,7 @@ FairSpec == Spec /\ ServiceFairness
 (***************************************************************************
  Semantic projections. Table indexes appear as record keys, NOT necessarily
  readable columns. Wire OIDs, OCTET STRING bitmaps and TimeFilter belong to
- the SNMP adapter. Untagged egress membership is the PVID in this v1 policy.
+ the SNMP adapter. Untagged and forbidden egress are independent configured membership sets.
 ***************************************************************************)
 IfTable == [p \in Ports |-> [ifIndex |-> IfIndex[p],
     ifAdminStatus |-> IF s.admin[p] THEN 1 ELSE 2,
@@ -286,19 +300,53 @@ Dot1qFdbTable == [id \in {VlanToFdb[v] : v \in s.vlans} |->
     [dot1qFdbDynamicCount |-> Cardinality({k \in Live(s) : k[1] = id})]]
 Dot1qVlanCurrentTable == [v \in s.vlans |-> [dot1qVlanFdbId |-> VlanToFdb[v],
     dot1qVlanCurrentEgressPorts |-> {p \in Ports : v \in s.allowed[p]},
-    dot1qVlanCurrentUntaggedPorts |-> {p \in Ports : s.pvid[p] = v},
+    dot1qVlanCurrentUntaggedPorts |-> {p \in Ports : v \in s.untagged[p]},
     dot1qVlanStatus |-> 2]]
 Dot1qVlanStaticTable == [v \in s.vlans |-> [
     dot1qVlanStaticEgressPorts |-> {p \in Ports : v \in s.allowed[p]},
-    dot1qVlanStaticUntaggedPorts |-> {p \in Ports : s.pvid[p] = v},
+    dot1qVlanStaticUntaggedPorts |-> {p \in Ports : v \in s.untagged[p]},
+    dot1qVlanForbiddenEgressPorts |-> {p \in Ports : v \in s.forbidden[p]},
     dot1qVlanStaticRowStatus |-> 1]]
 Dot1qPvid == s.pvid
+
+
+(***************************************************************************
+ ENTITY-MIB fixed physical inventory. UUID encoding and unknown-value sentinels
+ belong to the wire adapter. Labels and the change clock are exercised by the
+ EntityInventory fixture; neither endpoint nor VLAN inventory adds hardware.
+***************************************************************************)
+PhysicalIndex(p) == p + 1
+PhysicalPorts == {PhysicalIndex(p) : p \in Ports}
+PhysicalDomain == {1} \cup PhysicalPorts
+PhysicalPort(i) == CHOOSE p \in Ports : PhysicalIndex(p) = i
+EntPhysicalTable == [i \in PhysicalDomain |->
+    [parent |-> IF i = 1 THEN 0 ELSE 1,
+     class |-> IF i = 1 THEN 3 ELSE 10,
+     position |-> IF i = 1 THEN -1 ELSE PhysicalPort(i),
+     identity |-> <<"saved-id", i>>]]
+EntPhysicalContainsTable == [i \in PhysicalPorts |-> <<1, i>>]
+EntAliasMappingTable == [i \in PhysicalPorts |->
+    [logicalIndex |-> 0, pointer |-> <<"ifIndex", IfIndex[PhysicalPort(i)]>>]]
+EntityOK ==
+    /\ DOMAIN EntPhysicalTable = {1} \cup {p + 1 : p \in Ports}
+    /\ Cardinality(PhysicalDomain) = Cardinality(Ports) + 1
+    /\ EntPhysicalTable[1].parent = 0 /\ EntPhysicalTable[1].position = -1
+    /\ \A i \in PhysicalPorts :
+          /\ EntPhysicalTable[i].parent = 1 /\ EntPhysicalTable[i].class = 10
+          /\ EntPhysicalContainsTable[i] = <<EntPhysicalTable[i].parent, i>>
+          /\ EntAliasMappingTable[i].logicalIndex = 0
+          /\ EntAliasMappingTable[i].pointer =
+                <<"ifIndex", Dot1dBasePortTable[PhysicalPort(i)].dot1dBasePortIfIndex>>
+          /\ EntAliasMappingTable[i].pointer = <<"ifIndex", IfTable[PhysicalPort(i)].ifIndex>>
 
 TypeOK ==
     /\ s.exists \subseteq Endpoints /\ s.sources \in [SourceKeys -> SourceType \cup {NoSource}]
     /\ s.active \subseteq s.exists /\ s.attached \in [Endpoints -> Ports \cup {NoPort}]
     /\ s.egen \in [Endpoints -> Tokens] /\ s.vlans \subseteq VLANs
+    /\ s.vlanNames \in [VLANs -> 0..1]
     /\ s.pvid \in [Ports -> VLANs] /\ s.allowed \in [Ports -> SUBSET VLANs]
+    /\ s.untagged \in [Ports -> SUBSET VLANs]
+    /\ s.forbidden \in [Ports -> SUBSET VLANs]
     /\ s.legacy \in VLANs /\ s.admin \in [Ports -> BOOLEAN]
     /\ s.mode \in [Ports -> {"direct", "shared"}]
     /\ s.partner \in [Ports -> BOOLEAN] /\ s.fault \in [Ports -> BOOLEAN]
@@ -307,9 +355,16 @@ TypeOK ==
     /\ s.due \in [SourceKeys -> 0..PeriodTicks] /\ s.paused \in BOOLEAN
     /\ s.phase \in {"idle", "drain"} /\ s.traps \in Seq(TrapType)
     /\ Len(s.traps) <= QueueLimit /\ s.overflow \in BOOLEAN
+VlanConfigLegal(x) ==
+    /\ 1 \in x.vlans /\ x.legacy \in x.vlans
+    /\ \A p \in Ports : x.pvid[p] \in x.allowed[p] /\ x.allowed[p] \subseteq x.vlans
+         /\ x.untagged[p] \subseteq x.allowed[p]
+         /\ x.forbidden[p] \subseteq x.vlans /\ x.allowed[p] \cap x.forbidden[p] = {}
 InventoryOK ==
     /\ 1 \in s.vlans /\ s.legacy \in s.vlans
     /\ \A p \in Ports : s.pvid[p] \in s.allowed[p] /\ s.allowed[p] \subseteq s.vlans
+    /\ \A p \in Ports : s.untagged[p] \subseteq s.allowed[p]
+         /\ s.forbidden[p] \subseteq s.vlans /\ s.allowed[p] \cap s.forbidden[p] = {}
     /\ \A e \in Endpoints \ s.exists : s.attached[e] = NoPort
          /\ \A slot \in Slots : s.sources[<<e, slot>>] = NoSource
     /\ \A p \in Ports : s.mode[p] = "direct" => Cardinality(At(s, p)) <= 1
@@ -323,6 +378,7 @@ JobsOK ==
              IN (j.egen = s.egen[sk[1]] /\ j.pgen = s.pgen[j.port] /\ j.boot = s.boot)
                     => ValidJob(s, sk, j)
 MibOK ==
+    /\ EntityOK
     /\ \A k \in Live(s) :
           Dot1dBasePortTable[Dot1qTpFdbTable[k].dot1qTpFdbPort].dot1dBasePortIfIndex =
           IfTable[s.fdb[k].port].ifIndex

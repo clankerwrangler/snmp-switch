@@ -171,6 +171,18 @@ async def test_shared_v2_credential_polling_and_traps_are_independent(engine):
         await a.reconcile()
         assert not a.listening and a.status()['notifications_ready']
         await trap()
+        await e.execute('credential-save', {'id': cid, 'writing': {'enabled': True, 'view_id': 'all'}})
+        await a.reconcile()
+        assert a.listening and a.status()['writing_ready'] and not a.status()['ready']
+        await client(port).set(OID('1.3.6.1.2.1.2.2.1.7.101'), Integer(2))
+        assert not next(iter(e.state.cfg.ports.values())).admin_up
+        with pytest.raises(Exception):
+            await client(port).get(OID('1.3.6.1.2.1.1.2.0'))
+        await trap()
+        await e.execute('credential-save', {'id': cid, 'writing': {'enabled': False}})
+        await a.reconcile()
+        assert not a.listening and a.status()['notifications_ready']
+        await trap()
         await e.execute('credential-save', {'id': cid, 'enabled': False})
         await a.reconcile()
         assert not a.status()['notifications_ready']
