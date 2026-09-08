@@ -9,7 +9,7 @@ import time
 from dataclasses import asdict, dataclass, field
 
 from .mib import entity_inventory, plan_set
-from .models import Configuration, Credential, CredentialAuth, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, uid
+from .models import Configuration, Credential, CredentialAuth, Community, UsmUser, AccessGroup, PollingAccess, WritingAccess, incoming_policy, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, uid
 
 
 class CommandError(Exception):
@@ -23,11 +23,58 @@ def require(condition, message, status=409):
         raise CommandError(status, message)
 
 
-def merge_credential(previous, fields):
+def merge_policy(saved, fields):
+    fields = dict(fields)
+    for use in ("polling", "writing"):
+        if use in saved and isinstance(fields.get(use), dict):
+            fields[use] = {**saved[use], **fields[use]}
+    return {**saved, **fields}
+
+
+def merge_credential(cfg, previous, fields):
     saved = previous.model_dump() if previous else {}
     fields = dict(fields)
     version = fields.get("version", previous.version if previous else "2c")
-    if previous is None or version != previous.version:
+    converting = previous is not None and version != previous.version
+    transfer_present = "access_transfer" in fields
+    transfer = fields.pop("access_transfer", None)
+    group_present = "group_id" in fields
+    if converting:
+        require(not {"polling", "writing"} & fields.keys(),
+                "Protocol conversion cannot include read/write overrides", 422)
+        if version == "3":
+            require(fields.get("security_level") in ("noAuthNoPriv", "authNoPriv", "authPriv"),
+                    "Select an explicit protection profile for protocol conversion", 422)
+            require(transfer_present != group_present,
+                    "Choose keep, none, or an existing group for protocol conversion", 422)
+        else:
+            require(transfer_present and not group_present,
+                    "Choose keep or none for protocol conversion", 422)
+        if transfer_present:
+            require(transfer in ("keep", "none"), "Invalid access transfer", 422)
+        policy = incoming_policy(cfg, previous)
+        kept = ({use: getattr(policy, use).model_dump() for use in ("polling", "writing")}
+                if policy else {"polling": PollingAccess().model_dump(), "writing": WritingAccess().model_dump()})
+        for name in ("polling", "writing", "group_id"):
+            saved.pop(name, None)
+        if version == "3":
+            if transfer == "keep":
+                group = AccessGroup(label=fields.get("label", previous.label),
+                    minimum_security_level=fields.get("security_level", "authPriv"), **kept)
+                cfg.groups[group.id] = group
+                fields["group_id"] = group.id
+            elif transfer == "none":
+                fields["group_id"] = None
+        elif transfer == "keep":
+            fields.update(kept)
+    else:
+        require(not transfer_present, "Access transfer is only valid for protocol conversion", 422)
+    if version == "3":
+        require(not {"polling", "writing"} & fields.keys(),
+                "SNMPv3 incoming access belongs to the selected group", 422)
+    else:
+        require(not group_present, "SNMPv2c communities cannot select a group", 422)
+    if previous is None or converting:
         for key in ("community", "username", "security_level", "auth_key", "priv_key"):
             saved.pop(key, None)
         if version == "2c":
@@ -38,10 +85,8 @@ def merge_credential(previous, fields):
         for key in ("community", "auth_key", "priv_key"):
             if fields.get(key) == "":
                 fields.pop(key)
-    for use in ("polling", "writing"):
-        if previous and isinstance(fields.get(use), dict):
-            fields[use] = {**saved[use], **fields[use]}
-    return Credential.model_validate({**saved, **fields})
+    cls = Community if version == "2c" else UsmUser
+    return cls.model_validate(merge_policy(saved, fields))
 
 
 @dataclass(frozen=True)
@@ -345,11 +390,15 @@ class Engine:
             s.credential_generations = {}
             for cid, credential in s.cfg.credentials.items():
                 before = old.cfg.credentials.get(cid)
-                view_id = credential.writing.view_id
-                # Definition changes invalidate every referencing writer, including
-                # remove/restore ABA. Unrelated and same-value saves do not.
+                policy = incoming_policy(s.cfg, credential)
+                old_policy = incoming_policy(old.cfg, before) if before else None
+                view_id = policy.writing.view_id if policy else None
+                # Group labels are not authorization. Policy and selected-view
+                # changes invalidate every member, including remove/restore ABA.
+                auth_policy = lambda p: (p.polling, p.writing, getattr(p, "minimum_security_level", None)) if p else None
+                changed_policy = auth_policy(policy) != auth_policy(old_policy)
                 changed_view = s.cfg.views.get(view_id) != old.cfg.views.get(view_id)
-                s.credential_generations[cid] = (uid() if credential != before or changed_view
+                s.credential_generations[cid] = (uid() if credential != before or changed_policy or changed_view
                     else old.credential_generations[cid])
         if entity_inventory(s.cfg) != entity_inventory(old.cfg):
             s.entity_last_change = s.uptime()
@@ -561,8 +610,8 @@ class Engine:
         elif action == "snmp-settings":
             cfg.snmp = SnmpSettings.model_validate({**cfg.snmp.model_dump(), **d})
             s.event("snmp-settings")
-        elif action in ("credential-save", "view-save", "target-save"):
-            cls, collection = {"credential-save": (Credential, cfg.credentials), "view-save": (View, cfg.views), "target-save": (Target, cfg.targets)}[action]
+        elif action in ("credential-save", "group-save", "view-save", "target-save"):
+            cls, collection = {"credential-save": (Credential, cfg.credentials), "group-save": (AccessGroup, cfg.groups), "view-save": (View, cfg.views), "target-save": (Target, cfg.targets)}[action]
             previous = collection.get(d.get("id"))
             fields = dict(d)
             if action == "target-save":
@@ -571,19 +620,23 @@ class Engine:
                         "Select an existing credential or create one, not both", 422)
                 if inline is not None:
                     auth = CredentialAuth.model_validate(inline)
-                    credential = merge_credential(None, auth.model_dump())
+                    credential = merge_credential(cfg, None, auth.model_dump())
                     cfg.credentials[credential.id] = credential
                     fields["credential_id"] = credential.id
                     s.event("credential-save", resource_id=credential.id)
             if action == "credential-save":
-                obj = merge_credential(previous, fields)
+                obj = merge_credential(cfg, previous, fields)
+                if obj.version == "3" and obj.group_id not in s.cfg.groups:
+                    require(obj.group_id is None, "Unknown SNMPv3 group", 422)
+            elif action == "group-save":
+                obj = cls.model_validate(merge_policy(previous.model_dump() if previous else {}, fields))
             else:
                 obj = cls.model_validate({**(previous.model_dump() if previous else {}), **fields})
             collection[obj.id] = obj
             s.event(action, resource_id=obj.id)
             return {"id": obj.id, **({"credential_id": obj.credential_id} if action == "target-save" else {})}
-        elif action in ("credential-delete", "view-delete", "target-delete"):
-            collection = {"credential-delete": cfg.credentials, "view-delete": cfg.views, "target-delete": cfg.targets}[action]
+        elif action in ("credential-delete", "group-delete", "view-delete", "target-delete"):
+            collection = {"credential-delete": cfg.credentials, "group-delete": cfg.groups, "view-delete": cfg.views, "target-delete": cfg.targets}[action]
             get(collection, d["id"])
             del collection[d["id"]]
             s.event(action, resource_id=d["id"])

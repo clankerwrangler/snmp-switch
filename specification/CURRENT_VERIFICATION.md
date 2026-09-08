@@ -2,19 +2,21 @@
 
 ## Results and scope
 
-The normal suite now has 48 configurations. Evidence consists of the earlier
+The normal suite now has 51 configurations. Evidence consists of the earlier
 42-config checkpoint, the three-config response-lifecycle refinement, the
-entry-association trace with three affected response checks, and two independent
-storage checks. The original checkpoint contains 40 core/access/ENTITY/SET graphs
-and traces, one token allocator certificate, and the same 31-request SET graph
-under a certified token-equality view. No combined 48-config rerun is claimed.
+entry-association trace with three affected response checks, two independent
+storage checks, and three grouped-access checks. The original checkpoint contains
+40 core/access/ENTITY/SET graphs and traces, one token allocator certificate, and the same 31-request SET graph
+under a certified token-equality view. No combined 51-config rerun is claimed.
 Every passing graph reports zero queued states. These finite results are not an
 application refinement proof or a substitute for wire and persistence tests.
 
 The checks extend the application model at commit
 `d75c960ccd66d99413e9287aae557ae32b47440b`. New ENTITY and SET contracts were
-modeled before application implementation. `CURRENT_MODEL.md` describes the
-state/action correspondence and the remaining implementation boundaries.
+modeled before application implementation. The grouped-access relation uses
+unchanged dependencies from `ea5047605260e0806d0e8f00406755c97094eb9e`.
+`CURRENT_MODEL.md` describes the state/action correspondence and the remaining
+implementation boundaries.
 
 The evidence root for paths in this report is `logs/current/2026-09-08/`.
 
@@ -318,6 +320,124 @@ startup, and subsequent error rendering remain application verification
 boundaries. The earlier confirmed-rollback SET abstraction and response-ticket
 model retain their original scopes.
 
+## Grouped incoming access
+
+The grouped relation adds two modules and three configs to the previous catalog.
+The stock-USM revision changes only those two modules; all three configs and the
+64 prior model/config/runner dependencies remain unchanged. The focused scripts
+instantiate the existing read/SET owners through a canonical user-to-group policy
+projection; no arbitrary SET graph is rerun.
+
+| Check | Initial fixtures | Generated / distinct | Actual result |
+| --- | ---: | ---: | --- |
+| `GroupMigrationConversion` | 2,332 | 9,328 / 6,996 | PASS in 25.631 s; complete temporal check |
+| `GroupAccessForms` | 2,112 | 12,672 / 10,560 | PASS in 7.626 s; complete temporal check |
+| `GroupQueuedSet` | 5,276 | 36,932 / 31,656 | PASS in 12.688 s; complete temporal check |
+
+The migration/conversion result is from `runs/groups-inline-fixed/verification.json`.
+The unchanged form and queued-SET action/property slices retain their results
+from `runs/groups-stock-usm/verification.json`, including those runs' original
+whole-file hashes. They were not rerun against the inline-corrected file bytes.
+All three completed checks have zero queued states. These overlapping fixture
+counts are not one combined application state space.
+
+`group-inline-verification.json` joins the final correction and unchanged-slice
+receipts; `group-stock-verification.json` retains the stock-USM checkpoint, which
+took 42.142 s. `group-verification.json` retains the earlier conditional-acceptance
+checkpoint and controls under their original input hashes.
+
+The original conditional relation allowed a lower requested level when opaque
+USM authentication succeeded. The actual pinned-runtime prerequisite rejected
+stronger-profile/lower-level normal management before responder admission, so
+the intended acceptance contract was revised to retain stock USM. The model now
+names `StockUsmAccepted`: normal requested level equals the user profile, still
+conditional on opaque authentication. Group minimum remains an independent
+subsequent check, not another application per-user floor. The 5,184 probe fixtures
+retain all nine suite/requested-level pairs, all three group minima, source
+filters, authentication outcomes, access modes, and response budgets. Explicit
+assertions check both stock-supported/rejected pairs and denial after USM
+acceptance when the group minimum is higher. All 92 queued lifecycle cases and
+all migration/form cases remain. Discovery/REPORT exceptions are not modeled as
+ordinary lower-level management grants.
+
+The traces check distinct per-user migration groups, explicit request-only
+conversion intent and atomic group/credential publication, default-denied new
+users/groups, inactive references, and referenced-group deletion. Form checks
+exercise all four saved access pairs, final-active restriction updates, unchanged
+and secret-only saves, hidden drafts, cancellation, and failed/stale saves.
+Queued traces separate the group floor from stock-USM acceptance, retain
+notification independence, and invoke actual `HandleSet` after shared group/view and membership
+changes. Same-value, label-only, and unrelated changes preserve the pending
+registration; genuine changes reserve its old token across remove/restore.
+
+The initial inline-user helper updated all target references. A strengthened
+complete-map assertion reproduced the unintended update to the unrelated second
+target in `runs/groups-inline-repro/`: `MigrationAssertions` fails with TLC exit
+12 after inline creation. The corrected `NewUser` accepts one selected target,
+updates only its reference/enable bit, and preserves all other associations.
+Ordinary Add preserves the complete target maps; failure publishes neither the
+user nor the target update. The same 2,332 migration/conversion fixtures pass
+in `runs/groups-inline-fixed/` with no case or domain reduction.
+
+Only `NewUser`, its migration call, the selected-target definition, and the
+migration preservation assertion change. `group-inline-unaffected-slices.json`
+records the unchanged selected operator bodies for the form and queued configs,
+with the external dependencies unchanged. This is a source-slice correspondence
+check, not another TLC run or a general equivalence prover. The historical form/
+queued receipts keep their actual stock-USM whole-file hashes. The other mutation
+controls do not use the changed inline helper and retain their existing scope.
+
+Three causal controls all return TLC exit 12:
+
+- `runs/groups-mutation-migration-deduplicate/` merges migrated groups, then an
+  edit changes the other user's policy. `MigrationIsolation` fails after the
+  completed edit. Its control-only config omits the earlier initial distinctness
+  oracle so the downstream failure is observable.
+- `runs/groups-mutation-editor-only-generation/` refreshes only the first
+  credential. The second member's actual `HandleSet` returns `noError` and changes
+  admin state after shared write access is removed/restored. `QueueAssertions`
+  rejects that completed outcome. Only this control's pre-handle token oracle is
+  omitted; its completed-result and state assertions remain.
+- `runs/groups-mutation-failed-group-prefix/` publishes a valid new group after
+  failed conversion persistence while keeping the old credential. `AtomicSave`
+  rejects the prefix effect; this is not a type or parsing failure.
+
+The correct sources/configs retain all early and completed assertions. These
+controls retain their original conditional-acceptance input hashes; they were not
+rerun for the stock-USM revision. The migration/group-prefix controls do not call
+the changed boundary, and the second-member witness uses requested/profile level
+3 under both relations. Their ownership, generation, and atomicity mechanisms
+are unchanged; the historical results are not labeled as current runs.
+
+`group-mutation-definitions.json` records each intentional control change.
+`group-fixtures/` contains exact historical source overlays, not another normal
+config catalog. To replay a construction/control variant, copy the current
+specification into a temporary directory, first overlay both files from
+`group-fixtures/prior-acceptance/`, then apply the corresponding variant at its
+relative paths and select its existing config with `run_tlc.py`. The initial SANY
+variant also needs the unframed core overlay. The stock-USM checkpoint uses both
+`group-fixtures/stock-before-inline/` files; overlay the `inline-repro` scenario
+on that pair to reproduce the target-preservation failure.
+
+`runs/groups-initial/` retains the initial fixture-domain SANY failure;
+`runs/groups-parsed/` retains the queued action-construction failure after its
+migration/form passes. The latter evaluated projected primed configuration fields
+before their local frame. Reordering the existing conjunctions fixes TLC
+evaluation without changing the action relation. Their original batch summaries
+and representative failing raw logs are retained; superseded pass logs do not
+supply the current claims. No failed batch is relabeled as passing.
+
+The runs use one worker, 1 GiB heap, 120 seconds per correct config, 360 seconds
+per correct batch, 60 seconds per original control, a 2 GiB state limit, and a
+20 GiB free-space reserve. The original construction/correct/control phase took
+111.221 s within its 540-second bound. The subsequent stock-USM three-config batch
+took 42.142 s within its 360-second bound. The inline reproduction/correction
+checks took 46.705 s within 240 seconds; only the affected migration config was
+rerun. All processes are reaped. No binary,
+checkpoint, or cache is included. `CURRENT_MODEL.md` states the finite domains
+and implementation boundaries: these checks do not establish full VACM/USM,
+actual schema/API parsing, wire behavior, durable import, or DOM correctness.
+
 ## Failure provenance
 
 The unreduced token-name graph remains available as an explicit diagnostic.
@@ -340,7 +460,7 @@ revision-2 reports and raw evidence outside this current subtree remain unchange
 
 ## Reproduction and tool identity
 
-Use the normal commands in `CURRENT_MODEL.md`. The runner selects the 48 normal
+Use the normal commands in `CURRENT_MODEL.md`. The runner selects the 51 normal
 configurations by default, requires both token replacement configs, and keeps
 explicit diagnostic selection available. Its defaults are 600 seconds per
 configuration and 3,600 seconds per batch. Missing replacements fail before

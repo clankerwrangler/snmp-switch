@@ -1047,6 +1047,10 @@ async def app_exchange(engine, store, request):
             priv_key="synthetic-priv-passphrase" if level == 3 else None)
     else:
         fields["community"] = "synthetic-community"
+    if level:
+        fields["group_id"] = (await engine.execute("group-save", {"label": "Application group",
+            "minimum_security_level": fields["security_level"],
+            "polling": fields.pop("polling"), "writing": fields.pop("writing")}))["id"]
     cid = (await engine.execute("credential-save", fields))["id"]
     instance = ApplicationExchange(engine, store, level)
     instance.credential_id = cid
@@ -1073,6 +1077,13 @@ async def test_application_set_real_dispatcher_atomic_echo_and_cleanup(app_excha
     assert not next(iter(x.engine.state.cfg.ports.values())).admin_up
     terminal(pending.ticket)
     x.empty()
+
+
+def access_write(x, fields):
+    credential = x.engine.state.cfg.credentials[x.credential_id]
+    if credential.version == "3":
+        return "group-save", {"id": credential.group_id, **fields}
+    return "credential-save", {"id": credential.id, **fields}
 
 
 async def configure_application(x, action, payload):
@@ -1102,7 +1113,7 @@ async def test_application_set_denials_keep_original_echo_and_state(app_exchange
         "writing": {"view_id": "interfaces"}} if permission == "excluded" else {}
     if permission == "excluded":
         await configure_application(x, "view-save", {"id": "interfaces", "name": "Read", "includes": ["1.3.6.1.2.1.1"]})
-    await configure_application(x, "credential-save", {"id": x.credential_id, **fields})
+    await configure_application(x, *access_write(x, fields))
     pdu = three_bindings((oid("1.3.6.1.2.1.2.2.1.7.101"), a.OctetString(b"bad")) if permission == "wrongtype" else None)
     before = x.engine.state
     persisted = x.engine.store.get("configuration")
@@ -1122,7 +1133,7 @@ async def test_application_set_actual_budget_precedes_normal_denial(app_exchange
     from switchlab.mib import oid
     x = app_exchange
     fields = {"writing": {"enabled": False}} if permission == "readonly" else {"writing": {"view_id": "interfaces"}}
-    await configure_application(x, "credential-save", {"id": x.credential_id, **fields})
+    await configure_application(x, *access_write(x, fields))
     pdu = three_bindings()
     # These accepted input sizes cross the actual production scoped-response
     # budget (v2c) or RFC-minimum peer budget (v3), without changing local65507.
@@ -1150,8 +1161,8 @@ async def test_application_set_actual_budget_precedes_normal_denial(app_exchange
 async def test_application_set_waiting_current_generation_and_ready_claim(app_exchange, change):
     x = app_exchange
     await configure_application(x, "view-save", {"id": "write", "name": "SET", "includes": ["1.3.6.1.2.1"]})
-    await configure_application(x, "credential-save", {"id": x.credential_id,
-        "polling": {"view_id": "interfaces"}, "writing": {"view_id": "write"}})
+    await configure_application(x, *access_write(x, {
+        "polling": {"view_id": "interfaces"}, "writing": {"view_id": "write"}}))
     second = await configure_application(x, "credential-save", {"label": "Second writer", "community": "synthetic-second",
         "writing": {"enabled": True, "view_id": "write"}})
     other = second["id"]
@@ -1163,7 +1174,7 @@ async def test_application_set_waiting_current_generation_and_ready_claim(app_ex
         await asyncio.sleep(0)
         assert pending.ticket.phase == "queued"
         if change == "writer-off":
-            await x.engine.execute("credential-save", {"id": x.credential_id, "writing": {"enabled": False}})
+            await x.engine.execute(*access_write(x, {"writing": {"enabled": False}}))
         elif change == "credential-aba":
             await x.engine.execute("credential-save", {"id": x.credential_id, "enabled": False})
             await x.engine.execute("credential-save", {"id": x.credential_id, "enabled": True})
@@ -1200,14 +1211,14 @@ async def test_application_set_waiting_current_generation_and_ready_claim(app_ex
 
 async def test_application_set_source_filter_drop_and_optional_empty_filter(app_exchange):
     x = app_exchange
-    await configure_application(x, "credential-save", {"id": x.credential_id,
-        "writing": {"networks": ["192.0.2.0/24"]}})
+    await configure_application(x, *access_write(x, {
+        "writing": {"networks": ["192.0.2.0/24"]}}))
     before = x.engine.state
     x.send(request())
     await x.settle()
     assert x.engine.state is before and not x.sink.sent
     x.empty()
-    await configure_application(x, "credential-save", {"id": x.credential_id, "writing": {"networks": []}})
+    await configure_application(x, *access_write(x, {"writing": {"networks": []}}))
     x.send(request())
     await x.settle()
     assert int(v2c.apiPDU.get_error_status(x.decode())) == 0
@@ -1233,7 +1244,7 @@ async def test_application_set_bounded_overload_does_not_apply(app_exchange, mon
 
 async def test_application_write_only_retains_listener_without_polling_grant(app_exchange):
     x = app_exchange
-    await configure_application(x, "credential-save", {"id": x.credential_id, "polling": {"enabled": False}})
+    await configure_application(x, *access_write(x, {"polling": {"enabled": False}}))
     status = x.adapter.status()
     assert status["listener_ready"] and status["writing_ready"] and not status["ready"]
     assert status["reason"] == "credentials_required"
@@ -1247,7 +1258,7 @@ async def test_application_write_only_retains_listener_without_polling_grant(app
     x.send(request())
     await x.settle()
     assert int(v2c.apiPDU.get_error_status(x.decode())) == 0
-    await configure_application(x, "credential-save", {"id": x.credential_id, "writing": {"enabled": False}})
+    await configure_application(x, *access_write(x, {"writing": {"enabled": False}}))
     assert not x.adapter.listening and not x.adapter.status()["writing_ready"]
 
 
@@ -1543,6 +1554,10 @@ async def test_storage_fault_existing_startup_restores_set_and_notification_capa
             auth_key="synthetic-auth-passphrase" if level > 1 else None, priv_key="synthetic-priv-passphrase" if level == 3 else None)
     else:
         fields["community"] = "synthetic-community"
+    if level:
+        fields["group_id"] = (await e.execute("group-save", {"label": "Recovered group",
+            "minimum_security_level": fields["security_level"],
+            "polling": fields.pop("polling"), "writing": fields.pop("writing")}))["id"]
     cid = (await e.execute("credential-save", fields))["id"]
     from conftest import endpoint, tick
     eid = await endpoint(e)
@@ -1620,3 +1635,139 @@ async def test_storage_fault_existing_startup_restores_set_and_notification_capa
         if not store.closed:
             await x.close()
             store.close()
+
+
+@pytest.mark.parametrize("suite", [1, 2, 3])
+@pytest.mark.parametrize("requested", [1, 2, 3])
+def test_stock_usm_normal_profile_admission_and_reports(suite, requested):
+    from pysnmp.proto.mpmod.rfc3412 import SNMPv3Message
+    # Synchronize the real manager first; discovery's zero clock exception is
+    # not an ordinary management request at a lower protection level.
+    x = Exchange(requested)
+    try:
+        user(x.agent, suite)
+        counter = x.agent.get_mib_builder().import_symbols(
+            "__SNMP-USER-BASED-SM-MIB", "usmStatsUnsupportedSecLevels")[0]
+        before = int(counter.syntax)
+        x.send_request()
+        if suite == requested:
+            assert len(x.requests) == 1
+            captured = x.requests.pop()
+            assert int(captured[1][4]) == requested
+            assert x.respond(captured)
+            assert int(v2c.apiPDU.get_error_status(x.decode())) == 0
+            assert int(counter.syntax) == before
+            assert len(x.mp_pops) == len(x.sec_pops) == 1
+        else:
+            assert not x.requests and int(counter.syntax) == before + 1
+            reports = []
+            for wire, _, _ in x.sink.sent:
+                message = decoder.decode(wire, asn1Spec=SNMPv3Message())[0]
+                if message["msgData"].getName() == "plaintext":
+                    pdu = message["msgData"]["plaintext"]["data"].getComponent()
+                    assert pdu.tagSet == v2c.ReportPDU.tagSet
+                    bindings = v2c.apiPDU.get_varbinds(pdu)
+                    assert len(bindings) == 1 and tuple(bindings[0][0]) == counter.name
+                    assert int(bindings[0][1]) == before + 1
+                    reports.append(str(bindings[0][0]))
+            print(dict(suite=suite, requested=requested, admitted=False,
+                       unsupported_increment=1, emitted=len(x.sink.sent), decoded_reports=reports))
+            x.sink.sent.clear()
+        x.empty()
+    finally:
+        x.close()
+
+
+@pytest.mark.parametrize("app_exchange", [1, 2, 3], indirect=True)
+@pytest.mark.parametrize("minimum", [1, 2, 3])
+async def test_group_minimum_after_actual_stock_usm_acceptance(app_exchange, minimum):
+    x = app_exchange
+    gid = x.engine.state.cfg.credentials[x.credential_id].group_id
+    await configure_application(x, "group-save", {"id": gid,
+        "minimum_security_level": {1: "noAuthNoPriv", 2: "authNoPriv", 3: "authPriv"}[minimum]})
+    counter = x.agent.get_mib_builder().import_symbols(
+        "__SNMP-USER-BASED-SM-MIB", "usmStatsUnsupportedSecLevels")[0]
+    previous_counter = int(counter.syntax)
+    read = v2c.GetRequestPDU(); v2c.apiPDU.set_defaults(read)
+    v2c.apiPDU.set_varbinds(read, [((1,3,6,1,2,1,2,2,1,7,101), a.Null())])
+    for pdu in (read, request()):
+        before = x.engine.state
+        x.send(pdu)
+        await x.settle()
+        assert int(counter.syntax) == previous_counter  # USM, not group policy, owns this counter.
+        if x.level >= minimum:
+            assert int(v2c.apiPDU.get_error_status(x.decode())) == 0
+        else:
+            assert not x.sink.sent and x.engine.state is before
+            x.expire()
+        x.empty()
+
+
+@pytest.mark.parametrize("app_exchange", [1, 2, 3], indirect=True)
+@pytest.mark.parametrize("change", ["policy-aba", "minimum-aba", "membership-aba", "same", "label", "unrelated"])
+async def test_shared_group_queue_generation_and_current_policy(app_exchange, change):
+    x = app_exchange
+    gid = x.engine.state.cfg.credentials[x.credential_id].group_id
+    other = await configure_application(x, "credential-save", {"label": "Second member", "version": "3",
+        "username": "second-member", "security_level": "noAuthNoPriv", "group_id": gid})
+    other_id = other["id"]
+    group = x.engine.state.cfg.groups[gid].model_dump()
+    before_tokens = dict(x.engine.state.credential_generations)
+    async with x.adapter.io_lock:
+        x.send(request())
+        pending = next(iter(x.adapter.pending_sets.values()))
+        await asyncio.sleep(0)
+        if change == "policy-aba":
+            await x.engine.execute("group-save", {"id": gid, "writing": {"enabled": False}})
+            await x.engine.execute("group-save", group)
+        elif change == "minimum-aba":
+            other_level = "noAuthNoPriv" if x.level != 1 else "authPriv"
+            await x.engine.execute("group-save", {"id": gid, "minimum_security_level": other_level})
+            await x.engine.execute("group-save", group)
+        elif change == "membership-aba":
+            await x.engine.execute("credential-save", {"id": x.credential_id, "group_id": None})
+            await x.engine.execute("credential-save", {"id": x.credential_id, "group_id": gid})
+        elif change == "same":
+            await x.engine.execute("group-save", group)
+        elif change == "label":
+            await x.engine.execute("group-save", {"id": gid, "label": "Changed label only"})
+        else:
+            await x.engine.execute("group-save", {"label": "Unrelated"})
+        await x.adapter._reconcile()
+        before_handle = x.engine.state
+    await x.settle()
+    if change.endswith("aba"):
+        assert x.engine.state is before_handle and not x.sink.sent
+        assert x.engine.state.credential_generations[x.credential_id] != before_tokens[x.credential_id]
+        if change != "membership-aba":
+            assert x.engine.state.credential_generations[other_id] != before_tokens[other_id]
+    else:
+        assert int(v2c.apiPDU.get_error_status(x.decode())) == 0
+        assert x.engine.state.credential_generations == before_tokens
+    terminal(pending.ticket)
+    x.empty()
+
+
+@pytest.mark.parametrize("app_exchange", [1, 2, 3], indirect=True)
+async def test_no_group_denies_incoming_without_changing_trap_profile(app_exchange):
+    x = app_exchange
+    credential = x.engine.state.cfg.credentials[x.credential_id]
+    await configure_application(x, "credential-save", {"label": "Listener holder", "community": "other-community",
+        "polling": {"enabled": True}})
+    await configure_application(x, "credential-save", {"id": x.credential_id, "group_id": None})
+    assert x.adapter.listening
+    before = x.engine.state
+    x.send(request()); await x.settle()
+    assert int(v2c.apiPDU.get_error_status(x.decode())) == 16 and x.engine.state is before
+    with patch("switchlab.snmp.udp.UdpTransport", MemoryTransport):
+        target = await configure_application(x, "target-save", {"address": "127.0.0.1", "credential_id": x.credential_id})
+    await x.engine.execute("test-notification", {"target_id": target["id"]})
+    await x.adapter.drain_one()
+    traps = []
+    x.manager.message_dispatcher.register_context_engine_id(b"", (v2c.SNMPv2TrapPDU.tagSet,), lambda *args: traps.append(args))
+    assert len(x.sink.sent) == 1
+    receive(x.manager, x.sink.sent.pop()[0], TARGET)
+    assert len(traps) == 1 and int(traps[0][4]) == x.level
+    assert str(traps[0][3]) == credential.username
+    assert x.engine.state.cfg.credentials[x.credential_id].security_level == credential.security_level
+    x.empty()

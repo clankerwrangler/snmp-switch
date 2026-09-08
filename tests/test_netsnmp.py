@@ -3,7 +3,7 @@ import asyncio
 import shutil
 import pytest
 from conftest import endpoint, tick
-from test_wire import start
+from test_wire import start, access_command
 
 pytestmark=pytest.mark.skipif(shutil.which('snmpget') is None,reason='Net-SNMP required; run Docker test stage')
 
@@ -26,6 +26,31 @@ async def test_independent_netsnmp_v3(engine,level):
         address=f'127.0.0.1:{port}'
         assert '1.3.999.123' in await command(*base,address,'1.3.6.1.2.1.1.2.0')
         assert 'INTEGER: 3' in await command(*base,address,'1.3.6.1.2.1.47.1.1.1.1.5.1')
+        primary = next(iter(e.state.cfg.credentials.values()))
+        gid = primary.group_id
+        await e.execute('credential-save', {'label': 'Second group member', 'version': '3',
+            'username': 'netsnmp-second', 'security_level': level, 'group_id': gid,
+            'auth_key': 'second-auth-pass', 'priv_key': 'second-priv-pass'})
+        await a.reconcile()
+        second = [({'netsnmp-fixture': 'netsnmp-second', 'fixture-auth-pass': 'second-auth-pass',
+                    'fixture-priv-pass': 'second-priv-pass'}).get(arg, arg) for arg in base]
+        assert '1.3.999.123' in await command(*second,address,'1.3.6.1.2.1.1.2.0')
+        await e.execute('group-save', {'id': gid, 'polling': {'view_id': 'interfaces'}})
+        await a.reconcile()
+        for manager in (base, second):
+            assert 'No Such Object' in await command(*manager,address,'1.3.6.1.2.1.47.1.1.1.1.5.1')
+            assert '1.3.999.123' in await command(*manager,address,'1.3.6.1.2.1.1.2.0')
+        await e.execute('group-save', {'id': gid, 'polling': {'view_id': 'all'}})
+        if level != 'authPriv':
+            await e.execute('group-save', {'id': gid, 'minimum_security_level': 'authPriv'})
+            await a.reconcile()
+            for manager in (base, second):
+                with pytest.raises(AssertionError, match='Timeout'):
+                    await command(*manager,address,'1.3.6.1.2.1.1.2.0')
+            await e.execute('group-save', {'id': gid, 'minimum_security_level': level})
+        await a.reconcile()
+        for manager in (base, second):
+            assert 'INTEGER: 3' in await command(*manager,address,'1.3.6.1.2.1.47.1.1.1.1.5.1')
         await e.execute('switch-edit',{'identity':{'sys_object_id':'2.999.123'}})
         assert '2.999.123' in await command(*base,address,'1.3.6.1.2.1.1.2.0')
         await endpoint(e);await tick(e)
@@ -107,7 +132,7 @@ async def test_protocol_change_replaces_wire_credentials(engine):
         v2=['snmpget','-v2c','-c','fixture-poll','-On','-t','1','-r','0',address,oid]
         assert '1.3.999.123' in await command(*v2)
         await e.execute('credential-save',{'id':cid,'version':'3','username':'changed-v3',
-            'security_level':'authPriv','auth_key':'changed-auth-pass','priv_key':'changed-priv-pass'})
+            'security_level':'authPriv','auth_key':'changed-auth-pass','priv_key':'changed-priv-pass','access_transfer':'keep'})
         await a.reconcile()
         with pytest.raises(AssertionError,match='Timeout'):
             await command(*v2)
@@ -117,7 +142,7 @@ async def test_protocol_change_replaces_wire_credentials(engine):
         await e.execute('credential-save',{'id':cid,'label':'same-version edit','auth_key':'','priv_key':''})
         await a.reconcile()
         assert '1.3.999.123' in await command(*v3)
-        await e.execute('credential-save',{'id':cid,'version':'2c','community':'changed-v2'})
+        await e.execute('credential-save',{'id':cid,'version':'2c','community':'changed-v2','access_transfer':'keep'})
         await a.reconcile()
         with pytest.raises(AssertionError,match='Timeout|Unknown user name'):
             await command(*v3)
@@ -132,10 +157,11 @@ async def test_shared_v3_credential_polling_and_traps_are_independent(engine, tm
     a, port = await start(e)
     process = None
     try:
+        gid = (await e.execute('group-save', {'label': 'Shared management', 'minimum_security_level': 'authPriv',
+            'polling': {'enabled': True, 'view_id': 'interfaces', 'networks': ['127.0.0.0/8']}}))['id']
         cid = (await e.execute('credential-save', {'label': 'Shared USM', 'version': '3',
             'username': 'shared-usm', 'security_level': 'authPriv', 'auth_key': 'shared-auth-pass',
-            'priv_key': 'shared-priv-pass', 'polling': {'enabled': True, 'view_id': 'interfaces',
-                                                     'networks': ['127.0.0.0/8']}}))['id']
+            'priv_key': 'shared-priv-pass', 'group_id': gid}))['id']
         trap_port = free_port()
         tid = (await e.execute('target-save', {'address': '127.0.0.1', 'port': trap_port, 'credential_id': cid}))['id']
         await a.reconcile()
@@ -160,12 +186,12 @@ async def test_shared_v3_credential_polling_and_traps_are_independent(engine, tm
         assert '1.3.999.123' in await command(*base, oid)
         assert 'No Such Object' in await command(*base, '1.3.6.1.2.1.17.1.1.0')
         await trap()
-        await e.execute('credential-save', {'id': cid, 'polling': {'networks': ['192.0.2.0/24']}})
+        await e.execute(*access_command(e, cid, {'polling': {'networks': ['192.0.2.0/24']}}))
         await a.reconcile()
         with pytest.raises(AssertionError, match='Timeout'):
             await command(*base, oid)
         await trap()
-        await e.execute('credential-save', {'id': cid, 'polling': {'enabled': False, 'networks': []}})
+        await e.execute(*access_command(e, cid, {'polling': {'enabled': False, 'networks': []}}))
         await a.reconcile()
         assert a.listening and a.status()['notifications_ready']
         with pytest.raises(AssertionError, match='Timeout'):
@@ -173,11 +199,11 @@ async def test_shared_v3_credential_polling_and_traps_are_independent(engine, tm
         await trap()
         # Removing the last polling permission closes only the incoming listener.
         other = next(k for k in e.state.cfg.credentials if k != cid)
-        await e.execute('credential-save', {'id': other, 'polling': {'enabled': False}})
+        await e.execute(*access_command(e, other, {'polling': {'enabled': False}}))
         await a.reconcile()
         assert not a.listening and a.status()['notifications_ready']
         await trap()
-        await e.execute('credential-save', {'id': cid, 'writing': {'enabled': True, 'view_id': 'all'}})
+        await e.execute(*access_command(e, cid, {'writing': {'enabled': True, 'view_id': 'all'}}))
         await a.reconcile()
         assert a.listening and a.status()['writing_ready'] and not a.status()['ready']
         await command('snmpset', *base[1:], '1.3.6.1.2.1.2.2.1.7.101', 'i', '2')
@@ -185,11 +211,11 @@ async def test_shared_v3_credential_polling_and_traps_are_independent(engine, tm
         with pytest.raises(AssertionError, match='Timeout'):
             await command(*base, oid)
         await trap()
-        await e.execute('credential-save', {'id': cid, 'writing': {'enabled': False}})
+        await e.execute(*access_command(e, cid, {'writing': {'enabled': False}}))
         await a.reconcile()
         assert not a.listening and a.status()['notifications_ready']
         await trap()
-        assert e.state.cfg.credentials[cid].polling.view_id == 'interfaces'
+        assert e.state.cfg.groups[gid].polling.view_id == 'interfaces'
     finally:
         if process and process.returncode is None:
             process.terminate()
@@ -261,7 +287,7 @@ async def test_entity_inventory_with_independent_netsnmp(engine, version):
         await e.execute("port-edit", {"id": pid, "patch": {"alias": "a" * 64}})
         assert await command("snmpget", *base, clock) == changed
         cid = next(iter(e.state.cfg.credentials))
-        await e.execute("credential-save", {"id": cid, "polling": {"view_id": "interfaces"}})
+        await e.execute(*access_command(e, cid, {'polling': {'view_id': 'interfaces'}}))
         await a.reconcile()
         assert "No Such Object" in await command("snmpget", *base, physical + ".7.1")
         assert "1.3.999.123" in await command("snmpget", *base, "1.3.6.1.2.1.1.2.0")
@@ -291,8 +317,7 @@ async def test_independent_netsnmp_set_vlan_admin_permissions_and_restart(engine
         with pytest.raises(AssertionError, match="authorizationError"):
             await command("snmpset", *base, admin, "i", "2")
         assert e.state is before
-        await e.execute("credential-save", {"id": cid, "writing": {
-            "enabled": True, "view_id": "all", "networks": ["127.0.0.0/8"]}})
+        await e.execute(*access_command(e, cid, {'writing': {'enabled': True, 'view_id': 'all', 'networks': ['127.0.0.0/8']}}))
         await a.reconcile()
         eid = await endpoint(e)
         await tick(e)
@@ -348,14 +373,14 @@ async def test_independent_netsnmp_set_vlan_admin_permissions_and_restart(engine
                       static + ".4.20", "x", "80", pvid, "u", "20")
         await command("snmpset", *base, static + ".5.20", "i", "6")
         assert e.state.cfg.ports[pid].pvid == 1 and e.state.cfg.ports[pid].untagged == [1]
-        await e.execute("credential-save", {"id": cid, "polling": {"enabled": False}})
+        await e.execute(*access_command(e, cid, {'polling': {'enabled': False}}))
         await a.reconcile()
         assert a.listening and a.status()["writing_ready"] and not a.status()["ready"]
         with pytest.raises(AssertionError, match="Timeout"):
             await command("snmpget", *base, admin)
         await command("snmpset", *base, admin, "i", "2")
         assert not e.state.cfg.ports[pid].admin_up
-        await e.execute("credential-save", {"id": cid, "writing": {"enabled": False}})
+        await e.execute(*access_command(e, cid, {'writing': {'enabled': False}}))
         await a.reconcile()
         assert not a.listening
     finally:

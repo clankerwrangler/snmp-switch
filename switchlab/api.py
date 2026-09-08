@@ -8,7 +8,7 @@ import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import Field, ValidationError, create_model, model_validator
 
 from .engine import CommandError, Engine
-from .models import Configuration, Credential, CredentialAuth, PollingAccess, WritingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, initial_configuration
+from .models import Configuration, Credential, CredentialAuth, AccessGroup, PollingAccess, WritingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, initial_configuration
 from .snmp import SnmpAdapter
 from .storage import Store, StorageFault, RollbackFailed, CommitUncertain
 
@@ -96,6 +96,10 @@ WritingPatch = create_model("WritingPatch", __base__=Record, **{
 })
 CredentialWrite = create_model("CredentialWrite",
     __base__=patch_model("CredentialFields", Credential, list(Credential.model_fields)),
+    polling=(PollingPatch | None, None), writing=(WritingPatch | None, None),
+    group_id=(str | None, None), access_transfer=(Literal["keep", "none"] | None, None))
+GroupWrite = create_model("GroupWrite",
+    __base__=patch_model("GroupFields", AccessGroup, list(AccessGroup.model_fields)),
     polling=(PollingPatch | None, None), writing=(WritingPatch | None, None))
 class ViewWrite(View, Revision):
     pass
@@ -328,7 +332,7 @@ def create_app(store=None, configuration=None):
     mutation("POST", "/clock/advance", Advance, "advance")
     mutation("POST", "/switch/reboot", Revision, "reboot")
     mutation("PATCH", "/snmp/settings", SnmpPatch, "snmp-settings")
-    for route, model, prefix in (("snmp/credentials", CredentialWrite, "credential"), ("snmp/views", ViewWrite, "view"), ("notifications/targets", TargetWrite, "target")):
+    for route, model, prefix in (("snmp/credentials", CredentialWrite, "credential"), ("snmp/groups", GroupWrite, "group"), ("snmp/views", ViewWrite, "view"), ("notifications/targets", TargetWrite, "target")):
         mutation("POST", "/"+route, model, prefix+"-save")
         mutation("PUT", "/"+route+"/{id}", model, prefix+"-save", lambda d,p: {**d, **p})
         mutation("DELETE", "/"+route+"/{id}", Revision, prefix+"-delete", lambda d,p: p)
@@ -383,7 +387,7 @@ def create_app(store=None, configuration=None):
                 "membership_ports": [p.name for p in s.cfg.ports.values() if vid in p.admitted], "revision": s.revision, "configuration_revision": s.configuration_revision}
 
     for family, key in (("switch","switch"), ("ports","ports"), ("endpoints","endpoints"), ("vlans","vlans"), ("fdb","fdb"),
-                        ("snmp/settings","snmp"), ("snmp/credentials","credentials"), ("snmp/views","views"), ("notifications/targets","targets")):
+                        ("snmp/settings","snmp"), ("snmp/credentials","credentials"), ("snmp/groups","groups"), ("snmp/views","views"), ("notifications/targets","targets")):
         def register_read(family, key):
             async def collection():
                 snapshot = app.state.engine.snapshot()

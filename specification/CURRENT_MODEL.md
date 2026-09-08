@@ -1,10 +1,12 @@
 # Current formal model and application traceability
 
-These models extend the revision-2 models for the application at commit
-`d75c960ccd66d99413e9287aae557ae32b47440b` and the ENTITY-MIB and SNMP SET
-contracts described here. ENTITY and SET describe intended application behavior until the
-implementation and its integration tests establish the corresponding paths.
-Finite TLC results concern these models, not an application refinement proof.
+The core, ENTITY, SET, response-lifetime, and storage models retain their checked
+relations and evidence from the application checkpoint
+`d75c960ccd66d99413e9287aae557ae32b47440b` and its subsequent refinements. The
+grouped-access relation uses unchanged dependencies from application baseline
+`ea5047605260e0806d0e8f00406755c97094eb9e` and describes the schema-3 contract
+before its application integration checks. Finite TLC results concern these
+models, not an application refinement proof.
 
 ## State ownership
 
@@ -12,6 +14,7 @@ Finite TLC results concern these models, not an application refinement proof.
 | --- | --- |
 | `Switch.tla` | Existing endpoint, link, VLAN, FDB, generation, and link-event state; independent untagged/forbidden memberships; fixed ENTITY topology and interface joins. |
 | `ReadAccess.tla` | Shared credentials, independent read/write access, named view contents and references, target references, atomic inline creation, and handling-time reads. Secrets and snapshots are opaque. |
+| `GroupedAccess.tla`, `GroupedAccessScenarios.tla` | Canonical community/user/group policy, legacy normalization, explicit protocol conversion, sparse form submissions, and shared-generation invalidation through the existing access/SET owners. |
 | `SetTransactions.tla` | A named instance of `ReadAccess` and the same `Switch` state. One complete candidate commits through `Mutate`; failures preserve modeled switch/access state. No second FDB or credential store exists. |
 | `SetTokenEquivalence.tla` | A finite allocator certificate and equality-only TLC view for registration/activation tokens. The inherited transaction specification and every request remain unchanged. |
 | `SetResponseLifecycle.tla`, `SetResponseScenarios.tla`, `SetResponseEntry.tla` | Original MP/security association before admission, exact response-ticket ownership, cache consumption/discard stages, and focused integration with the existing transaction commit boundary. |
@@ -25,11 +28,63 @@ Finite TLC results concern these models, not an application refinement proof.
 | Application owner | Formal relationship |
 | --- | --- |
 | `models.Configuration.references` | `InventoryOK`, `VlanConfigLegal`, and `ReadAccess!ReferencesOK`: permanent VLAN 1, fixed references, admitted PVID, unique interface/FDB joins, and credential/view/target references. |
+| Credential/group validation, normalization, and save commands | `ConfigValid`, `Migrate`, `Convert`, `FormPolicy`, and `Publish`: one canonical incoming-policy owner, exact saved-policy transfer, sparse final-active restrictions, and revision-checked atomic candidates. These are intended schema-3 relations until implementation tests establish the call sites. |
 | `Engine.execute`, `Store.commit` | Atomic publication is an abstract transition. SET rejection and rolled-back persistence failure leave the modeled state unchanged. Actual SQLite rollback, revisions, event history, idempotency, and crash outcomes require implementation tests. |
 | `Runtime.valid`, `schedule`, `observe` | `ValidJob`, `QueueActivity`, `ApplyActivity`, `JobsOK`, `LearningHasSource`, and `StaleJobCannotCommit`. VLAN creation/deletion now also invalidates explicitly tagged endpoints, including inadmitted tags. |
 | `Runtime.advance`, `expire`, `reset_operational` | Abstract ticks, due-work draining, expiration, and reboot. Existing fair source, aging, and link-queue progress fixtures remain. |
 | `mib.Projection` | IF/BRIDGE/Q-BRIDGE/ENTITY semantic maps. Numeric OIDs, ASN.1 types, bit ordering, TimeFilter, UUID bytes, and unknown-value sentinels are adapter checks, not modeled encoders. |
-| `Responder` and adapter lifecycle | Existing read authorization and immutable per-PDU snapshots; intended asynchronous SET capture/recheck/commit. Registration and activation tokens prevent queued obsolete work from becoming current after changes are reversed. |
+| `Responder` and adapter lifecycle | Existing read authorization and immutable per-PDU snapshots; asynchronous SET capture/recheck/commit. Registration and activation tokens prevent queued obsolete work from becoming current after changes are reversed. |
+
+## Communities and incoming management groups
+
+`GroupedAccess` stores version-specific credentials and groups in one canonical
+configuration. A v2c community owns read/write policy; a v3 user owns an optional
+group reference and opaque authentication material. `PolicyOf` resolves the
+current group policy into the unchanged `ReadAccess`/`SetTransactions` instance.
+There is no copied effective per-user policy or second token history.
+
+A group's minimum incoming security level is distinct from the user's configured
+protection profile. `StockUsmAccepted` represents stock PySNMP normal-management
+acceptance at that profile, conditional on opaque authentication success. A lower
+group minimum does not relax the user's protection requirement. The application
+checks group policy after stock USM accepts the request; it does not implement a
+second per-user floor. Discovery/REPORT exceptions are library behavior, not
+ordinary lower-level management capability. No group or Access=None denies
+incoming access without changing target-linked notification authorization. Fresh users have no group; fresh users and groups
+use authPriv, and fresh groups have no access. Inline creation updates only its
+explicit selected target; every unrelated target reference and enable bit stays
+unchanged. Active group views must exist,
+even without enabled members; inactive selections and filters remain stored.
+Any member, including a disabled user, prevents group deletion.
+
+Legacy normalization preserves IDs, opaque key material, enablement, old incoming
+minimum, policy, target references, and metadata. Each old v3 user receives a
+distinct deterministic group slot; equal policies are not merged. Explicit
+protocol conversion requires request-only `access_transfer=keep|none` or, for
+v2c-to-v3 only, an exclusive explicit nullable group selection. Missing/conflicting
+intent and simultaneous policy overrides reject. Keep copies current saved
+policy, not a hidden draft. Group creation and credential conversion publish
+atomically; other groups and members remain unchanged. Fresh/same-version saves
+reject transfer intent, and no transfer flag is persisted.
+
+The four access selections preserve all read/write enabled pairs. `FormPolicy`
+changes enabled bits independently and applies dirty restrictions only to
+final-active sections. Unchanged or secret-only saves preserve existing
+restrictions; inactive draft changes do not replace hidden saved values.
+
+Real group policy/minimum, membership, user authentication/global state, and
+selected shared write-view changes renew every affected credential's existing
+registration token. The allocator excludes the pending capture, so remove/restore
+cannot revive old work. Label-only, same-value, and unrelated changes preserve
+queued work. Current group, source, level, and view checks still apply at handling;
+the trace invokes the unchanged `SubmitSet` and `HandleSet` actions.
+
+This is a VACM-style application incoming-policy subset, not full native VACM
+instrumentation. Actual USM authentication/REPORT behavior, schema parsing/import
+validation, sparse field presence, CIDR parsing, identifier encoding, secrets, storage, and browser
+drafts remain implementation checks. The schema1 relation abstracts parsed
+purpose/view/filter fields rather than replacing its existing input validator.
+Title, labels, and the actual listener status remain browser assertions.
 
 ## SET contract represented here
 
@@ -271,6 +326,24 @@ The storage refinement adds two independent configurations:
   every modeled blocked-effect family, failed startup, two restarts, and resumed
   operation. The configured first effective assignment index is 2.
 
+The grouped-access relation adds three independent scripted configurations:
+
+- `GroupMigrationConversion`: 2,332 fixtures for legacy normalization, defaults,
+  explicit keep/none/group conversion, invalid/stale/failed saves, and references.
+- `GroupAccessForms`: 2,112 fixtures covering all four initial access modes,
+  mode changes, unchanged/secret-only saves, independent restrictions, missing
+  inactive views, hidden drafts, cancellation, and atomic rejection.
+- `GroupQueuedSet`: 5,276 fixtures for all three levels, stock-USM/group-floor/source
+  checks, shared policy/membership/view ABA, same-value and unrelated saves, and
+  completed outcomes through the existing transaction action.
+
+These fixtures use two credentials, three group slots, two named views and the
+no-view marker, two opaque key bundles, two source classes and empty/A-only/B-only
+filters, two targets, one pending PDU, and three existing token values. The SET
+witness retains one port/endpoint/source/MAC and VLANs 1/10. The scripts complete
+two, four, or five transitions with revisions in 0–8. No TLC state constraint,
+VIEW, or arbitrary SET cross product is added.
+
 These focused graphs and scripted traces are not an unrestricted multi-port,
 multi-VLAN, multi-request system proof. Actual source CIDRs/security levels,
 cryptography, complete wire parsing, response encoding, pending-task cancellation,
@@ -281,12 +354,13 @@ incomplete, never a pass.
 ## Reproduction and evidence
 
 `run_tlc.py` reads the `TLC_MODULE` comment in each configuration. Its normal
-suite has 48 configurations: the previous 40 core/access/ENTITY/SET traces and
+suite has 51 configurations: the previous 40 core/access/ENTITY/SET traces and
 graphs, the token certificate, the proved token-view graph, three response-lifecycle
-checks, the entry-association trace, and two storage checks. Evidence consists of
-the earlier 42 checks and separate response, entry, and storage checkpoints. The
-entry checkpoint rechecks three affected response configs; the storage checkpoint
-does not change earlier checked inputs. No combined 48-config run is claimed.
+checks, the entry-association trace, two storage checks, and three grouped-access
+checks. Evidence consists of the earlier 42 checks and separate response, entry,
+storage, and grouped-access checkpoints. The entry checkpoint rechecks three
+affected response configs; storage and grouped access leave earlier checked inputs
+unchanged. No combined 51-config run is claimed.
 The unreduced
 `SetTransactions` configuration is an explicit diagnostic, not part of normal
 selection. Missing either replacement configuration fails normal selection
