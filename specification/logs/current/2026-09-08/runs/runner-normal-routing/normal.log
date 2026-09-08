@@ -1,6 +1,0 @@
-Checking Routine
-Routine: PASS {'generated': 2, 'distinct': 1, 'queue': 0}
-Checking SetTokenEquivalence
-SetTokenEquivalence: PASS {'generated': 2, 'distinct': 1, 'queue': 0}
-Checking SetTransactionsEquality
-SetTransactionsEquality: PASS {'generated': 2, 'distinct': 1, 'queue': 0}

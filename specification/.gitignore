@@ -6,4 +6,5 @@ __pycache__/
 *.pyc
 *.class
 *.out
-# Keep documented logs, reports and configs in source control.
+# Model-checker output stays local; Git retains historical evidence.
+/logs/

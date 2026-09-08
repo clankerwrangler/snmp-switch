@@ -7,7 +7,7 @@
 
 **Scope:** application requirements and executable formal model
 
-`Switch.tla` defines the core transition semantics; this document specifies the application and wire adapter around them. `docs/mib-coverage.csv` is the generated object manifest. [Current model contract](CURRENT_MODEL.md) and [current verification](CURRENT_VERIFICATION.md) describe the checked inputs and boundaries. `VERIFICATION.md` retains historical revision-2 results. These are design requirements, not implementation test results. See the [application README](../README.md) for installation and use, and the [application validation report](../docs/VALIDATION.md) for executed checks and their limits.
+`Switch.tla` defines the core transition semantics; this document specifies the application and wire adapter around them. `docs/mib-coverage.csv` is the generated object manifest. [Current model contract](CURRENT_MODEL.md) and [current verification](CURRENT_VERIFICATION.md) describe the checked inputs and boundaries. `VERIFICATION.md` retains historical revision-2 results; their raw evidence remains in Git, while new checker output stays local. These are design requirements, not implementation test results. See the [application README](../README.md) for installation and use, and the [application validation report](../docs/VALIDATION.md) for executed checks and their limits.
 
 ## 1. Purpose and boundaries
 
@@ -435,7 +435,7 @@ A clean-install release test must inspect the **effective** loaded configuration
 
 Use Net-SNMP polling tools and `snmptrapd`, or equivalent independently implemented clients, for integration tests. Check good/bad credentials, view traversal, empty tables, nonidentical indexes, duplicate MACs across VLANs, absent VLAN tags, table edits during a walk, response limits, and reboot. A reference script can assert the end-to-end MAC → FDB → bridge port → interface join without access to a NAC product. [R13]
 
-Model checking is finite and configuration-specific. The full-core fixture is intentionally small; focused fixtures and scripted traces cover larger combinations. Current SET checks compose bounded core and credential contracts; none is a formal refinement proof of the Python application. Passing TLC does not establish ASN.1 correctness, security implementation correctness, crash safety, unlimited-scale correctness, or NAC compatibility. Exact current configurations, outcomes, limits, and tool hashes are linked from `CURRENT_VERIFICATION.md`. Historical `VERIFICATION.md` and its logs retain their original scope and measurements.
+Model checking is finite and configuration-specific. The full-core fixture is intentionally small; focused fixtures and scripted traces cover larger combinations. Current SET checks compose bounded core and credential contracts; none is a formal refinement proof of the Python application. Passing TLC does not establish ASN.1 correctness, security implementation correctness, crash safety, unlimited-scale correctness, or NAC compatibility. Exact current configurations, outcomes, limits, and tool hashes are linked from `CURRENT_VERIFICATION.md`. Historical `VERIFICATION.md` and its Git-recorded evidence retain their original scope and measurements.
 
 ### 12.1 Integrated validation
 

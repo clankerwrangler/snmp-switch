@@ -2,6 +2,12 @@
 
 **Revision 2 · checked 2026-09-07**
 
+This historical report retains its original scope. Referenced `logs/` files are
+local output and are no longer tracked in the current tree. Inspect the original
+files with `git show 2c1c84d6:specification/logs/verification.json` or another
+recorded path at that commit. See [current verification](CURRENT_VERIFICATION.md)
+for the maintained suite and its results.
+
 **Documentation revision 2.1:** the recorded TLC run covers the revision-2 formal models and configurations. The operator-supplied identity policy, public/development separation, readiness behavior, and SNMP identity gate are application requirements outside those models. The recorded run does not verify them.
 
 ## Outcome
