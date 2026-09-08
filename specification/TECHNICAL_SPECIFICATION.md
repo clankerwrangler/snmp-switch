@@ -242,7 +242,7 @@ SNMPv3 supports explicitly selected `noAuthNoPriv`, `authNoPriv`, and `authPriv`
 
 Store web passwords using a vetted password-hashing implementation. Store SNMP secrets/key material in a protected secret store or encrypted configuration with a separately mounted key, because authentication needs more than a web-password hash. Redact secrets in APIs, logs, traces, errors, exports, and source-controlled examples. The application must be able to restart without silently resetting SNMPv3 identity.
 
-Configuration schema 2 converts legacy polling-purpose credentials to enabled polling access and notification-purpose credentials to disabled polling access. It preserves existing credential enabled states, IDs, secrets, filters, views, and target references. Scenario schema 1 remains independent and cannot replace these deployment settings. The shared-credential relationships, inline creation, and schema conversion are application behavior outside the recorded `ReadAccess.tla` verification scope.
+Configuration uses schema 2. Scenario schema 1 remains independent and cannot replace these deployment settings. The shared-credential relationships, inline creation, and schema conversion are application behavior outside the recorded `ReadAccess.tla` verification scope.
 
 One enabled credential identifies each community or v3 username in the single SNMP engine. Shared v3 polling and traps use the same username, security level, keys, and local engine identity. Credential-wide disablement stops both uses; disabling polling alone does not stop traps.
 

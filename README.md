@@ -58,6 +58,8 @@ Authenticated API writes require a session cookie and CSRF token. A supplied `Or
 4. Advance 1 second. The default source learns in the port's PVID, initially VLAN 1.
 5. Inspect **Learned addresses** and **Interfaces**. Edit a source or add VLAN membership to observe the cache rules.
 
+In **Switch overview**, select a port and click **Disconnect** beside an attached endpoint. This removes only that attachment; the saved endpoint and its sources remain in **Endpoint library**. Use **+ Attach endpoint** to reconnect it. On a shared port, other endpoints remain attached.
+
 ### Enable SNMP
 
 Open **SNMP & settings**:
@@ -90,25 +92,6 @@ The agent uses one enabled credential per v2c community or v3 username. A shared
 Traps are outbound notifications to the configured receiver, normally on UDP 162. Switch Lab does not receive traps, so Compose has no inbound UDP 162 mapping. Delivery and the source address seen by the receiver depend on container networking and routing.
 
 Clearing identity closes the SNMP listener and cancels unsent notifications before the API acknowledges the change. UI, API, and simulation remain available. Restoring identity does not replay disabled-period link events.
-
-### Existing deployments
-
-Configuration schema 2 replaces the old credential purpose with independent polling access. Existing polling credentials retain polling access, source filters, and read views. Existing notification-only credentials retain their targets without gaining polling access. Saved secrets, enabled states, and SNMP engine identity are retained. Scenario exports remain schema 1 and do not replace deployment credentials.
-
-Saved listener addresses and ports, including 1161 and custom ports, remain unchanged on upgrade. To continue using one, set `SWITCHLAB_SNMP_PORT` in `.env` to that saved port before recreating the container. For example:
-
-```dotenv
-SWITCHLAB_SNMP_PORT=1161
-```
-
-To move an existing deployment to 161:
-
-1. Set `SWITCHLAB_SNMP_PORT` in `.env` to the currently saved listener port, then run `docker compose up --build -d` to update the application with that port preserved.
-2. In the updated UI, open **SNMP & settings** and change the listener port to 161.
-3. Set `SWITCHLAB_SNMP_PORT=161` in `.env`, or remove the override.
-4. Run `docker compose up -d` to apply the matching publication.
-
-HTTP setup remains available during this change. SNMP polling resumes when the listener and Compose use the same port. The stored identity, credentials, and other settings are retained.
 
 ## Run natively
 
