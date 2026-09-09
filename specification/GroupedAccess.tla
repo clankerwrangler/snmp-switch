@@ -116,67 +116,18 @@ GroupDelete(g,expected,persist) ==
 Reassign(c,g) == Publish([cfg EXCEPT !.users[c].group = g],revision,TRUE,TRUE)
 ViewEdit(v,objects) == Publish([cfg EXCEPT !.includes[v] = objects],revision,TRUE,TRUE)
 
-\* A form submission applies only dirty, final-active restrictions. Its saved
-\* fields and draft are inputs, not another persisted permission owner.
-FormPermission(saved,on,draft,dirty) ==
-    IF on /\ dirty THEN [draft EXCEPT !.on = on] ELSE [saved EXCEPT !.on = on]
-FormPolicy(saved,mode,draft,dirty) == Policy(
-    FormPermission(saved.read,mode[1],draft.read,dirty[1]),
-    FormPermission(saved.write,mode[2],draft.write,dirty[2]))
-FormSave(owner,id,mode,draft,dirty,key,on,expected,persist) ==
-    IF owner = "group" THEN
-       GroupEdit(id,FormPolicy(cfg.groups[id].policy,mode,draft,dirty),
-                 cfg.groups[id].minimum,cfg.groups[id].label,expected,persist)
-    ELSE Publish([cfg EXCEPT !.users[id] = Community(on,key,cfg.users[id].profile,cfg.users[id].label,
-                 FormPolicy(cfg.users[id].policy,mode,draft,dirty))],expected,persist,cfg.users[id].version = 2)
-
-\* Version 1 has one purpose-scoped read permission. Version 2 has the two
-\* independent policies. Both normalized inputs retain opaque key material.
-LegacyPolicy(old,c) == IF old.schema = 2 THEN old.users[c].policy
-    ELSE Policy(Permission(old.users[c].purpose = "poll",old.users[c].view,old.users[c].nets),
-                Permission(FALSE,NoView,{}))
+\* Migration receives normalized saved policies. Schema parsing and protocol
+\* conversion inputs are checked by the application tests, not this model.
 MigrationGroup(c) == IF c = C1 THEN G1 ELSE G2
 Migrate(old) ==
     [users |-> [c \in DOMAIN old.users |-> LET u == old.users[c] IN
-         IF u.version = 2 THEN Community(u.on,u.key,u.profile,u.label,LegacyPolicy(old,c))
+         IF u.version = 2 THEN u
          ELSE User(u.on,u.key,u.profile,u.label,MigrationGroup(c))],
      groups |-> [g \in {MigrationGroup(c) : c \in {d \in DOMAIN old.users : old.users[d].version = 3}} |->
          LET c == CHOOSE d \in DOMAIN old.users : old.users[d].version = 3 /\ MigrationGroup(d) = g
-         IN Group(LegacyPolicy(old,c),old.users[c].profile,0)],
+         IN Group(old.users[c].policy,old.users[c].profile,0)],
      present |-> old.present,includes |-> old.includes,targets |-> old.targets,
      targetOn |-> old.targetOn,metadata |-> old.metadata]
-
-ConversionIntent(c,newVersion,transfer,choice,override,explicitProfile) ==
-    /\ c \in DOMAIN cfg.users /\ newVersion # cfg.users[c].version /\ ~override
-    /\ IF newVersion = 3 THEN
-          /\ explicitProfile
-          /\ ((transfer \in {"keep","none"}) # (choice # "absent"))
-          /\ (transfer = "absent" \/ choice = "absent")
-          /\ choice \in DOMAIN cfg.groups \cup {NoGroup,"absent"}
-          /\ (transfer # "keep" \/ G3 \notin DOMAIN cfg.groups)
-       ELSE /\ newVersion = 2 /\ transfer \in {"keep","none"} /\ choice = "absent"
-ConversionCandidate(c,newVersion,transfer,choice,profile,key) ==
-    LET u == cfg.users[c]
-        group == IF transfer = "keep" THEN G3 ELSE IF choice = "absent" THEN NoGroup ELSE choice
-        policy == IF transfer = "keep" THEN PolicyOf(cfg,c) ELSE Denied
-    IN IF newVersion = 3 THEN [cfg EXCEPT
-           !.users[c] = User(u.on,key,profile,u.label,group),
-           !.groups = IF transfer = "keep"
-                      THEN [g \in DOMAIN cfg.groups \cup {G3} |->
-                             IF g = G3 THEN Group(PolicyOf(cfg,c),profile,0) ELSE cfg.groups[g]]
-                      ELSE @]
-       ELSE [cfg EXCEPT !.users[c] = Community(u.on,key,profile,u.label,policy)]
-Convert(c,newVersion,transfer,choice,override,profile,explicitProfile,key,expected,persist) ==
-    Publish(ConversionCandidate(c,newVersion,transfer,choice,profile,key),expected,persist,
-            ConversionIntent(c,newVersion,transfer,choice,override,explicitProfile))
-NewUser(c,t,transfer,inline,persist) ==
-    LET x == [cfg EXCEPT !.users = [d \in DOMAIN cfg.users \cup {c} |->
-                IF d = c THEN User(TRUE,K1,3,0,NoGroup) ELSE cfg.users[d]],
-               !.targets = IF inline THEN [@ EXCEPT ![t] = c] ELSE @,
-               !.targetOn = IF inline THEN @ \cup {t} ELSE @]
-    IN Publish(x,revision,persist,c \notin DOMAIN cfg.users /\ transfer = "absent")
-NewGroup(g) == Publish([cfg EXCEPT !.groups = [h \in DOMAIN cfg.groups \cup {g} |->
-    IF h = g THEN Group(Denied,3,0) ELSE cfg.groups[h]]],revision,TRUE,g \notin DOMAIN cfg.groups)
 
 Submit(c,budget,persist) == /\ UNCHANGED <<cfg,revision>>
     /\ Tx!SubmitSet(c,Keys(cfg)[c],<<Tx!Op("admin",P0,2)>>,budget,persist)

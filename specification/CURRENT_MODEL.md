@@ -13,7 +13,7 @@ and [application validation](../docs/VALIDATION.md) for implementation tests.
 | `Switch.tla` | Endpoint/port/VLAN references, independent VLAN learning, legal FDB entries, generation-checked activity, link events, and fixed ENTITY joins | Runtime scheduling, invalidation, port/VLAN edits, and MIB projection |
 | `ReadAccess.tla` | Shared credential/view/target references, independent read/write grants, current read authorization, coherent snapshots, and atomic inline creation | Authentication, source filtering, credential saves, and per-PDU reads |
 | `SetTransactions.tla` | Existing switch/access state; simultaneous candidate validation, original error positions, atomic commit/rejection, and stale queued-request denial | SET planner and engine transaction |
-| `GroupedAccess.tla` | Canonical communities/users/groups, policy projection into the existing access/SET owners, exact migration/conversion, sparse saves, and shared-generation invalidation | Schema loading, group/credential commands, and incoming authorization |
+| `GroupedAccess.tla` | Canonical communities/users/groups, policy projection into the existing access/SET owners, normalized migration, atomic saves, and shared-generation invalidation | Schema loading, group/credential commands, and incoming authorization |
 | `EntityInventory.tla` | Fixed physical/alias/interface identity, independent filtered snapshots, and actual-row-change timestamps | Read-only ENTITY projection and management uptime |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original MP/security record association, exact ownership through admission, consumption/discard, expiry, reuse, and response failure | Pinned response-lifetime integration |
 | `StorageOutcomes.tla` | Published versus durable state, failed rollback/unknown commit, faulted effect gates, and validated new-incarnation recovery | Store/Engine failure and startup paths |
@@ -43,14 +43,13 @@ user protection profile; the group minimum applies afterward. A lower group
 minimum does not enable a weaker normal request. This is not a second application
 floor, and discovery/REPORT exceptions are outside that relation.
 
-Migration retains saved identities, secrets, restrictions, and targets, with a
-distinct group per old v3 user. Protocol conversion requires explicit incoming
-access intent and, for v2c-to-v3, an explicit new profile. Group creation and user
-conversion publish together or neither does. Four-mode form submissions preserve
-unchanged and final-inactive restrictions; they do not model DOM interactions.
-Inline creation changes only its selected target. Shared policy/minimum/view and
-membership changes invalidate every affected queued writer; label-only and
-same-value edits do not.
+Normalized migration preserves saved policies, opaque keys, identities, and
+targets in separate per-user groups. A later policy edit checks their isolation.
+Combined group/user saves publish the complete candidate or preserve the old
+configuration; inline creation changes only its selected target. Shared policy,
+minimum, view, and membership changes invalidate every affected queued writer;
+label-only and same-value edits do not. Schema formats, conversion input rules,
+and sparse form drafts are covered by implementation tests, not these models.
 
 ENTITY has one chassis and fixed ports, with physical index `bridge_port + 1`
 and alias pointers to saved `ifIndex` values. No endpoints or VLANs add physical
@@ -83,7 +82,7 @@ restarts.
 ## Finite scope
 
 `configs/` is the executable source of bounds, selected actions, invariants, and
-fairness. There are 51 normal configurations and one explicit unreduced SET
+fairness. There are 50 normal configurations and one explicit unreduced SET
 diagnostic. The normal suite contains both general finite graphs and scripted
 traces; these do not collectively prove an unrestricted production-sized system.
 
@@ -97,7 +96,7 @@ traces; these do not collectively prove an unrestricted production-sized system.
 | SET scenarios | Seven scripted cases, VLANs 1/10/20, up to four varbinds; bitmap/absent-destroy cases use two ports. |
 | Response | One ticket plus foreign replacement identities; lifecycle graph, 19 reuse/diagnostic traces, 14 transaction traces, and 240 insertion-boundary branches. |
 | Storage | Four opaque durable values, three incarnation tokens, one queued item/four work kinds; graph and 40 recovery branches. |
-| Groups | Two credentials, three groups, two views plus no-view, two opaque key bundles, three security levels, two source classes, two targets, one pending PDU. The three scripts have 2,332 migration/conversion, 2,112 form, and 5,276 access/queued fixtures. |
+| Groups | Two credentials, three groups, two views plus no-view, two opaque key bundles, three security levels, two source classes, two targets, one pending PDU. Eight normalized ownership cases and 54 queued/current-boundary traces replace detailed schema, conversion, form, and security-input cross-products. |
 
 Generation tokens are not reused while captured by outstanding work. Abstract
 ticks/countdowns replace wall-clock time. Opening, closing, or navigating away

@@ -10,7 +10,6 @@ This directory contains the current TLA+ contract, bounded TLC configurations, b
 - [Current verification](CURRENT_VERIFICATION.md): checked scope, outcomes, tools, and reproduction.
 - [Object manifest](docs/mib-coverage.csv): 95 definitions, comprising 89 readable objects (seven writable) and six inaccessible indexes. Maximum MIB access and implemented access are separate.
 - [Identity setup](docs/IDENTITY_SETUP.md): explicit identity configuration and public defaults.
-- [Historical verification](VERIFICATION.md): original revision-2 evidence, with its original scope and measurements.
 
 ## Current contract
 
@@ -40,13 +39,13 @@ For selected configurations:
 python3 ./run_tlc.py --jar /path/to/tla2tools.jar --models SetResponseEntry StorageRecovery
 ```
 
-The normal catalog contains 51 configurations. Current verification joins separate completed checks; it does not claim one combined 51-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
+The normal catalog contains 50 configurations. Current verification joins separate completed checks; it does not claim one combined 50-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
 
 ```sh
 python3 ./tests/check_mutations.py --jar /path/to/tla2tools.jar
 ```
 
-Mutation checks use temporary copies of current sources. Output under `logs/` stays local and ignored. Historical counterexamples and their exact inputs remain in Git; the current verification report explains how to inspect them. A fresh checkout does not need historical logs to run the current suite.
+Both entry points regenerate ignored scenario/config inputs through their existing generators before checking. Edit the generators, not their outputs. Mutation checks then use temporary copies of current sources. Output under `logs/` stays local and ignored. Historical counterexamples and their exact inputs remain in Git; the current verification report explains how to inspect them. A fresh checkout does not need historical logs to run the current suite.
 
 ## Main owners
 
@@ -54,7 +53,7 @@ Mutation checks use temporary copies of current sources. Output under `logs/` st
 |---|---|
 | `Switch.tla` | Core state, VLAN sets, stable ENTITY joins, invariants, and source progress |
 | `ReadAccess.tla` | Shared credentials and independent polling/writing/target references |
-| `GroupedAccess.tla` | Community/user/group policy, migration/conversion, sparse saves, and shared revocation |
+| `GroupedAccess.tla` | Community/user/group policy, normalized migration, atomic saves, and shared revocation |
 | `SetTransactions.tla` | Final-candidate SET, original-position errors, authorization, and generations |
 | `EntityInventory.tla` | Inventory snapshots and change-clock behavior |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original response ownership, stage-aware finalization, and pre-admission association |

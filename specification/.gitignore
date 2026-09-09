@@ -8,3 +8,45 @@ __pycache__/
 *.out
 # Model-checker output stays local; Git retains historical evidence.
 /logs/
+
+# Reproducible checker inputs; edit their generators instead.
+/AccessScenarios.tla
+/EntityScenarios.tla
+/Scenarios.tla
+/SetScenarios.tla
+/configs/ActiveLiveness.cfg
+/configs/AgingLiveness.cfg
+/configs/LiveEditRace.cfg
+/configs/MultiSource.cfg
+/configs/ScenarioAttachmentABA.cfg
+/configs/ScenarioDeleteFallback.cfg
+/configs/ScenarioDuplicateMacMove.cfg
+/configs/ScenarioDuplicateMacVlans.cfg
+/configs/ScenarioFaultAndDirect.cfg
+/configs/ScenarioInstanceABA.cfg
+/configs/ScenarioLiveEdit.cfg
+/configs/ScenarioPauseManual.cfg
+/configs/ScenarioPortABA.cfg
+/configs/ScenarioReboot.cfg
+/configs/ScenarioSelectiveAndPvid.cfg
+/configs/ScenarioSharedCache.cfg
+/configs/ScenarioStaleEdit.cfg
+/configs/ScenarioTagLifecycle.cfg
+/configs/ScenarioTrapOverflow.cfg
+/configs/ScenarioUnknownTag.cfg
+/configs/ScenarioVlanABA.cfg
+/configs/SetAbsentDestroy.cfg
+/configs/SetAtomicMixed.cfg
+/configs/SetAuthorization.cfg
+/configs/SetBitmapPorts.cfg
+/configs/SetIndependentViews.cfg
+/configs/SetRowStatus.cfg
+/configs/SetVlanFallback.cfg
+/configs/SharedPort.cfg
+/configs/Smoke.cfg
+/configs/TrapDrainLiveness.cfg
+/configs/VlanLifecycle.cfg
+
+# Historical reports remain local; Git retains their tracked versions.
+/VERIFICATION.md
+/DOCUMENTATION_CHANGES.md

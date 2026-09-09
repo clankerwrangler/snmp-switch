@@ -18,7 +18,7 @@ The implementation checks cover encrypted schema loading, independent community/
 
 The browser exercised the single Access form, all four modes, hidden drafts, shared users/groups, profile mismatch, explicit conversion choices, missing views, literal labels, validation/revision errors, one listener status, and the exact Switch Lab title. Existing trap, endpoint-disconnect, VLAN, authentication, and mobile flows also passed. Its synthetic instance kept identity unset and SNMP disabled, used prebound ephemeral loopback HTTP and exact-origin requests, then closed its processes/socket and removed its database/key.
 
-The focused grouped-access models ran before implementation; the [formal report](../specification/CURRENT_VERIFICATION.md) records separate checkpoints and corrections, not a combined 51-config run. Independent wire/Net-SNMP fixtures are prepared for the existing Docker CI and have not been executed for this change locally.
+The focused grouped-access models ran before implementation; the [formal report](../specification/CURRENT_VERIFICATION.md) records separate checkpoints and corrections, not a combined catalog run. Independent wire/Net-SNMP fixtures are prepared for the existing Docker CI and have not been executed for this change locally.
 
 ## Recorded ENTITY and SET checks
 
