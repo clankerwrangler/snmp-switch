@@ -11,13 +11,21 @@ import tempfile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from run_tlc import config_module, input_hashes, sha256
+from run_tlc import config_module, input_hashes, prepare_inputs, sha256
 MUTATIONS = [('accept_obsolete_job', 'ScenarioAttachmentABA', 'Switch.tla', 'accepted == ValidJob(s, sk, j) /\\ Admitted(s, j.port, j.vlan)', 'accepted == CanEmit(s, sk) /\\ Admitted(s, j.port, j.vlan)'), ('flush_whole_port_on_vlan_edit', 'ScenarioSelectiveAndPvid', 'Switch.tla', 'Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members,\n                              !.untagged[p] = tags], {}, {p})', 'Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members,\n                              !.untagged[p] = tags,\n                              !.fdb = [k \\in FdbKeys |-> IF s.fdb[k].port = p THEN EmptyEntry ELSE s.fdb[k]]], {}, {p})'), ('omit_vlan1_admission_on_fallback', 'ScenarioDeleteFallback', 'Switch.tla', '(IF s.pvid[p] = v THEN {1} ELSE {})', '{}'), ('allow_unauthorized_set', 'SetAuthorization', 'SetTransactions.tla', 'ELSE IF ~auth THEN Reject("authorizationError",0)', 'ELSE IF FALSE THEN Reject("authorizationError",0)'), ('publish_failed_set_prefix', 'SetAtomicMixed', 'SetTransactions.tla', 'ELSE IF error.status # "noError" THEN Reject(error.status,error.index)', 'ELSE IF error.status # "noError" THEN\n               /\\ s\' = [s EXCEPT !.admin[P0] = FALSE]\n               /\\ result\' = [status |-> error.status,index |-> error.index] /\\ pending\' = NoPdu\n               /\\ UNCHANGED <<accessvars,registration,gate,activation>>'), ('entity_alias_uses_bridge_port', 'EntityInventory', 'Switch.tla', '[logicalIndex |-> 0, pointer |-> <<"ifIndex", IfIndex[PhysicalPort(i)]>>]]', '[logicalIndex |-> 0, pointer |-> <<"ifIndex", PhysicalPort(i)>>]]')]
+
+MUTATIONS += [
+    ('shared_group_misses_second_member', 'GroupQueuedSet', 'GroupedAccess.tla', 'IF changed /\\ c \\in Affected(x) THEN Tx!Fresh(Tx!UsedRegistration(c)) ELSE registration[c]', 'IF changed /\\ c = C1 /\\ c \\in Affected(x) THEN Tx!Fresh(Tx!UsedRegistration(c)) ELSE registration[c]'),
+    ('migration_shares_policy_owner', 'GroupOwnership', 'GroupedAccess.tla', 'MigrationGroup(c) == IF c = C1 THEN G1 ELSE G2', 'MigrationGroup(c) == G1'),
+    ('failed_group_save_publishes_prefix', 'GroupOwnership', 'GroupedAccess.tla', "cfg' = IF accepted THEN x ELSE cfg", "cfg' = IF accepted THEN x ELSE [cfg EXCEPT !.groups = x.groups]"),
+]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jar', required=True, type=Path)
     parser.add_argument('--java', type=Path)
+    parser.add_argument('--mutations', nargs='+', choices=[m[0] for m in MUTATIONS],
+                        help='Selected controls; default: all current controls.')
     parser.add_argument('--output', type=Path, default=ROOT / 'logs' / 'current-mutations')
     args = parser.parse_args()
     java = str(args.java.resolve()) if args.java else shutil.which('java')
@@ -27,10 +35,12 @@ def main():
     output = args.output.resolve()
     if output.exists():
         parser.error('--output must be a new directory; preserve prior evidence.')
+    prepare_inputs()
     output.mkdir(parents=True)
     original_inputs = input_hashes()
     results = []
-    for name, config, module, before, after in MUTATIONS:
+    selected = [m for m in MUTATIONS if not args.mutations or m[0] in args.mutations]
+    for name, config, module, before, after in selected:
         original = (ROOT / module).read_text()
         if original.count(before) != 1:
             raise RuntimeError(f'{name}: mutation anchor is not unique')

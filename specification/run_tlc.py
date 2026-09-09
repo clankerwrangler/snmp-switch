@@ -18,6 +18,14 @@ DIAGNOSTIC_MODELS = {'SetTransactions'}
 NORMAL_REQUIRED_MODELS = {'SetTokenEquivalence', 'SetTransactionsEquality'}
 
 
+def prepare_inputs():
+    """Regenerate local checker inputs from their tracked source owners."""
+    for script in ('make_configs.py', 'tests/make_scenarios.py',
+                   'tests/make_access_scenarios.py', 'tests/make_management_scenarios.py'):
+        subprocess.run([sys.executable, str(ROOT / script)], cwd=ROOT,
+                       check=True, timeout=30)
+
+
 def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -39,7 +47,9 @@ def config_module(path):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--jar', required=True, type=Path)
+    parser.add_argument('--jar', type=Path)
+    parser.add_argument('--prepare-only', action='store_true',
+                        help='Regenerate local inputs without Java or TLC.')
     parser.add_argument('--java', type=Path, help='Task-local Java executable; otherwise use PATH.')
     parser.add_argument('--models', nargs='*', help='Config stems; default: normal suite. Select the unreduced diagnostic explicitly.')
     parser.add_argument('--timeout', type=int, default=600, help='Positive seconds per model; an incomplete search is not a pass.')
@@ -51,6 +61,11 @@ def main() -> int:
     parser.add_argument('--max-state-mib', type=int, help='Abort if this run state directory exceeds the budget.')
     parser.add_argument('--min-free-mib', type=int, default=0, help='Abort if output filesystem free space falls below this reserve.')
     args = parser.parse_args()
+    if args.prepare_only:
+        prepare_inputs()
+        return 0
+    if args.jar is None:
+        parser.error('--jar is required unless --prepare-only is selected.')
     java = str(args.java.resolve()) if args.java else shutil.which('java')
     jar = args.jar.resolve()
     if not java or not Path(java).is_file() or not jar.is_file():
@@ -59,6 +74,7 @@ def main() -> int:
         parser.error('Use positive model and batch timeouts.')
     if args.checkpoint_minutes <= 0 or args.min_free_mib < 0 or (args.max_state_mib is not None and args.max_state_mib <= 0):
         parser.error('Checkpoint interval and state budget must be positive; free-space reserve cannot be negative.')
+    prepare_inputs()
     configs = {p.stem: p for p in (ROOT / 'configs').glob('*.cfg')}
     if args.models:
         names = args.models
