@@ -27,8 +27,61 @@ const path = require('node:path');
   await page.getByLabel('Administrator password').fill(process.env.SWITCHLAB_TEST_PASSWORD);
   await page.getByRole('button',{name:'Create administrator'}).click();
   await page.getByRole('heading',{name:'Switch overview',exact:true}).waitFor();
+  const simulation=page.locator('#simulation');
+  const simulationSummary=simulation.locator('summary');
+  const mutations=[];
+  page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/api/v1/')&&!['GET','HEAD'].includes(r.method()))mutations.push(r);});
+  const isOpen=()=>simulation.evaluate(el=>el.open);
+  const openSimulation=async()=>{if(!await isOpen())await simulationSummary.click();};
+  const sameSimulation=(a,b)=>{
+    for(const key of ['simulation_ms','configuration_revision','paused','fdb','ports','endpoints','attachments','counters'])assert.deepEqual(a[key],b[key],key);
+  };
+  async function clockRefresh(){
+    await simulation.evaluate(el=>el.dataset.refreshProbe='waiting');
+    await page.waitForFunction(()=>!document.querySelector('#simulation').dataset.refreshProbe);
+  }
+  assert.equal(await isOpen(),false);
+  assert.equal(await simulationSummary.textContent(),'Simulation');
+  assert.equal(await page.locator('.page-heading .clock').count(),0);
+  assert.equal(await page.getByRole('button',{name:'Ⅱ Pause',exact:true}).isVisible(),false);
+  // Native keyboard disclosure is presentation only; background time still advances.
+  const running=await state();
+  await simulationSummary.focus();await page.keyboard.press('Enter');
+  assert.equal(await isOpen(),true);
+  await clockRefresh();
+  assert.equal(await isOpen(),true);
+  assert.equal(await simulationSummary.evaluate(el=>el===document.activeElement),true);
+  assert.ok((await state()).simulation_ms>running.simulation_ms);
+  await page.keyboard.press('Escape');
+  assert.equal(await isOpen(),false);
+  assert.equal(await simulationSummary.evaluate(el=>el===document.activeElement),true);
+  assert.equal(mutations.length,0);
+  await openSimulation();
+  // Both manual controls retain the existing running-clock rejection and send nothing.
+  for(const name of ['+1s','Advance…']){
+    await page.getByRole('button',{name,exact:true}).click();
+    await page.locator('#toast.error').filter({hasText:'Pause the clock before manual advancement.'}).waitFor();
+  }
+  assert.equal(mutations.length,0);assert.equal(await page.locator('dialog[open]').count(),0);
   await page.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
   await page.getByRole('button',{name:'▶ Resume',exact:true}).waitFor();
+  assert.equal(await isOpen(),true);
+  assert.equal(await page.locator('#simulation-toggle').evaluate(el=>el===document.activeElement),true);
+  await clockRefresh();
+  assert.equal(await page.locator('#simulation-toggle').evaluate(el=>el===document.activeElement),true);
+  const paused=await state(),mutationCount=mutations.length;
+  // Close, reopen and navigation preserve paused state and never issue a write.
+  await page.getByRole('heading',{name:'Switch overview',exact:true}).click();
+  assert.equal(await isOpen(),false);
+  for(const nav of ['endpoints','vlans','fdb','interfaces','events','settings','overview']){
+    await openSimulation();await page.locator(`nav button[data-id="${nav}"]`).click();
+    assert.equal(await isOpen(),false);
+    assert.equal(await simulationSummary.textContent(),'Simulation');
+    assert.equal(await page.locator('.page-heading .clock').count(),0);
+  }
+  await openSimulation();await clockRefresh();
+  sameSimulation(await state(),paused);assert.equal(mutations.length,mutationCount);
+  await simulationSummary.click();
   await screenshot('overview-empty.png');
   await page.locator('nav button[data-id=endpoints]').click();
   await page.getByRole('button',{name:'+ New endpoint',exact:true}).click();
@@ -39,7 +92,44 @@ const path = require('node:path');
   await page.getByRole('button',{name:'Attach →',exact:true}).click();
   await page.getByRole('button',{name:'Connect endpoint',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
+  await openSimulation();
+  const beforeSecond=await state();
+  const secondResponse=page.waitForResponse(r=>r.url().endsWith('/api/v1/clock/advance')&&r.request().method()==='POST');
   await page.getByRole('button',{name:'+1s',exact:true}).click();
+  assert.equal((await secondResponse).status(),200);
+  assert.equal((await state()).simulation_ms,beforeSecond.simulation_ms+1000);
+  // The same custom-duration dialog retains bounds, captured revision and error feedback.
+  await page.getByRole('button',{name:'Advance…',exact:true}).click();
+  assert.equal(await isOpen(),false);
+  const durationInput=page.getByLabel('Duration (milliseconds)',{exact:true});
+  assert.equal(await durationInput.getAttribute('min'),'1');assert.equal(await durationInput.getAttribute('max'),'86400000');
+  for(const invalid of ['0','86400001']){
+    await durationInput.fill(invalid);assert.equal(await durationInput.evaluate(el=>el.checkValidity()),false);
+  }
+  await durationInput.fill('2500');
+  const customBefore=await state();
+  await page.getByRole('button',{name:'Advance & drain due work',exact:true}).click();
+  await page.locator('dialog').waitFor({state:'hidden'});
+  assert.equal((await state()).simulation_ms,customBefore.simulation_ms+2500);
+  await openSimulation();await page.getByRole('button',{name:'Advance…',exact:true}).click();
+  const authClock=await (await page.request.get(new URL('/api/v1/auth/status',fixtureURL).href)).json();
+  const staleClock=await state();
+  const bumpedClock=await page.request.post(new URL('/api/v1/clock/pause',fixtureURL).href,{headers:{'X-CSRF-Token':authClock.csrf_token},data:{expected_configuration_revision:staleClock.configuration_revision}});
+  assert.equal(bumpedClock.status(),200);
+  const conflictClock=page.waitForResponse(r=>r.url().endsWith('/api/v1/clock/advance')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Advance & drain due work',exact:true}).click();
+  assert.equal((await conflictClock).status(),409);
+  await page.locator('dialog .form-error').filter({hasText:'Configuration changed while editing; reload and retry'}).waitFor();
+  assert.equal((await state()).simulation_ms,staleClock.simulation_ms);
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.locator('dialog').waitFor({state:'hidden'});
+  await openSimulation();
+  await page.getByRole('button',{name:'▶ Resume',exact:true}).click();
+  await page.getByRole('button',{name:'Ⅱ Pause',exact:true}).waitFor();
+  const resumed=await state();await clockRefresh();assert.ok((await state()).simulation_ms>resumed.simulation_ms);
+  await page.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
+  await page.getByRole('button',{name:'▶ Resume',exact:true}).waitFor();
+  console.log('Simulation disclosure passed: native keyboard/focus/refresh, presentation-only navigation, running/manual guards, pause/resume, +1s, custom duration and real stale-revision rejection.');
   await page.locator('nav button[data-id=fdb]').click();
   await page.getByText('02:11:22:33:44:55',{exact:true}).waitFor();
   await screenshot('learned-addresses.png');
@@ -536,6 +626,17 @@ const path = require('node:path');
   await screenshot('settings.png');
   await page.setViewportSize({width:390,height:844});
   await page.locator('nav button[data-id=overview]').click();
+  assert.equal(await isOpen(),false);
+  await simulationSummary.focus();await page.keyboard.press('Space');
+  assert.equal(await isOpen(),true);
+  const panel=await page.locator('.simulation-panel').boundingBox();
+  assert.ok(panel&&panel.x>=0&&panel.x+panel.width<=390&&panel.y>=0&&panel.y+panel.height<=844);
+  await page.getByRole('button',{name:'+1s',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Advance…',exact:true}).waitFor();
+  const mobileBefore=await state();
+  await page.getByRole('button',{name:'+1s',exact:true}).click();
+  await page.waitForFunction(async before=>(await (await fetch('/api/v1/state')).json()).simulation_ms===before+1000,mobileBefore.simulation_ms);
+  await page.keyboard.press('Escape');assert.equal(await isOpen(),false);
   await screenshot('mobile.png');
   if(errors.length)throw new Error(errors.join('\n'));
   if(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth))throw new Error('Mobile page overflows viewport');
