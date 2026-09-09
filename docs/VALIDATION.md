@@ -1,6 +1,8 @@
 # Implementation validation
 
-## Current users and groups checks
+On 2026-09-09, the compact Simulation control passed the existing headless Chromium flow in 28.537 s, including keyboard disclosure, focus across refresh, presentation-only navigation, pause/resume, manual advancement, real stale-revision feedback, and the 390 px mobile layout. The synthetic instance kept SNMP disabled and identity unset; its processes, loopback socket, database, and key were cleaned up. No screenshots were taken. TypeScript/Vite and the two existing pure clock tests also passed (zero INET attempts). The existing `ScenarioPauseManual` model check passed before implementation; no clock model or command behavior changed.
+
+## Recorded users and groups checks
 
 Executed locally on 2026-09-08 with the pinned Python 3.12 environment and unchanged PySNMP 7.1.29:
 

@@ -100,7 +100,11 @@ traces; these do not collectively prove an unrestricted production-sized system.
 | Groups | Two credentials, three groups, two views plus no-view, two opaque key bundles, three security levels, two source classes, two targets, one pending PDU. The three scripts have 2,332 migration/conversion, 2,112 form, and 5,276 access/queued fixtures. |
 
 Generation tokens are not reused while captured by outstanding work. Abstract
-ticks/countdowns replace wall-clock time. The certified SET view normalizes only
+ticks/countdowns replace wall-clock time. Opening, closing, or navigating away
+from simulation controls projects to stuttering of switch state. Independently
+running time can still advance through `AutoTick`; pause/resume and manual advance
+retain `SetPaused` and `ManualTick`. Browser tests check the disclosure and command
+handlers, not TLA+. The certified SET view normalizes only
 registration/activation token names; it retains current-versus-stale equality,
 all requests, all other state, every assertion, and handle fairness.
 
