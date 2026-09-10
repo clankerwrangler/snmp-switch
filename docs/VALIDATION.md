@@ -1,11 +1,35 @@
 # Implementation validation
 
-On 2026-09-09, the compact Simulation control passed the existing headless Chromium flow in 28.537 s, including keyboard disclosure, focus across refresh, presentation-only navigation, pause/resume, manual advancement, real stale-revision feedback, and the 390 px mobile layout. The synthetic instance kept SNMP disabled and identity unset; its processes, loopback socket, database, and key were cleaned up. No screenshots were taken. TypeScript/Vite and the two existing pure clock tests also passed (zero INET attempts). The existing `ScenarioPauseManual` model check passed before implementation; no clock model or command behavior changed.
+On 2026-09-10, the separate SNMP/RADIUS/general settings, certificate file/paste
+forms, and redesigned selected-port detail passed the maintained headless browser
+flow in 41.020 s. It covered sparse general/SNMP edits, draft-only file selection,
+size checks before reads, invalid input, sparse certificate/key replacement,
+reference and stale-revision errors, cancel-during-read isolation, all existing
+port/session controls, and keyboard/mobile/refresh behavior. Two held-read
+regressions first reproduced a Save combining an earlier certificate with a later
+key selection. Save now captures both PEM drafts and scalar/revision fields before
+reading either file; both exact-payload regressions pass. The earlier dialog-close
+correction clears the current form synchronously without affecting a later dialog.
+Original failures remain local. TypeScript/Vite passed.
+
+The synthetic instance kept SNMP disabled and identity unset, prohibited UDP and
+external RADIUS, and used only generated certificate/key inputs. Its processes,
+loopback socket, database, and keys were removed. Screenshots used for layout
+inspection remain local. The unchanged `ScenarioPauseManual` check completed
+with 15 generated/14 distinct states and an empty queue before UI implementation;
+navigation and local drafts remain presentation stutters, not a new model.
+
+The focused MAB method/transport tests passed 30 cases in 0.24 s with zero INET
+attempts. Injected socket-stage errors first reproduced 12 lost-diagnostic failures
+alongside six passing controls. The correction reports only fixed stage/category
+reasons; it preserves explicit source binding, strict reply validation, retries,
+cancellation, current-attempt ownership, and no-grant behavior. Fake socket checks
+are not NAC reachability or Docker-route verification.
 
 ## Recorded RADIUS integration checks
 
 Executed on 2026-09-10. Results are separate source checkpoints, not one combined
-end-to-end run or a claim that the latest application image has been published.
+end-to-end run. They precede the settings/port presentation changes described above.
 
 | Check | Actual result |
 |---|---|
@@ -55,10 +79,11 @@ combined host-mode regression covers raced single-host ownership, per-client
 VLAN/tag admission, membership references, API/SNMP baseline changes, selective
 VLAN deletion, and shared-service accounting.
 
-The maintained browser takes a disposable CA certificate through
-`SWITCHLAB_TEST_RADIUS_CA_FILE`, alongside its existing URL/password/browser
-inputs. The bounded local runner generated that certificate using the existing
-test fixture and removed it afterward. It kept all RADIUS destinations/listeners
+The maintained browser takes a disposable CA/client certificate through
+`SWITCHLAB_TEST_RADIUS_CA_FILE` and its matching encrypted key through
+`SWITCHLAB_TEST_RADIUS_KEY_FILE`, alongside its existing URL/password/browser
+inputs. The synthetic key password is fixed in the test, never an operator key. The bounded local runner generated that certificate/key pair using the existing
+test fixture and removed both afterward. It kept all RADIUS destinations/listeners
 disabled, prohibited external authentication/UDP, and used synthetic response
 presentation only for simultaneous successful/pending/failed client rows.
 The actual authenticated API test separately verifies returned-versus-effective
@@ -68,7 +93,9 @@ open disclosure, focus, selected port, and unchanged scroll.
 
 The existing Docker CI runs Python tests, clean-runtime checks, and its isolated
 ordinary LAN/SNMP flow; it does not run an external RADIUS server or the browser.
-The new independent PAE UDP test is prepared for that CI and was not run locally.
+Automatic CI for `345c522` passed 1,148 tests and 139 subtests, both image builds,
+and the existing runtime/LAN checks. The independent PAE UDP test was included
+there, not run through a new local listener.
 Current native EAP-to-PAE event/UDP integration is established by the separate
 controlled current-image fixture below, not the local no-network checks.
 RADIUS deployment source/NAT paths remain separate. Earlier controlled

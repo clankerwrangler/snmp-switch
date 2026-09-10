@@ -1,5 +1,6 @@
 // Run against a fresh local instance. Requires Playwright, Chromium, and a disposable
-// CA certificate at SWITCHLAB_TEST_RADIUS_CA_FILE (configuration tests only).
+// CA/client certificate at SWITCHLAB_TEST_RADIUS_CA_FILE and matching encrypted
+// key at SWITCHLAB_TEST_RADIUS_KEY_FILE (synthetic-certificate-password; configuration only).
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -19,6 +20,7 @@ const path = require('node:path');
   async function screenshot(name){if(screenshots==='0')return;fs.mkdirSync(screenshots,{recursive:true});await page.screenshot({path:path.join(screenshots,name),fullPage:true});}
   assert.ok(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE,'Supply a disposable CA certificate for the RADIUS configuration flow');
   const radiusCA=fs.readFileSync(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE,'utf8');
+  assert.ok(process.env.SWITCHLAB_TEST_RADIUS_KEY_FILE,'Supply the matching disposable encrypted client key');
   const fixtureURL=process.env.SWITCHLAB_TEST_URL||'http://127.0.0.1:8765';
   const fixtureOrigin=new URL(fixtureURL).origin;
   await page.route('**/*',route=>new URL(route.request().url()).origin===fixtureOrigin?route.continue():route.abort());
@@ -76,12 +78,23 @@ const path = require('node:path');
   // Close, reopen and navigation preserve paused state and never issue a write.
   await page.getByRole('heading',{name:'Switch overview',exact:true}).click();
   assert.equal(await isOpen(),false);
-  for(const nav of ['endpoints','vlans','fdb','interfaces','events','settings','overview']){
+  for(const nav of ['endpoints','vlans','fdb','interfaces','events','snmp','radius','settings','overview']){
     await openSimulation();await page.locator(`nav button[data-id="${nav}"]`).click();
     assert.equal(await isOpen(),false);
     assert.equal(await simulationSummary.textContent(),'Simulation');
     assert.equal(await page.locator('.page-heading .clock').count(),0);
   }
+  for(const [destination,heading,present,absent] of [
+    ['snmp','SNMP','SNMP service','Certificates'],['radius','RADIUS','Certificates','SNMP service'],['settings','Settings','Switch settings','SNMP service']]){
+    const nav=page.locator(`nav button[data-id=${destination}]`);await nav.focus();await page.keyboard.press('Enter');
+    await page.getByRole('heading',{name:heading,exact:true,level:1}).waitFor();
+    assert.equal(await nav.getAttribute('aria-current'),'page');
+    await page.getByRole('heading',{name:present,exact:true}).waitFor();
+    assert.equal(await page.getByRole('heading',{name:absent,exact:true}).count(),0);
+  }
+  await page.getByRole('button',{name:'Configure SNMP →',exact:true}).click();
+  assert.equal(await page.locator('nav button[data-id=snmp]').getAttribute('aria-current'),'page');
+  await page.locator('nav button[data-id=overview]').click();
   await openSimulation();await clockRefresh();
   sameSimulation(await state(),paused);assert.equal(mutations.length,mutationCount);
   await simulationSummary.click();
@@ -272,7 +285,25 @@ const path = require('node:path');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
   await page.setViewportSize({width:1440,height:1100});
   console.log('Port-view disconnect passed: direct empty/reconnect, endpoint-view action retained, shared isolation, literal labels, pending duplicate guard across refresh, real stale-revision rejection/retry, preserved sources/metadata and selected port, mobile layout.');
+  await page.locator('nav button[data-id=snmp]').click();
   await page.locator('nav button[data-id=settings]').click();
+  const beforeGeneral=await state();
+  await page.getByRole('heading',{name:'Switch settings',exact:true}).waitFor();
+  await page.locator('button[data-action=switch-settings]').click();
+  assert.equal(await page.locator('dialog [name=oid]').count(),0);
+  await page.getByLabel('Location',{exact:true}).fill('Synthetic settings location');
+  const generalWrite=page.waitForRequest(r=>r.url().endsWith('/api/v1/switch')&&r.method()==='PATCH');
+  await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
+  const generalPayload=(await generalWrite).postDataJSON();
+  assert.equal('identity' in generalPayload,false);assert.equal('queue_limit' in generalPayload,false);
+  assert.deepEqual((await state()).switch.identity,beforeGeneral.switch.identity);
+  assert.deepEqual((await state()).radius,beforeGeneral.radius);
+  await page.locator('nav button[data-id=snmp]').click();await page.locator('button[data-action=identity]').click();
+  assert.equal(await page.locator('dialog [name=name]').count(),0);assert.equal(await page.locator('dialog [name=aging_seconds]').count(),0);
+  const snmpIdentityWrite=page.waitForRequest(r=>r.url().endsWith('/api/v1/switch')&&r.method()==='PATCH');
+  await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
+  const identityPayload=(await snmpIdentityWrite).postDataJSON();assert.equal('name' in identityPayload,false);assert.equal('aging_seconds' in identityPayload,false);
+  assert.equal((await state()).switch.location,'Synthetic settings location');
   const initialHost=(await state()).snmp.host;
   await page.getByRole('button',{name:'Configure',exact:true}).click();
   assert.equal(await page.getByRole('checkbox',{name:'Enable SNMP',exact:true}).count(),1);
@@ -282,7 +313,7 @@ const path = require('node:path');
   await page.getByRole('button',{name:'Save changes',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
   await page.reload();
-  await page.locator('nav button[data-id=settings]').click();
+  await page.locator('nav button[data-id=snmp]').click();
   await page.getByRole('button',{name:'Configure',exact:true}).click();
   assert.equal(await page.getByLabel('Listen IP address',{exact:true}).inputValue(),'127.0.0.2');
   assert.equal(await page.getByRole('checkbox',{name:'Enable SNMP',exact:true}).isChecked(),false);
@@ -553,10 +584,10 @@ const path = require('node:path');
     await route.fulfill({response:actual,json:body});
   };
   await page.route(statusURL,displayWriter);
-  await page.reload();await page.locator('nav button[data-id=settings]').click();
+  await page.reload();await page.locator('nav button[data-id=snmp]').click();
   await service.getByText('Listening',{exact:true}).waitFor();
   assert.equal(await service.getByText(/Polling state|SET state|Read state|Write state/).count(),0);
-  await page.unroute(statusURL,displayWriter);await page.reload();await page.locator('nav button[data-id=settings]').click();
+  await page.unroute(statusURL,displayWriter);await page.reload();await page.locator('nav button[data-id=snmp]').click();
   assert.equal((await state()).snmp.enabled,false);assert.equal((await state()).switch.identity.sys_object_id,null);
   console.log('Unified access browser passed: four modes, sparse/hidden drafts, explicit conversions, shared users/groups, mismatch/defaults, missing views, literal labels, real atomic errors, one listener status and exact title.');
 
@@ -623,25 +654,136 @@ const path = require('node:path');
   await page.getByRole('columnheader',{name:'Forbidden ports',exact:true}).waitFor();
   const vlan20=page.locator('tbody tr').filter({has:page.locator('td:first-child .pill',{hasText:/^20$/})});
   assert.ok((await vlan20.locator('td').nth(4).textContent()).split(', ').includes(String(snapshot.ports[sharedPort].bridge_port)));
-  await page.locator('nav button[data-id=settings]').click();
+  await page.locator('nav button[data-id=snmp]').click();
   console.log('Independent VLAN browser passed: actual admitted/untagged/forbidden sets, explicit empty egress, untouched native preview/formula, unrelated edit preservation, rejected overlap and unchanged endpoint/source data.');
-  // RADIUS uses the existing settings/source/selected-port owners. No server or
+  await page.locator('nav button[data-id=radius]').click();
+  // RADIUS uses the existing source/selected-port owners. No server or
   // listener is enabled here; protocol interoperability is tested separately.
   const radiusCard=page.locator('#radius-config');
   const saveRadius=async()=>{await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});};
   await radiusCard.locator('#radius-servers > summary').click();
+  await radiusCard.locator('#radius-servers > summary').focus();
+  await radiusCard.evaluate(el=>el.dataset.refreshProbe='waiting');
+  await page.waitForFunction(()=>!document.getElementById('radius-config').dataset.refreshProbe);
+  assert.equal(await radiusCard.locator('#radius-servers').evaluate(el=>el.open),true);
+  assert.equal(await radiusCard.locator('#radius-servers > summary').evaluate(el=>el===document.activeElement),true);
   await radiusCard.getByRole('button',{name:'+ Server',exact:true}).click();
+  await page.getByText(/Source IP is an optional local bind address/).waitFor();
   await page.getByLabel('Label',{exact:true}).fill('Browser RADIUS');await page.getByLabel('Server IP address',{exact:true}).fill('192.0.2.10');
   await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-radius-secret');await page.getByLabel('Enabled',{exact:true}).uncheck();await saveRadius();
   let radiusState=await state();const radiusServer=radiusState.radius.servers[0];assert.ok(radiusServer.has_secret);assert.equal(radiusServer.enabled,false);
   await radiusCard.locator('.setting-row').filter({hasText:'Browser RADIUS'}).getByRole('button',{name:'Edit',exact:true}).click();
   assert.equal(await page.getByLabel('Shared secret (blank = unchanged)',{exact:true}).inputValue(),'');await page.getByLabel('Label',{exact:true}).fill('Browser RADIUS renamed');await saveRadius();
-  await radiusCard.locator('#radius-materials > summary').click();await radiusCard.getByRole('button',{name:'+ Trust bundle',exact:true}).click();
-  await page.getByLabel('Label',{exact:true}).fill('Browser trust');await page.locator('dialog textarea[name=certificate]').fill(radiusCA);await saveRadius();
+  await radiusCard.getByRole('button',{name:'+ Add certificate',exact:true}).click();
+  assert.equal(await page.locator('dialog [name=kind]').inputValue(),'ca');
+  await page.getByLabel('Label',{exact:true}).fill('Browser trust');
+  const beforeFile=await state(),beforeFileWrites=mutations.length;
+  await page.locator('dialog [name=certificate_file]').setInputFiles(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE);
+  assert.equal(mutations.length,beforeFileWrites);assert.deepEqual((await state()).radius,beforeFile.radius);
+  assert.equal(await page.locator('dialog textarea[name=certificate]').inputValue(),'');
+  await saveRadius();
   radiusState=await state();const trust=Object.values(radiusState.radius.materials).find(m=>m.label==='Browser trust');
-  await radiusCard.locator('.setting-row').filter({hasText:'Browser trust'}).getByRole('button',{name:'Edit',exact:true}).click();
-  assert.equal(await page.locator('dialog textarea[name=certificate]').inputValue(),'');await page.getByLabel('Label',{exact:true}).fill('Browser trust renamed');await saveRadius();
+  const certRow=label=>radiusCard.locator('#radius-materials .setting-row').filter({has:page.locator('b').filter({hasText:label})});
+  await certRow('Browser trust').getByRole('button',{name:'Edit',exact:true}).click();
+  assert.equal(await page.locator('dialog textarea[name=certificate]').inputValue(),'');
+  assert.equal(await page.locator('dialog [name=certificate_file]').inputValue(),'');
+  await page.getByLabel('Label',{exact:true}).fill('Browser trust renamed');await saveRadius();
+  assert.equal(await page.locator('dialog').textContent(),'');
+  assert.ok((await state()).radius.materials[trust.id].has_certificate);
+  // Client certificate/key files stay draft-only; saved bytes are never redisplayed.
+  await radiusCard.getByRole('button',{name:'+ Add certificate',exact:true}).click();
+  await page.locator('dialog [name=kind]').selectOption('client');
+  await page.getByLabel('Label',{exact:true}).fill('Browser client');
+  await page.locator('dialog [name=certificate_file]').setInputFiles(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE);
+  await page.locator('dialog [name=private_key_file]').setInputFiles(process.env.SWITCHLAB_TEST_RADIUS_KEY_FILE);
+  await page.getByLabel('Key password (optional)',{exact:true}).fill('synthetic-certificate-password');await saveRadius();
+  const clientCertificate=Object.values((await state()).radius.materials).find(m=>m.label==='Browser client');
+  assert.ok(clientCertificate.has_private_key&&clientCertificate.has_key_password);
+  await certRow('Browser client').getByRole('button',{name:'Edit',exact:true}).click();
+  assert.equal(await page.locator('dialog textarea[name=private_key]').inputValue(),'');
+  assert.equal(await page.getByLabel('Key password (blank = unchanged)',{exact:true}).inputValue(),'');
+  await page.getByLabel('Label',{exact:true}).fill('Browser client renamed');
+  const sparse=page.waitForRequest(r=>r.url().endsWith('/radius/materials')&&r.method()==='POST');await saveRadius();
+  const sparsePayload=(await sparse).postDataJSON();for(const key of ['certificate','private_key','key_password'])assert.equal(key in sparsePayload,false);
+  assert.ok((await state()).radius.materials[clientCertificate.id].has_key_password);
+  // Save snapshots both PEM drafts before any file read: later choices belong
+  // to the next edit, never to the request already in flight.
+  const pemSnapshotCases=[];
+  for(const change of ['replace key file','change key mode and paste']){
+    await certRow('Browser client renamed').getByRole('button',{name:'Edit',exact:true}).click();
+    await page.locator('dialog [name=certificate_file]').setInputFiles(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE);
+    await page.locator('dialog [name=private_key_file]').setInputFiles(process.env.SWITCHLAB_TEST_RADIUS_KEY_FILE);
+    await page.getByLabel('Key password (blank = unchanged)',{exact:true}).fill('synthetic-certificate-password');
+    const clickedRevision=(await state()).configuration_revision;
+    await page.evaluate(()=>{
+      const certificate=document.querySelector('dialog [name=certificate_file]').files[0];
+      const read=File.prototype.arrayBuffer;
+      window.restoreSnapshotRead=()=>{File.prototype.arrayBuffer=read;delete window.releaseSnapshotRead;delete window.restoreSnapshotRead;};
+      File.prototype.arrayBuffer=function(){return this===certificate?new Promise(resolve=>{window.releaseSnapshotRead=()=>read.call(this).then(resolve);}):read.call(this);};
+    });
+    const saved=page.waitForResponse(r=>r.url().endsWith('/radius/materials')&&r.request().method()==='POST');
+    await page.getByRole('button',{name:'Save changes',exact:true}).click();
+    await page.waitForFunction(()=>!!window.releaseSnapshotRead);
+    if(change==='replace key file'){
+      await page.locator('dialog [name=private_key_file]').setInputFiles({name:'later-key.pem',mimeType:'text/plain',buffer:Buffer.from('later unsaved key file')});
+    }else{
+      await page.locator('dialog [name=private_key_input]').selectOption('paste');
+      await page.locator('dialog textarea[name=private_key]').fill('later unsaved pasted key');
+    }
+    await page.getByLabel('Label',{exact:true}).fill('Later unsaved label');
+    await page.getByLabel('Key password (blank = unchanged)',{exact:true}).fill('later-unsaved-password');
+    await page.evaluate(async()=>{await window.releaseSnapshotRead();window.restoreSnapshotRead();});
+    const response=await saved,payload=response.request().postDataJSON();
+    // Compare privately; assertion output must never print PEM/key/password values.
+    const expected={id:clientCertificate.id,kind:'client',label:'Browser client renamed',certificate:radiusCA,private_key:fs.readFileSync(process.env.SWITCHLAB_TEST_RADIUS_KEY_FILE,'utf8'),key_password:'synthetic-certificate-password',expected_configuration_revision:clickedRevision};
+    const exact=Object.keys(payload).sort().join()===Object.keys(expected).sort().join()&&Object.keys(expected).every(key=>payload[key]===expected[key]);
+    if(response.ok())await page.locator('dialog[open]').waitFor({state:'hidden'});
+    else {await page.locator('dialog .form-error').filter({hasText:/./}).waitFor();await page.getByRole('button',{name:'Cancel',exact:true}).click();}
+    const retained=(await state()).radius.materials[clientCertificate.id];
+    const passed=exact&&response.status()===200&&retained.label==='Browser client renamed'&&retained.has_private_key&&retained.has_key_password;
+    pemSnapshotCases.push(passed);console.log(`PEM Save snapshot (${change}): ${passed?'pass':'FAIL'}`);
+  }
+  assert.deepEqual(pemSnapshotCases,[true,true],'Save must use the exact click-time certificate/key/scalar/revision snapshot');
+  // File read/size failures keep the other draft; no failed read silently saves blank.
+  await certRow('Browser trust renamed').getByRole('button',{name:'Edit',exact:true}).click();
+  await page.locator('dialog [name=certificate_input]').selectOption('paste');await page.locator('dialog textarea[name=certificate]').fill(radiusCA);
+  await page.locator('dialog [name=certificate_input]').selectOption('file');
+  await page.locator('dialog [name=certificate_file]').setInputFiles({name:'oversize.pem',mimeType:'text/plain',buffer:Buffer.alloc(262145)});
+  await page.evaluate(()=>{window.originalFileRead=File.prototype.arrayBuffer;window.fileReads=0;File.prototype.arrayBuffer=function(){window.fileReads++;return window.originalFileRead.call(this);};});
+  const beforeBadRead=mutations.length;await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.locator('dialog .form-error').filter({hasText:'size limit'}).waitFor();
+  assert.equal(await page.evaluate(()=>window.fileReads),0);assert.equal(mutations.length,beforeBadRead);
+  await page.locator('dialog [name=certificate_file]').setInputFiles({name:'invalid-utf8.pem',mimeType:'text/plain',buffer:Buffer.from([255])});
+  await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog .form-error').filter({hasText:'UTF-8'}).waitFor();
+  assert.equal(mutations.length,beforeBadRead);assert.ok((await page.locator('dialog textarea[name=certificate]').inputValue())===radiusCA,'Alternate PEM draft is preserved');
+  await page.evaluate(()=>{File.prototype.arrayBuffer=window.originalFileRead;delete window.originalFileRead;});
+  await page.locator('dialog [name=certificate_input]').selectOption('paste');await saveRadius();
+  // Invalid parsed material is rejected atomically, including a useful entered label.
+  await certRow('Browser trust renamed').getByRole('button',{name:'Edit',exact:true}).click();
+  await page.getByLabel('Label',{exact:true}).fill('Must not commit');
+  await page.locator('dialog [name=certificate_input]').selectOption('paste');await page.locator('dialog textarea[name=certificate]').fill('not a certificate');
+  const beforeInvalidMaterial=(await state()).radius.materials;
+  await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog .form-error').filter({hasText:'Invalid certificate'}).waitFor();
+  assert.deepEqual((await state()).radius.materials,beforeInvalidMaterial);
+  assert.equal(await page.locator('dialog textarea[name=certificate]').inputValue(),'not a certificate');await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  // A canceled asynchronous file read cannot submit or close the next dialog.
+  await radiusCard.getByRole('button',{name:'+ Add certificate',exact:true}).click();await page.getByLabel('Label',{exact:true}).fill('Canceled read');
+  await page.locator('dialog [name=certificate_file]').setInputFiles(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE);
+  await page.evaluate(()=>{window.originalFileRead=File.prototype.arrayBuffer;File.prototype.arrayBuffer=function(){return new Promise(resolve=>{window.releaseFileRead=()=>window.originalFileRead.call(this).then(resolve);});};});
+  const beforeCanceledRead=mutations.length;await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.waitForFunction(()=>!!window.releaseFileRead);await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await radiusCard.getByRole('button',{name:'+ Add certificate',exact:true}).click();await page.getByLabel('Label',{exact:true}).fill('Next dialog');
+  await page.evaluate(async()=>{await window.releaseFileRead();File.prototype.arrayBuffer=window.originalFileRead;delete window.originalFileRead;delete window.releaseFileRead;});
+  await page.waitForTimeout(80);assert.equal(mutations.length,beforeCanceledRead);assert.equal(await page.getByLabel('Label',{exact:true}).inputValue(),'Next dialog');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await page.locator('dialog').textContent(),'');
+  await certRow('Browser trust renamed').getByRole('button',{name:'Edit',exact:true}).click();
+  await page.getByLabel('Label',{exact:true}).fill('Stale certificate edit');
+  const staleMaterialBefore=await state();
+  assert.equal((await page.request.post(new URL('/api/v1/clock/pause',fixtureURL).href,{headers:{'X-CSRF-Token':auth.csrf_token},data:{expected_configuration_revision:staleMaterialBefore.configuration_revision}})).status(),200);
+  await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog .form-error').filter({hasText:'Configuration changed while editing'}).waitFor();
+  assert.deepEqual((await state()).radius.materials,staleMaterialBefore.radius.materials);await page.getByRole('button',{name:'Cancel',exact:true}).click();
   await radiusCard.locator('#radius-templates > summary').click();await radiusCard.getByRole('button',{name:'+ Template',exact:true}).click();
+  assert.equal(await page.locator('dialog [name=client_identity_id]').inputValue(),'');assert.ok((await page.locator('dialog [name=client_identity_id]').textContent()).includes('Browser client renamed'));assert.equal(await page.getByLabel('Expected server DNS name',{exact:true}).getAttribute('required'),'');
   await page.getByLabel('Template label',{exact:true}).fill('Browser supplicant');await page.locator('dialog [name=method]').selectOption('peap');
   await page.getByLabel('Outer identity',{exact:true}).fill('outer-browser');await page.locator('dialog [name=trust_id]').selectOption(trust.id);
   await page.getByLabel('Expected server DNS name',{exact:true}).fill('radius-fixture.invalid');await page.getByLabel('Inner username',{exact:true}).fill('inner-'+ 'x'.repeat(64));
@@ -657,7 +799,13 @@ const path = require('node:path');
   radiusState=await state();assert.equal(radiusState.endpoints[endpoint.id].sources[0].supplicant.username,'custom-browser-inner');
   assert.equal(radiusState.endpoints[second.id].sources[0].supplicant.username,'inner-'+ 'x'.repeat(64));
   assert.ok(radiusState.endpoints[endpoint.id].sources[0].supplicant.has_password);
-  await page.locator('nav button[data-id=settings]').click();
+  await page.locator('nav button[data-id=radius]').click();
+  await certRow('Browser trust renamed').getByText('1 templates · 2 copied source profiles',{exact:true}).waitFor();
+  await certRow('Browser trust renamed').getByRole('button',{name:'Delete',exact:true}).click();
+  const beforeReferencedDelete=(await state()).radius.materials;
+  await page.locator('dialog').getByRole('button',{name:'Delete',exact:true}).click();
+  await page.waitForFunction(()=>!!document.querySelector('dialog .form-error')?.textContent);
+  assert.deepEqual((await state()).radius.materials,beforeReferencedDelete);await page.getByRole('button',{name:'Cancel',exact:true}).click();
   if(!await radiusCard.locator('#radius-templates').evaluate(el=>el.open))await radiusCard.locator('#radius-templates > summary').click();
   await radiusCard.locator('.setting-row').filter({hasText:'Browser supplicant'}).getByRole('button',{name:'Edit',exact:true}).click();
   await page.getByLabel('Inner username',{exact:true}).fill('changed-template-only');await saveRadius();
@@ -697,6 +845,12 @@ const path = require('node:path');
   try{
     await page.reload();await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).click();
     assert.equal(await page.locator('.port-detail').count(),1);
+    for(const heading of ['Link','Configured VLANs','Attached endpoints','Port access'])await detail.getByRole('heading',{name:new RegExp('^'+heading)}).waitFor();
+    for(const label of ['Admin / carrier','Mode','Shared link partner','Forced link fault','Ingress VLAN (PVID)','Admitted VLANs','Untagged VLANs','Forbidden VLANs'])await detail.getByText(label,{exact:true}).waitFor();
+    await detail.getByRole('button',{name:'Configure port',exact:true}).waitFor();await detail.getByRole('button',{name:'+ Attach endpoint',exact:true}).waitFor();
+    await detail.getByRole('button',{name:'Reauthenticate',exact:true}).waitFor();await detail.getByRole('button',{name:'Restart',exact:true}).waitFor();
+    assert.ok((await detail.locator('.port-meta').textContent()).includes('Interface '+(await state()).ports[sharedPort].if_index));
+
     const clientRows=detail.locator('.authentication-clients tbody tr');
     await clientRows.filter({hasText:macA}).getByText('Authorized',{exact:true}).waitFor();await clientRows.filter({hasText:macB}).getByText('pending',{exact:true}).waitFor();await clientRows.filter({hasText:macC}).getByText('failed',{exact:true}).waitFor();
     assert.equal(await clientRows.locator('td b').filter({hasText:'not applied'}).count(),0);
@@ -710,7 +864,10 @@ const path = require('node:path');
     assert.equal(await history.evaluate(el=>el.open),true);assert.equal(await historical.evaluate(el=>el.open),true);
     assert.equal(await historical.locator('summary').evaluate(el=>el===document.activeElement),true);
     assert.equal(await page.locator('.port.selected').getAttribute('data-id'),sharedPort);assert.equal(await page.evaluate(()=>scrollY),scroll);
-    await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.setViewportSize({width:1440,height:1100});
+    await screenshot('port-detail-desktop.png');
+    await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    for(const node of await detail.locator('button,summary').all()){if(await node.isVisible()){const box=await node.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=390);}}
+    await screenshot('port-detail-mobile.png');await page.setViewportSize({width:1440,height:1100});
   }finally{await page.unroute(statusURL,displayRadius);await page.unroute(eventsURL,displayHistory);}
   await page.reload();await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).click();
   await openPort();await page.locator('dialog [name=auth_control]').selectOption('force-authorized');await savePort();
@@ -718,11 +875,12 @@ const path = require('node:path');
   assert.equal(radiusState.radius.accounting.targets.length,0);assert.equal(radiusState.radius.dynamic_authorization.senders.length,0);
   assert.equal(radiusState.radius.servers.length,1);assert.equal(radiusState.radius.servers[0].enabled,false);
   const radiusText=JSON.stringify(radiusState);for(const privateValue of ['synthetic-browser-radius-secret','synthetic-browser-peap-password','synthetic-browser-accounting-secret','synthetic-browser-das-secret','BEGIN CERTIFICATE'])assert.equal(radiusText.includes(privateValue),false);
-  await page.locator('nav button[data-id=settings]').click();
+  await page.locator('nav button[data-id=radius]').click();
   console.log('RADIUS browser passed: independent disabled destinations, captured retry policy, sparse secrets, copied profiles/templates, unchanged carrier/colors, selected-port successful/pending/failed presentation, grouped escaped history, safe on-demand attributes, focus/disclosure/scroll refresh and mobile. Presentation samples do not authorize backend sessions.');
   const final=await state();assert.equal(final.snmp.enabled,false);assert.equal(final.switch.identity.sys_object_id,null);
   await screenshot('settings.png');
   await page.setViewportSize({width:390,height:844});
+  for(const destination of ['snmp','radius','settings']){await page.locator(`nav button[data-id=${destination}]`).click();assert.equal(await page.locator(`nav button[data-id=${destination}]`).getAttribute('aria-current'),'page');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
   await page.locator('nav button[data-id=overview]').click();
   assert.equal(await isOpen(),false);
   await simulationSummary.focus();await page.keyboard.press('Space');
