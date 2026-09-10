@@ -2,7 +2,7 @@
 
 An SNMP switch simulator with a web UI for ports, endpoints, VLANs, MAC learning, and RADIUS access. It simulates switch management state without forwarding Ethernet frames.
 
-![Switch overview](docs/screenshots/overview.png)
+![Switch overview with eight ports and selected-port link, VLAN, and endpoint details](docs/screenshots/overview.png)
 
 ## Run with Docker
 

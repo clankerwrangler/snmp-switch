@@ -10,7 +10,7 @@ const path = require('node:path');
   const browserEnv={...process.env};
   if(process.env.SWITCHLAB_BROWSER_LIBRARY_PATH)browserEnv.LD_LIBRARY_PATH=process.env.SWITCHLAB_BROWSER_LIBRARY_PATH;
   if(process.env.SWITCHLAB_BROWSER_FONTCONFIG)browserEnv.FONTCONFIG_FILE=process.env.SWITCHLAB_BROWSER_FONTCONFIG;
-  const browser = await chromium.launch({headless:true,channel:process.env.SWITCHLAB_BROWSER_CHANNEL||undefined,env:browserEnv});
+  const browser = await chromium.launch({headless:true,ignoreDefaultArgs:['--hide-scrollbars'],channel:process.env.SWITCHLAB_BROWSER_CHANNEL||undefined,env:browserEnv});
   try {
   const page = await browser.newPage({viewport:{width:1440,height:1100}});
   page.setDefaultTimeout(10000);
@@ -98,6 +98,35 @@ const path = require('node:path');
   await openSimulation();await clockRefresh();
   sameSimulation(await state(),paused);assert.equal(mutations.length,mutationCount);
   await simulationSummary.click();
+  // Classic scrollbar allocation must not move the shared frame between routes.
+  // Keep native scrollbars visible: headless Chromium otherwise masks this case.
+  const frameMeasurements=[];
+  for(const viewport of [{width:1440,height:1100},{width:1920,height:1080},{width:390,height:844}]){
+    await page.setViewportSize(viewport);
+    const frames=[];
+    for(const destination of ['overview','endpoints','vlans','fdb','interfaces','events','snmp','radius','settings','overview']){
+      await page.locator(`nav button[data-id="${destination}"]`).click();
+      await page.evaluate(()=>window.scrollTo(0,0));
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      frames.push(await page.evaluate(destination=>{
+        const box=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {x:r.x,width:r.width};};
+        return {destination,overflow:document.documentElement.scrollHeight>innerHeight,
+          horizontal:document.documentElement.scrollWidth>innerWidth,
+          main:box('main'),header:box('header'),sidebar:box('.sidebar'),page:box('.page')};
+      },destination));
+    }
+    if(viewport.width>680)assert.ok(frames.some(f=>f.overflow)&&frames.some(f=>!f.overflow),'Exercise both scrolling and short pages');
+    for(const frame of frames){
+      assert.equal(frame.horizontal,false,'Shared frame must not create horizontal overflow');
+      for(const selector of ['main','header','sidebar','page'])for(const dimension of ['x','width'])
+        assert.ok(Math.abs(frame[selector][dimension]-frames[0][selector][dimension])<0.01,
+          `${viewport.width}px ${frame.destination}: ${selector}.${dimension} must remain stable`);
+    }
+    frameMeasurements.push({viewport,frames});
+  }
+  await page.setViewportSize({width:1440,height:1100});
+  await page.locator('nav button[data-id="overview"]').click();
+  console.log('Shared frame passed: stable x/width across long and short routes at desktop, wide, and mobile widths; native scrolling retained.');
   await screenshot('overview-empty.png');
   await page.locator('nav button[data-id=endpoints]').click();
   await page.getByRole('button',{name:'+ New endpoint',exact:true}).click();
