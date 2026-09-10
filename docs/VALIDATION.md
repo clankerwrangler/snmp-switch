@@ -1,8 +1,8 @@
 # Implementation validation
 
-On 2026-09-10, the separate SNMP/RADIUS/general settings, certificate file/paste
-forms, and redesigned selected-port detail passed the maintained headless browser
-flow in 48.584 s with native scrollbars visible. It covered sparse general/SNMP
+On 2026-09-10, the operator terminology, reduced interface help, separate SNMP/RADIUS/general settings,
+certificate file/paste forms, and selected-port detail passed the maintained
+headless browser flow in 48.202 s with native scrollbars visible. It covered sparse general/SNMP
 edits, draft-only file selection, size checks before reads, invalid input, sparse
 certificate/key replacement,
 reference and stale-revision errors, cancel-during-read isolation, all existing
@@ -15,18 +15,23 @@ Original failures remain local. A document scrollbar gutter now keeps the shared
 main/header/sidebar/page frame stable across long and short routes. The maintained
 regression first failed on a 15 px width change; wide-layout measurements also
 showed a 7.5 px page shift. Desktop, wide, and mobile navigation checks now pass
-without hiding scrollbars or adding per-page offsets. TypeScript/Vite passed;
-the packaged JavaScript contents are unchanged.
+without hiding scrollbars or adding per-page offsets. Host-mode/method labels
+retain their original option values. Returned RADIUS attributes remain distinct
+from effective VLANs, and session/idle timestamps identify simulation-time
+timeouts rather than promising session termination. TypeScript/Vite passed;
+packaged assets match the build. CSS, fonts, notices, backend, API, and protocol
+values are unchanged.
 
 The synthetic instance kept SNMP disabled and identity unset, prohibited UDP and
 external RADIUS, and used only generated certificate/key inputs. Its processes,
 loopback socket, database, and keys were removed. The README overview is a
-1680 × 1393 viewport capture of a separate synthetic eight-port lab with one attached endpoint and learned address. It includes the
+1680 × 1296 viewport capture of a separate synthetic eight-port lab with one attached endpoint and learned MAC address. It includes the
 complete selected-port panel, waits for the toast to finish, and uses no stitched
 full-page capture or screenshot-only styling. Other inspection screenshots remain
 local. The unchanged `ScenarioPauseManual` check completed
 with 15 generated/14 distinct states and an empty queue before UI implementation;
 navigation and local drafts remain presentation stutters, not a new model.
+The text-only terminology pass required no new or repeated model/protocol run.
 
 The focused MAB method/transport tests passed 30 cases in 0.24 s with zero INET
 attempts. Injected socket-stage errors first reproduced 12 lost-diagnostic failures
