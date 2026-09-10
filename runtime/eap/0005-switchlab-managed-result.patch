@@ -1,0 +1,529 @@
+--- a/wpa_supplicant/eapol_test.c
++++ b/wpa_supplicant/eapol_test.c
+@@ -91,6 +91,8 @@
+ };
+ 
+ static struct eapol_test_data eapol_test;
++
++#include "switchlab_managed.h"
+ 
+ #define EAPOL_TEST_SECRET_MAX 4096
+ #define EAPOL_TEST_ATTR_FILE_MAX 32832
+@@ -330,10 +332,12 @@
+ 
+ 
+ static int add_extra_attrs(struct radius_msg *msg,
+-			   struct extra_radius_attr *attrs, bool raw)
++			   struct extra_radius_attr *attrs, bool raw, bool skip_state)
+ {
+ 	struct extra_radius_attr *p;
+ 	for (p = attrs; p; p = p->next) {
++		if (skip_state && p->type == RADIUS_ATTR_STATE)
++			continue;
+ 		if (add_extra_attr(msg, p, raw) < 0)
+ 			return -1;
+ 	}
+@@ -410,6 +414,8 @@
+ 	}
+ 
+ 	if (!find_extra_attr(e->extra_attrs, RADIUS_ATTR_NAS_IP_ADDRESS) &&
++	    !(sl_fd >= 0 && find_extra_attr(e->extra_attrs,
++	                                  RADIUS_ATTR_NAS_IDENTIFIER)) &&
+ 	    !radius_msg_add_attr(msg, RADIUS_ATTR_NAS_IP_ADDRESS,
+ 				 (u8 *) &e->own_ip_addr, 4)) {
+ 		printf("Could not add NAS-IP-Address\n");
+@@ -457,7 +463,8 @@
+ 		goto fail;
+ 	}
+ 
+-	if (add_extra_attrs(msg, e->extra_attrs, e->attribute_file_mode) < 0)
++	if (add_extra_attrs(msg, e->extra_attrs, e->attribute_file_mode,
++			    sl_fd >= 0 && e->last_recv_radius != NULL) < 0)
+ 		goto fail;
+ 
+ 	if (eap && !radius_msg_add_eap(msg, eap, len)) {
+@@ -484,7 +491,7 @@
+ 	}
+ 
+ 	if (e->attribute_file_mode &&
+-	    wpabuf_len(radius_msg_get_buf(msg)) > 65507) {
++	    wpabuf_len(radius_msg_get_buf(msg)) > (sl_fd >= 0 ? 4096 : 65507)) {
+ 		printf("Protected RADIUS request exceeds UDP packet budget\n");
+ 		goto fail;
+ 	}
+@@ -507,6 +514,7 @@
+ static int eapol_test_eapol_send(void *ctx, int type, const u8 *buf,
+ 				 size_t len)
+ {
++	sl_eap(1, type, buf, len);
+ 	printf("WPA: eapol_test_eapol_send(type=%d len=%lu)\n",
+ 	       type, (unsigned long) len);
+ 	if (type == IEEE802_1X_TYPE_EAP_PACKET) {
+@@ -616,6 +624,8 @@
+ 			void *ctx)
+ {
+ 	struct eapol_test_data *e = ctx;
++	sl_peer = result + 1;
++	sl_integer(5, sl_peer);
+ 	printf("eapol_sm_cb: result=%d\n", result);
+ 	e->id_req_sent = 0;
+ 	if (e->ctrl_iface)
+@@ -699,6 +709,7 @@
+ 	/* Saturate rather than wrap the typed validation-event counter. */
+ 	if (e->num_cert_errors < 0xffffffffU)
+ 		e->num_cert_errors++;
++	sl_integer(4, e->num_cert_errors);
+ }
+ 
+ 
+@@ -915,6 +926,7 @@
+ 	*pos = EAP_TYPE_IDENTITY;
+ 
+ 	printf("Sending fake EAP-Request-Identity\n");
++	sl_eap(2, hdr->type, (const u8 *) eap, 5);
+ 	eapol_sm_rx_eapol(wpa_s->eapol, wpa_s->bssid, buf,
+ 			  sizeof(*hdr) + 5, FRAME_ENCRYPTION_UNKNOWN);
+ }
+@@ -1042,6 +1054,7 @@
+ 		dot1x->length = htons(wpabuf_len(eap));
+ 		os_memcpy((u8 *) (dot1x + 1), wpabuf_head(eap),
+ 			  wpabuf_len(eap));
++		sl_eap(2, dot1x->type, wpabuf_head(eap), wpabuf_len(eap));
+ 		eapol_sm_rx_eapol(e->wpa_s->eapol, e->wpa_s->bssid,
+ 				  (u8 *) dot1x,
+ 				  sizeof(*dot1x) + wpabuf_len(eap),
+@@ -1165,6 +1178,11 @@
+ 	}
+ 
+ 	ieee802_1x_decapsulate_radius(e);
++	/* Finish after already-scheduled peer processing, without turning its
++	 * outcome into another NAS authorization requirement. */
++	if (sl_fd >= 0 && (hdr->code == RADIUS_CODE_ACCESS_ACCEPT ||
++			   hdr->code == RADIUS_CODE_ACCESS_REJECT))
++		eloop_register_timeout(0, 0, sl_complete, e, NULL);
+ 
+ 	if ((hdr->code == RADIUS_CODE_ACCESS_ACCEPT &&
+ 	     e->eapol_test_num_reauths < 0) ||
+@@ -1272,6 +1290,14 @@
+ 	e->radius_conf->auth_server = as;
+ 	e->radius_conf->auth_servers = as;
+ 	e->radius_conf->msg_dumps = !e->secret_file_mode;
++	if (sl_fd >= 0) {
++		e->radius_conf->managed_wait = sl_wait;
++		e->radius_conf->managed_attempts = sl_attempts;
++		e->radius_conf->managed_validate = sl_validate;
++		e->radius_conf->managed_packet = sl_packet;
++		e->radius_conf->managed_exhausted = sl_exhausted;
++		e->radius_conf->managed_ctx = e;
++	}
+ 	if (cli_addr) {
+ 		if (hostapd_parse_ip_addr(cli_addr,
+ 					  &e->radius_conf->client_addr) == 0)
+@@ -1573,10 +1599,19 @@
+ 
+ 	for (;;) {
+ 		c = getopt(argc, argv,
+-			   "a:A:c:C:eF:G:i:j:J:k:K:M:nN:o:p:P:r:R:s:St:T:vWX:");
++			   "a:A:b:B:c:C:eF:G:i:j:J:k:K:M:nN:o:p:P:q:r:R:s:St:T:vWX:");
+ 		if (c < 0)
+ 			break;
+ 		switch (c) {
++		case 'B':
++			if (sl_open(optarg)) return -1;
++			break;
++		case 'b':
++			if (sl_number(optarg, 60, &sl_wait)) return -1;
++			break;
++		case 'q':
++			if (sl_number(optarg, 10, &sl_attempts)) return -1;
++			break;
+ 		case 'a':
+ 			as_addr = optarg;
+ 			break;
+@@ -1700,6 +1735,9 @@
+ 			printf("Invalid attribute-file options\n");
+ 			return -1;
+ 	}
++	if (sl_fd >= 0 && (!as_secret_file || !attrs_file || tls || ctrl_iface ||
++			  wait_for_monitor || save_config || eapol_test.no_mppe_keys))
++		return -1;
+ 	if (as_secret_file) {
+ 		if (as_secret) {
+ 			printf("Invalid secret-file options\n");
+@@ -1866,6 +1904,7 @@
+ 	else
+ 		printf("SUCCESS\n");
+ 
++	sl_terminal();
+ 	crypto_unload();
+ 	os_program_deinit();
+ 
+--- /dev/null
++++ b/wpa_supplicant/switchlab_managed.h
+@@ -0,0 +1,231 @@
++/* Switch Lab managed transport observations; BSD-3-Clause like upstream.
++ * Only typed callbacks write this private channel. Diagnostics are not input.
++ */
++#include <signal.h>
++
++static int sl_fd = -1, sl_failed, sl_peer;
++static u32 sl_sequence, sl_bytes;
++static unsigned int sl_wait = 3, sl_attempts = 3;
++
++static void sl_fail(void)
++{
++	if (!sl_failed) {
++		sl_failed = 1;
++		fprintf(stderr, "Managed result channel failed\n");
++	}
++	eloop_terminate();
++}
++
++static int sl_emit(u8 kind, const void *payload, size_t len)
++{
++	u8 frame[8192];
++	ssize_t written;
++	if (sl_fd < 0)
++		return 0;
++	if (sl_failed || len > sizeof(frame) - 16 || sl_sequence >= 512 ||
++	    sl_bytes + len + 16 > 1048576) {
++		sl_fail();
++		return -1;
++	}
++	os_memcpy(frame, "SLR1", 4);
++	frame[4] = kind;
++	frame[5] = frame[6] = frame[7] = 0;
++	WPA_PUT_BE32(frame + 8, len);
++	WPA_PUT_BE32(frame + 12, ++sl_sequence);
++	if (len)
++		os_memcpy(frame + 16, payload, len);
++	/* Nonblocking, one bounded write: partial/backpressured output fails the
++	 * attempt. No callback waits for an absent reader or retries forever. */
++	written = write(sl_fd, frame, len + 16);
++	forced_memzero(frame, sizeof(frame));
++	if (written != (ssize_t) (len + 16)) {
++		sl_fail();
++		return -1;
++	}
++	sl_bytes += len + 16;
++	return 0;
++}
++
++static int sl_open(const char *value)
++{
++	char *end;
++	long fd;
++	struct stat st;
++	int flags;
++	if (sl_fd >= 0 || !value || !*value)
++		return -1;
++	fd = strtol(value, &end, 10);
++	if (*end || fd < 3 || fd > 1048576 || fstat(fd, &st) ||
++	    !S_ISFIFO(st.st_mode))
++		return -1;
++	flags = fcntl(fd, F_GETFL);
++	if (flags < 0 || (flags & O_ACCMODE) != O_WRONLY ||
++	    fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
++		return -1;
++	signal(SIGPIPE, SIG_IGN);
++	sl_fd = fd;
++	return 0;
++}
++
++static int sl_number(const char *value, unsigned int max, unsigned int *out)
++{
++	char *end;
++	unsigned long n;
++	if (!value || !*value)
++		return -1;
++	n = strtoul(value, &end, 10);
++	if (*end || n < 1 || n > max)
++		return -1;
++	*out = n;
++	return 0;
++}
++
++static void sl_integer(u8 kind, u32 value)
++{
++	u8 bytes[4];
++	WPA_PUT_BE32(bytes, value);
++	sl_emit(kind, bytes, sizeof(bytes));
++}
++
++static void sl_eap(u8 direction, int type, const u8 *data, size_t len)
++{
++	u8 event[16] = {0};
++	if (sl_fd < 0)
++		return;
++	event[0] = direction; /* 1 peer->NAS, 2 NAS->peer */
++	event[1] = EAPOL_VERSION;
++	event[2] = type;
++	os_memcpy(event + 8, eapol_test.own_addr, ETH_ALEN);
++	if (type == IEEE802_1X_TYPE_EAP_PACKET && len >= 4) {
++		event[3] = data[0];
++		event[4] = data[1];
++		event[5] = len > 4 ? data[4] : 0;
++		WPA_PUT_BE16(event + 6, len);
++	}
++	sl_emit(3, event, sizeof(event));
++}
++
++static int sl_validate(void *ctx, struct radius_msg *msg,
++		       struct radius_msg *req, const u8 *secret, size_t secret_len)
++{
++	const u8 *packet = wpabuf_head(radius_msg_get_buf(msg));
++	size_t len = wpabuf_len(radius_msg_get_buf(msg)), pos, eap_len = 0;
++	u8 eap[4096];
++	int eap_seen = 0, eap_finished = 0, ma_count = 0;
++	(void) ctx;
++	if (len < 20 || len > 4096 || WPA_GET_BE16(packet + 2) != len ||
++	    (packet[0] != RADIUS_CODE_ACCESS_ACCEPT &&
++	     packet[0] != RADIUS_CODE_ACCESS_REJECT &&
++	     packet[0] != RADIUS_CODE_ACCESS_CHALLENGE))
++		goto invalid;
++	for (pos = 20; pos < len; pos += packet[pos + 1]) {
++		size_t alen;
++		if (pos + 2 > len || packet[pos + 1] < 2 ||
++		    pos + packet[pos + 1] > len)
++			goto invalid;
++		alen = packet[pos + 1] - 2;
++		if (packet[pos] == RADIUS_ATTR_MESSAGE_AUTHENTICATOR) {
++			if (++ma_count != 1 || alen != 16)
++				goto invalid;
++		}
++		if (packet[pos] == RADIUS_ATTR_EAP_MESSAGE) {
++			if (eap_finished || eap_len + alen > sizeof(eap))
++				goto invalid;
++			eap_seen = 1;
++			os_memcpy(eap + eap_len, packet + pos + 2, alen);
++			eap_len += alen;
++		} else if (eap_seen)
++			eap_finished = 1;
++	}
++	if (ma_count != 1 || (eap_seen &&
++	    (eap_len < 4 || WPA_GET_BE16(eap + 2) != eap_len ||
++	     eap[0] < 1 || eap[0] > 4 ||
++	     (eap[0] <= 2 ? eap_len < 5 : eap_len != 4))))
++		goto invalid;
++	forced_memzero(eap, sizeof(eap));
++	if (radius_msg_verify(msg, secret, secret_len, req, 1))
++		goto invalid;
++	return 1;
++invalid:
++	forced_memzero(eap, sizeof(eap));
++	sl_integer(6, 1); /* Invalid packet, not an authenticated Reject. */
++	return 0;
++}
++
++static void sl_packet(void *ctx, int kind, int sock, struct radius_msg *msg,
++		      const u8 *request_authenticator)
++{
++	struct sockaddr_storage peer, local;
++	socklen_t plen = sizeof(peer), llen = sizeof(local);
++	u8 record[64 + 4096] = {0};
++	struct wpabuf *buf = radius_msg_get_buf(msg);
++	size_t len = wpabuf_len(buf);
++	(void) ctx;
++	if (sl_fd < 0)
++		return;
++	if (len > 4096 || getpeername(sock, (struct sockaddr *) &peer, &plen) ||
++	    getsockname(sock, (struct sockaddr *) &local, &llen) ||
++	    peer.ss_family != local.ss_family)
++		goto failed;
++	if (peer.ss_family == AF_INET) {
++		struct sockaddr_in *p = (struct sockaddr_in *) &peer;
++		struct sockaddr_in *l = (struct sockaddr_in *) &local;
++		record[0] = 4;
++		os_memcpy(record + 4, &p->sin_port, 2);
++		os_memcpy(record + 6, &l->sin_port, 2);
++		os_memcpy(record + 8, &p->sin_addr, 4);
++		os_memcpy(record + 24, &l->sin_addr, 4);
++	} else if (peer.ss_family == AF_INET6) {
++		struct sockaddr_in6 *p = (struct sockaddr_in6 *) &peer;
++		struct sockaddr_in6 *l = (struct sockaddr_in6 *) &local;
++		record[0] = 6;
++		os_memcpy(record + 4, &p->sin6_port, 2);
++		os_memcpy(record + 6, &l->sin6_port, 2);
++		os_memcpy(record + 8, &p->sin6_addr, 16);
++		os_memcpy(record + 24, &l->sin6_addr, 16);
++	} else
++		goto failed;
++	if (request_authenticator)
++		os_memcpy(record + 40, request_authenticator, 16);
++	WPA_PUT_BE32(record + 56, len);
++	os_memcpy(record + 64, wpabuf_head(buf), len);
++	sl_emit(kind, record, 64 + len);
++	forced_memzero(record, sizeof(record));
++	return;
++failed:
++	forced_memzero(record, sizeof(record));
++	sl_fail();
++}
++
++static void sl_complete(void *ctx, void *unused)
++{
++	(void) ctx;
++	(void) unused;
++	eloop_terminate();
++}
++
++static void sl_exhausted(void *ctx)
++{
++	struct eapol_test_data *e = ctx;
++	e->auth_timed_out = 1;
++	eloop_terminate();
++}
++
++static void sl_terminal(void)
++{
++	u8 record[32];
++	if (sl_fd < 0)
++		return;
++	WPA_PUT_BE32(record, eapol_test.radius_access_accept_received);
++	WPA_PUT_BE32(record + 4, eapol_test.radius_access_reject_received);
++	WPA_PUT_BE32(record + 8, eapol_test.auth_timed_out);
++	WPA_PUT_BE32(record + 12, eapol_test.num_mppe_ok);
++	WPA_PUT_BE32(record + 16, eapol_test.num_mppe_mismatch);
++	WPA_PUT_BE32(record + 20, eapol_test.num_cert_errors);
++	WPA_PUT_BE32(record + 24, sl_peer);
++	WPA_PUT_BE32(record + 28, eapol_test.preparation_failed);
++	if (!sl_failed)
++		sl_emit(7, record, sizeof(record));
++	close(sl_fd);
++	sl_fd = -1;
++}
+--- a/src/radius/radius_client.c
++++ b/src/radius/radius_client.c
+@@ -376,7 +376,7 @@
+ 				    os_time_t now)
+ {
+ 	struct hostapd_radius_servers *conf = radius->conf;
+-	int s;
++	int s, sent = -1;
+ 	struct wpabuf *buf;
+ 	size_t prev_num_msgs;
+ 	u8 *acct_delay_time;
+@@ -491,6 +491,13 @@
+ 			radius_msg_dump(entry->msg);
+ 	}
+ 
++	if (conf->managed_attempts &&
++	    entry->accu_attempts >= conf->managed_attempts) {
++		if (conf->managed_exhausted)
++			conf->managed_exhausted(conf->managed_ctx);
++		return 1;
++	}
++
+ 	/* retransmit; remove entry if too many attempts */
+ 	if (entry->accu_attempts >= RADIUS_CLIENT_MAX_FAILOVER *
+ 	    RADIUS_CLIENT_NUM_FAILOVER * num_servers) {
+@@ -524,7 +531,8 @@
+ 
+ 	wpa_printf(MSG_DEBUG, "RADIUS: Send %zu bytes to the server",
+ 		   wpabuf_len(buf));
+-	if (send(s, wpabuf_head(buf), wpabuf_len(buf), 0) < 0) {
++	sent = send(s, wpabuf_head(buf), wpabuf_len(buf), 0);
++	if (sent < 0) {
+ 		if (radius_client_handle_send_error(radius, s, entry->msg_type)
+ 		    > 0) {
+ #ifdef CONFIG_RADIUS_TLS
+@@ -539,6 +547,13 @@
+ not_ready:
+ #endif /* CONFIG_RADIUS_TLS */
+ 
++	if (sent >= 0 && conf->managed_packet)
++		conf->managed_packet(conf->managed_ctx, 1, s, entry->msg,
++				     radius_msg_get_hdr(entry->msg)->authenticator);
++	if (conf->managed_wait) {
++		entry->next_try = now + conf->managed_wait;
++		return 0;
++	}
+ 	entry->next_try = now + entry->next_wait;
+ 	entry->next_wait *= 2;
+ 	if (entry->next_wait > RADIUS_CLIENT_MAX_WAIT)
+@@ -568,8 +583,9 @@
+ 		if (now.sec >= entry->next_try) {
+ 			s = entry->msg_type == RADIUS_AUTH ? radius->auth_sock :
+ 				radius->acct_sock;
+-			if (entry->attempts >= RADIUS_CLIENT_NUM_FAILOVER ||
+-			    (s < 0 && entry->attempts > 0)) {
++			if (!radius->conf->managed_attempts &&
++			    (entry->attempts >= RADIUS_CLIENT_NUM_FAILOVER ||
++			     (s < 0 && entry->attempts > 0))) {
+ 				if (entry->msg_type == RADIUS_ACCT ||
+ 				    entry->msg_type == RADIUS_ACCT_INTERIM)
+ 					acct_failover++;
+@@ -749,7 +765,8 @@
+ 	entry->shared_secret_len = shared_secret_len;
+ 	os_get_reltime(&entry->last_attempt);
+ 	entry->first_try = entry->last_attempt.sec;
+-	entry->next_try = entry->first_try + RADIUS_CLIENT_FIRST_WAIT;
++	entry->next_try = entry->first_try + (radius->conf->managed_wait ?
++			radius->conf->managed_wait : RADIUS_CLIENT_FIRST_WAIT);
+ 	entry->attempts = 1;
+ 	entry->accu_attempts = 1;
+ 	entry->next_wait = RADIUS_CLIENT_FIRST_WAIT * 2;
+@@ -956,6 +973,9 @@
+ 	wpa_printf(MSG_DEBUG, "RADIUS: Send %zu bytes to the server",
+ 		   wpabuf_len(buf));
+ 	res = send(s, wpabuf_head(buf), wpabuf_len(buf), 0);
++	if (res >= 0 && conf->managed_packet)
++		conf->managed_packet(conf->managed_ctx, 1, s, msg,
++				     radius_msg_get_hdr(msg)->authenticator);
+ #ifdef CONFIG_RADIUS_TLS
+ 	wpabuf_free(out);
+ #endif /* CONFIG_RADIUS_TLS */
+@@ -1264,6 +1284,16 @@
+ 		goto fail;
+ 	}
+ 
++	/* Validate the still-live matched request before any handler can change
++	 * peer/terminal state or take ownership of the received packet. Invalid
++	 * input frees only msg; the stock retransmission owner remains live. */
++	if (conf->managed_validate &&
++	    !conf->managed_validate(conf->managed_ctx, msg, req->msg,
++				    req->shared_secret, req->shared_secret_len)) {
++		rconf->bad_authenticators++;
++		goto fail;
++	}
++
+ 	os_get_reltime(&now);
+ 	roundtrip = (now.sec - req->last_attempt.sec) * 100 +
+ 		(now.usec - req->last_attempt.usec) / 10000;
+@@ -1279,11 +1309,19 @@
+ 		res = handlers[i].handler(msg, req->msg, req->shared_secret,
+ 					  req->shared_secret_len,
+ 					  handlers[i].data);
++		if ((res == RADIUS_RX_PROCESSED || res == RADIUS_RX_QUEUED) &&
++		    conf->managed_packet)
++			conf->managed_packet(conf->managed_ctx, 2, sock, msg,
++					     radius_msg_get_hdr(req->msg)->authenticator);
+ 		switch (res) {
+ 		case RADIUS_RX_PROCESSED:
++			/* Handler completed; the client still owns msg. */
+ 			radius_msg_free(msg);
++			msg = NULL;
+ 			/* fall through */
+ 		case RADIUS_RX_QUEUED:
++			/* QUEUED transfers msg to the handler. Neither branch accesses
++			 * msg again; only the acknowledged request is retired. */
+ 			/* Remove ACKed RADIUS packet from retransmit list */
+ 			prev_req = NULL;
+ 			for (r = radius->msgs; r; r = r->next) {
+--- a/src/radius/radius_client.h
++++ b/src/radius/radius_client.h
+@@ -204,6 +204,14 @@
+ 	 * force_client_dev - Bind the socket to a specified interface, if set
+ 	 */
+ 	char *force_client_dev;
++
++	/* Optional per-instance managed client policy; zero preserves upstream. */
++	unsigned int managed_wait, managed_attempts;
++	void *managed_ctx;
++	int (*managed_validate)(void *, struct radius_msg *, struct radius_msg *,
++				const u8 *, size_t);
++	void (*managed_packet)(void *, int, int, struct radius_msg *, const u8 *);
++	void (*managed_exhausted)(void *);
+ };
+ 
+ 

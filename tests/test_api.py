@@ -381,6 +381,8 @@ def test_protocol_fields_redaction_and_explicit_version_change(store):
 
 def test_legacy_inactive_fields_stay_inert_until_version_change(store):
     cfg = initial_configuration(4).model_dump(mode='json')
+    cfg.pop('radius')
+    for port in cfg['ports'].values():port.pop('authentication')
     cfg.pop('groups')
     cfg['schema_version'] = 1
     cfg['credentials']['legacy'] = {'id': 'legacy', 'label': 'legacy', 'community': 'legacy-v2',
@@ -503,6 +505,8 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
     import copy
     from switchlab.models import Configuration
     raw = initial_configuration(4).model_dump(mode="json")
+    raw.pop("radius")
+    for port in raw["ports"].values():port.pop("authentication")
     raw.pop("groups")
     raw["schema_version"] = 1
     legacy = {"id": "legacy", "label": "Legacy", "version": "3", "enabled": enabled,
@@ -519,7 +523,7 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
                                      "port": 3162, "enabled": False, "types": ["linkUp"]}}
     original = copy.deepcopy(raw)
     cfg = Configuration.model_validate(raw)
-    assert raw == original and cfg.schema_version == 3
+    assert raw == original and cfg.schema_version == 4
     with store.db:
         store.put("configuration", raw)
         store.put("engine_identity", "40000102030405060708090a0b")
@@ -545,14 +549,14 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
         before = saved.model_dump()
         assert change(c, '/scenarios/import', {"scenario": scenario}).status_code == 200
         assert store.load().model_dump() == before
-        assert store.get("configuration")["schema_version"] == 3
+        assert store.get("configuration")["schema_version"] == 4
         assert store.get("engine_identity") == "40000102030405060708090a0b" and store.get("engine_boots") == 9
         assert state["snmp"]["enabled"] is False and state["switch"]["identity"]["sys_object_id"] is None
     assert store.load().groups[credential.group_id].polling == saved.groups[credential.group_id].polling
 
 
 @pytest.mark.parametrize("version,credential", [
-    (4, {"label": "future", "community": "synthetic"}),
+    (5, {"label": "future", "community": "synthetic"}),
     (True, {"label": "invalid tag", "community": "synthetic"}),
     (1, {"label": "mixed", "community": "synthetic", "polling": {"enabled": True}}),
     (2, {"label": "mixed", "community": "synthetic", "purpose": "notification"}),
@@ -563,6 +567,8 @@ def test_configuration_schema_rejects_ambiguous_credentials(version, credential)
     from pydantic import ValidationError
     from switchlab.models import Configuration
     raw = initial_configuration(4).model_dump(mode="json")
+    raw.pop("radius")
+    for port in raw["ports"].values():port.pop("authentication")
     raw.pop("groups")
     raw.update(schema_version=version, credentials={"fixture": credential})
     with pytest.raises(ValidationError):
@@ -688,6 +694,8 @@ def test_legacy_target_cannot_change_polling_privileges(reference):
     from pydantic import ValidationError
     from switchlab.models import Configuration
     raw = initial_configuration(4).model_dump(mode="json")
+    raw.pop("radius"); raw.pop("groups")
+    for port in raw["ports"].values():port.pop("authentication")
     raw.update(schema_version=1, credentials={"legacy": {"id": "legacy", "label": "Legacy polling",
         "community": "synthetic", "purpose": "polling"}}, targets={"target": {
         "id": "target", "address": "127.0.0.1", "credential_id": reference}})

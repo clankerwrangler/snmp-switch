@@ -1771,3 +1771,50 @@ async def test_no_group_denies_incoming_without_changing_trap_profile(app_exchan
     assert str(traps[0][3]) == credential.username
     assert x.engine.state.cfg.credentials[x.credential_id].security_level == credential.security_level
     x.empty()
+
+
+async def test_application_pae_actions_require_explicit_view_and_commit_whole_pdu(app_exchange):
+    from switchlab.mib import PAE, oid
+    x=app_exchange
+    port=next(iter(x.engine.state.cfg.ports.values()));index=port.if_index
+    pdu=request(73)
+    bindings=[(PAE+(1,2,1,5,index),a.Integer32(1)),
+              (PAE+(1,2,1,4,index),a.Integer32(1)),
+              (PAE+(2,1,1,6,index),a.Integer32(1)),
+              (PAE+(1,2,1,4,index),a.Integer32(1))]
+    v2c.apiPDU.set_varbinds(pdu,bindings)
+    before=x.engine.state
+    x.send(pdu);await x.settle();response=x.decode()
+    assert (int(v2c.apiPDU.get_error_status(response)),int(v2c.apiPDU.get_error_index(response)))==(6,1)
+    assert x.engine.state is before
+    # The historical MIB-II view does not acquire access to the IEEE subtree.
+    await configure_application(x,'view-save',{'id':'pae','name':'Explicit PAE','includes':['1.0.8802.1.1.1','1.3.6.1.2.1']})
+    await configure_application(x,*access_write(x,{'polling':{'view_id':'pae'},'writing':{'view_id':'pae'}}))
+    bad=bindings+[(oid('1.3.6.1.2.1.2.2.1.7')+(index,),a.Integer32(3))]
+    v2c.apiPDU.set_varbinds(pdu,bad)
+    before=x.engine.state;persisted=x.engine.store.get('configuration')
+    x.send(pdu);await x.settle();response=x.decode()
+    assert (int(v2c.apiPDU.get_error_status(response)),int(v2c.apiPDU.get_error_index(response)))==(10,5)
+    assert x.engine.state is before and x.engine.store.get('configuration')==persisted
+    v2c.apiPDU.set_varbinds(pdu,bindings)
+    x.send(pdu);await x.settle();response=x.decode()
+    assert int(v2c.apiPDU.get_error_status(response))==0
+    for (_,got),(_,sent) in zip(v2c.apiPDU.get_varbinds(response),bindings):assert encoder.encode(got)==encoder.encode(sent)
+    assert x.engine.state.cfg.ports[port.id].authentication.control=='force-unauthorized'
+    actions=[e['kind'] for e in x.engine.state.events if e['kind'].startswith('pae-')]
+    assert actions==['pae-initialize']
+    read=v2c.GetRequestPDU();v2c.apiPDU.set_defaults(read)
+    v2c.apiPDU.set_varbinds(read,[(PAE+suffix+(index,),a.Null()) for suffix in ((1,2,1,4),(1,2,1,5),(2,1,1,1))])
+    x.send(read);response=x.decode()
+    assert [int(value) for _,value in v2c.apiPDU.get_varbinds(response)]==[2,2,9]
+    for pdu_type in (v2c.GetNextRequestPDU,v2c.GetBulkRequestPDU):
+        read=pdu_type();v2c.apiPDU.set_defaults(read)
+        if pdu_type is v2c.GetBulkRequestPDU:
+            v2c.apiBulkPDU.set_non_repeaters(read,0);v2c.apiBulkPDU.set_max_repetitions(read,8)
+        v2c.apiPDU.set_varbinds(read,[(PAE,a.Null())])
+        x.send(read);response=x.decode()
+        names=[tuple(name) for name,_ in v2c.apiPDU.get_varbinds(response)]
+        assert names[0]==PAE+(1,1,0) and names==sorted(set(names))
+        assert all(name[:len(PAE)]==PAE for name in names)
+        assert len(names)==(8 if pdu_type is v2c.GetBulkRequestPDU else 1)
+    x.empty()

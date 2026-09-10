@@ -43,7 +43,9 @@ class Record(BaseModel):
 
     @model_validator(mode="after")
     def octet_limits(self):
-        limits = {"sys_descr":255, "description":255, "contact":255, "location":255, "alias":64, "username":32}
+        limits = {"sys_descr":255, "description":255, "contact":255, "location":255, "alias":64}
+        if isinstance(self, CredentialAuth):
+            limits["username"] = 32
         for key, limit in limits.items():
             value = getattr(self, key, None)
             if isinstance(value, str) and len(value.encode()) > limit:
@@ -79,6 +81,229 @@ class Switch(Record):
     _mac = field_validator("base_mac")(mac)
 
 
+class PortAuthentication(Record):
+    control: Literal["force-authorized", "auto", "force-unauthorized"] = "force-authorized"
+    method: Literal["dot1x", "mab", "dot1x-mab"] = "dot1x-mab"
+    host_mode: Literal["single-host", "multi-auth", "multi-host"] = "single-host"
+    fallback_no_supplicant: bool = True
+    fallback_reject: bool = False
+
+
+class SupplicantProfile(Record):
+    method: Literal["tls", "peap"]
+    identity: str = Field(min_length=1, max_length=1024)
+    username: str = Field(default="", max_length=1024)
+    password: str | None = Field(default=None, max_length=1024, repr=False)
+    trust_id: str
+    client_identity_id: str | None = None
+    server_name: str = Field(min_length=1, max_length=253)
+
+    @field_validator("identity", "username", "password")
+    @classmethod
+    def utf8_credentials(cls, value):
+        if value is not None:
+            try:
+                value.encode("utf-8")
+            except UnicodeError:
+                raise ValueError("Supplicant text must be valid UTF-8") from None
+        return value
+
+    @field_validator("server_name")
+    @classmethod
+    def expected_name(cls, value):
+        # One explicit DNS name, not a native-config fragment or a wildcard policy.
+        value = value.encode("idna").decode("ascii").lower()
+        if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", value) or any(not label or len(label)>63 for label in value.split(".")):
+            raise ValueError("Enter the expected server DNS name")
+        return value
+
+    @model_validator(mode="after")
+    def credentials(self):
+        if self.method == "tls" and not self.client_identity_id:
+            raise ValueError("Select a client certificate and key")
+        if self.method == "peap" and (not self.username or not self.password):
+            raise ValueError("PEAP requires an inner username and password")
+        return self
+
+
+class RadiusMaterial(Record):
+    id: str = Field(default_factory=uid)
+    label: str = Field(min_length=1, max_length=80)
+    kind: Literal["ca", "client"]
+    certificate: str = Field(min_length=1, max_length=262144, repr=False)
+    private_key: str | None = Field(default=None, max_length=65536, repr=False)
+    key_password: str | None = Field(default=None, max_length=1024, repr=False)
+
+    @model_validator(mode="after")
+    def valid_material(self):
+        from cryptography import x509
+        from cryptography.hazmat.primitives import serialization
+        try:
+            certificates = x509.load_pem_x509_certificates(self.certificate.encode())
+            if not certificates:
+                raise ValueError()
+            if self.kind == "ca":
+                if self.private_key or self.key_password or any(not c.extensions.get_extension_for_class(x509.BasicConstraints).value.ca for c in certificates):
+                    raise ValueError()
+            else:
+                key = serialization.load_pem_private_key((self.private_key or "").encode(), self.key_password.encode() if self.key_password else None)
+                public = lambda k: k.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+                if public(key.public_key()) != public(certificates[0].public_key()):
+                    raise ValueError()
+        except Exception:
+            raise ValueError("Invalid certificate, key, or key password") from None
+        return self
+
+
+class SupplicantTemplate(Record):
+    id: str = Field(default_factory=uid)
+    label: str = Field(min_length=1, max_length=80)
+    revision: int = Field(default=0, ge=0)
+    profile: SupplicantProfile
+
+
+class RadiusServer(Record):
+    id: str = Field(default_factory=uid)
+    label: str = Field(min_length=1, max_length=80)
+    enabled: bool = True
+    address: str
+    port: int = Field(default=1812, ge=1, le=65535)
+    secret: str = Field(min_length=1, max_length=1024, repr=False)
+    source_address: str | None = None
+
+    @field_validator("secret")
+    @classmethod
+    def secret_bytes(cls, value):
+        try:
+            valid = "\0" not in value and 1 <= len(value.encode("utf-8")) <= 4096
+        except UnicodeError:
+            valid = False
+        if not valid:
+            raise ValueError("Shared secret must be UTF-8 without NUL, at most 4096 octets")
+        return value
+
+    @field_validator("address", "source_address")
+    @classmethod
+    def addresses(cls, value):
+        return str(ipaddress.ip_address(value)) if value is not None else None
+
+    @model_validator(mode="after")
+    def address_family(self):
+        if self.source_address and ipaddress.ip_address(self.source_address).version != ipaddress.ip_address(self.address).version:
+            raise ValueError("RADIUS source and destination address families must match")
+        return self
+
+
+class AccountingSettings(Record):
+    enabled: bool = False
+    targets: list[RadiusServer] = Field(default_factory=list, max_length=16)
+    response_timeout_seconds: int = Field(default=3, ge=1, le=60)
+    attempts: int = Field(default=3, ge=1, le=10)
+    retry_backoff_seconds: int = Field(default=1, ge=0, le=30)
+    interim_seconds: int | None = Field(default=None, ge=0, le=1000000)
+
+    @field_validator("interim_seconds")
+    @classmethod
+    def interval(cls, value):
+        if value is not None and 0 < value < 60:
+            raise ValueError("Interim interval must be zero, absent, or at least 60 seconds")
+        return value
+
+    @model_validator(mode="after")
+    def target_ids(self):
+        if len({target.id for target in self.targets}) != len(self.targets):
+            raise ValueError("Accounting target IDs must be distinct")
+        return self
+
+
+class DynamicSender(Record):
+    id: str = Field(default_factory=uid)
+    label: str = Field(min_length=1, max_length=80)
+    enabled: bool = True
+    address: str
+    secret: str = Field(min_length=1, max_length=1024, repr=False)
+
+    @field_validator("address")
+    @classmethod
+    def source_ip(cls, value):
+        ip = ipaddress.ip_address(value)
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        return str(ip)
+
+    @field_validator("secret")
+    @classmethod
+    def secret_bytes(cls, value):
+        return RadiusServer.secret_bytes(value)
+
+
+class DynamicSettings(Record):
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = Field(default=3799, ge=1, le=65535)
+    senders: list[DynamicSender] = Field(default_factory=list, max_length=64)
+
+    @field_validator("host")
+    @classmethod
+    def bind_ip(cls, value):
+        return str(ipaddress.ip_address(value))
+
+    @model_validator(mode="after")
+    def sender_ids(self):
+        if len({sender.id for sender in self.senders}) != len(self.senders):
+            raise ValueError("Dynamic sender IDs must be distinct")
+        addresses = [sender.address for sender in self.senders if sender.enabled]
+        if len(set(addresses)) != len(addresses):
+            raise ValueError("Enabled dynamic sender IPs must be distinct")
+        return self
+
+
+class RadiusSettings(Record):
+    accounting: AccountingSettings = Field(default_factory=AccountingSettings)
+    dynamic_authorization: DynamicSettings = Field(default_factory=DynamicSettings)
+    servers: list[RadiusServer] = Field(default_factory=list, max_length=16)
+    materials: dict[str, RadiusMaterial] = Field(default_factory=dict, max_length=128)
+    templates: dict[str, SupplicantTemplate] = Field(default_factory=dict, max_length=256)
+    response_timeout_seconds: int = Field(default=3, ge=1, le=60)
+    attempts: int = Field(default=3, ge=1, le=10)
+    exchange_timeout_seconds: int = Field(default=60, ge=1, le=60)
+    failed_cycle_retry_seconds: int = Field(default=60, ge=1, le=86400)
+    discovery_seconds: int = Field(default=3, ge=1, le=3600)
+    reauthentication_seconds: int = Field(default=0, ge=0, le=1000000)
+    inactivity_seconds: int = Field(default=0, ge=0, le=1000000)
+    nas_identifier: str | None = Field(default=None, max_length=253)
+    nas_ip_address: str | None = None
+    mab_case: Literal["lower", "upper"] = "lower"
+    mab_separator: Literal["", ":", "-"] = ""
+    station_case: Literal["lower", "upper"] = "upper"
+    station_separator: Literal["", ":", "-"] = "-"
+
+    @field_validator("nas_identifier")
+    @classmethod
+    def identifier_octets(cls, value):
+        if value is not None:
+            try:
+                valid = 1 <= len(value.encode("utf-8")) <= 253
+            except UnicodeError:
+                valid = False
+            if not valid:
+                raise ValueError("NAS identifier must contain 1–253 UTF-8 octets")
+        return value
+
+    @field_validator("nas_ip_address")
+    @classmethod
+    def advertised_ipv4(cls, value):
+        return str(ipaddress.IPv4Address(value)) if value is not None else None
+
+    @model_validator(mode="after")
+    def ids(self):
+        if len({s.id for s in self.servers}) != len(self.servers):
+            raise ValueError("RADIUS server IDs must be distinct")
+        if any(key != value.id for collection in (self.materials, self.templates) for key, value in collection.items()):
+            raise ValueError("RADIUS record keys must match IDs")
+        return self
+
+
 class Port(Record):
     id: str = Field(default_factory=uid)
     bridge_port: int = Field(ge=1, le=65535)
@@ -96,6 +321,7 @@ class Port(Record):
     untagged: list[int] = Field(default_factory=lambda: [1], max_length=4094)
     forbidden: list[int] = Field(default_factory=list, max_length=4094)
     link_notifications: bool = True
+    authentication: PortAuthentication = Field(default_factory=PortAuthentication)
 
     @model_validator(mode="before")
     @classmethod
@@ -126,6 +352,7 @@ class Source(Record):
     initial_delay_ms: int = Field(default=1000, ge=1, le=86400000)
     interval_ms: int = Field(default=30000, ge=1, le=86400000)
     octets: int = Field(default=64, ge=64, le=9216)
+    supplicant: SupplicantProfile | None = None
 
     _mac = field_validator("mac")(mac)
 
@@ -278,7 +505,8 @@ class SnmpSettings(Record):
 
 
 class Configuration(Record):
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
+    radius: RadiusSettings = Field(default_factory=RadiusSettings)
     switch: Switch = Field(default_factory=Switch)
     ports: dict[str, Port] = Field(default_factory=dict)
     vlans: dict[int, Vlan] = Field(default_factory=lambda: {1: Vlan(vid=1, name="Default", fdb_id=1001)})
@@ -299,11 +527,23 @@ class Configuration(Record):
     def migrate_credentials(cls, value):
         if not isinstance(value, dict):
             return value
-        version = value.get("schema_version", 3)
+        version = value.get("schema_version", 4)
         if type(version) is not int:
             raise ValueError("Configuration schema version must be an integer")
-        if version not in (1, 2):
+        if version not in (1, 2, 3):
             return value
+        ports, endpoints = value.get("ports", {}), value.get("endpoints", {})
+        if (not isinstance(ports, dict) or not isinstance(endpoints, dict) or
+                any(not isinstance(p, dict) for p in ports.values()) or
+                any(not isinstance(e, dict) or not isinstance(e.get("sources", []), list) or
+                    any(not isinstance(src, dict) for src in e.get("sources", [])) for e in endpoints.values())):
+            raise ValueError("Configuration ports, endpoints and sources have invalid shapes")
+        if "radius" in value or any("authentication" in p for p in ports.values()) or any("supplicant" in src for e in endpoints.values() for src in e.get("sources", [])):
+            raise ValueError("Legacy configuration cannot contain RADIUS security settings")
+        if version == 3:
+            raw = copy.deepcopy(value)
+            raw["schema_version"] = 4
+            return raw
         if "groups" in value:
             raise ValueError("Legacy configuration cannot contain schema 3 groups")
         raw = copy.deepcopy(value)
@@ -351,7 +591,7 @@ class Configuration(Record):
                     polling=credential.pop("polling"), writing=credential.pop("writing"))
                 credential["group_id"] = gid
             credentials[cid] = credential
-        raw.update(schema_version=3, groups=groups)
+        raw.update(schema_version=4, groups=groups)
         return raw
 
     @field_validator("credentials", mode="before")
@@ -390,6 +630,16 @@ class Configuration(Record):
             raise ValueError("Record keys must match their IDs")
         if not set(self.attachments) <= set(self.endpoints) or not set(self.attachments.values()) <= set(self.ports):
             raise ValueError("Invalid attachment reference")
+        profiles = [t.profile for t in self.radius.templates.values()] + [src.supplicant for e in self.endpoints.values() for src in e.sources if src.supplicant is not None]
+        for profile in profiles:
+            trust = self.radius.materials.get(profile.trust_id)
+            identity = self.radius.materials.get(profile.client_identity_id)
+            if trust is None or trust.kind != "ca":
+                raise ValueError("Select an existing RADIUS trust bundle")
+            if profile.method == "tls" and (identity is None or identity.kind != "client"):
+                raise ValueError("Select an existing client certificate and key")
+            if profile.client_identity_id is not None and (identity is None or identity.kind != "client"):
+                raise ValueError("Unknown client identity reference")
         for c in self.credentials.values():
             if c.version == "3" and c.group_id is not None and c.group_id not in self.groups:
                 raise ValueError("Unknown SNMPv3 group")

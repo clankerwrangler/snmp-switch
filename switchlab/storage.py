@@ -40,6 +40,7 @@ class Store:
             self.db.execute("PRAGMA synchronous=FULL")
             self.db.execute("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
             self.db.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, data TEXT NOT NULL)")
+            self.db.execute("CREATE TABLE IF NOT EXISTS radius_das (fingerprint TEXT PRIMARY KEY, value BLOB NOT NULL)")
             self.db.execute("DELETE FROM kv WHERE key = ?", ("setup_token",))
             self.db.commit()
             self.last_event = self.db.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
@@ -115,7 +116,7 @@ class Store:
             self._rollback(failure)
             raise
 
-    def commit(self, state, idempotency, durable=True):
+    def commit(self, state, idempotency, durable=True, radius_metadata=None):
         with self.transaction():
             if durable:
                 self.put("configuration", state.cfg.model_dump(mode="json"))
@@ -123,9 +124,30 @@ class Store:
             self.put("revision", state.revision)
             self.put("idempotency", idempotency)
             self.put("outbox", state.outbox)
+            self.put("radius_accounting_outbox", state.accounting_outbox)
+            self.put("radius_accounting_sequence", state.accounting_sequence)
+            self.put("radius_accounting_drops", state.accounting_drops)
+            if radius_metadata:
+                self._radius_metadata(radius_metadata)
             self.db.executemany("INSERT INTO events VALUES (?, ?)", [(e["id"], json.dumps(e)) for e in state.events if e["id"] > self.last_event])
             self.db.execute("DELETE FROM events WHERE id < ?", (max(0, state.event_id - 2000),))
         self.last_event = state.event_id
+
+    def radius_decisions(self):
+        rows = self.db.execute("SELECT fingerprint, value FROM radius_das LIMIT 4097").fetchall()
+        if len(rows) > 4096:
+            raise ValueError("Dynamic authorization receipt capacity exceeded")
+        return {fingerprint: json.loads(self.cipher.decrypt(value)) for fingerprint,value in rows}
+
+    def _radius_metadata(self, changes):
+        # Called only inside the same transaction as the corresponding Runtime.
+        for name in ("radius_sender_generations", "radius_replay_high_water"):
+            if name in changes:
+                self.put(name, changes[name])
+        for fingerprint, value in changes.get("das_put", {}).items():
+            encrypted = self.cipher.encrypt(json.dumps(value).encode())
+            self.db.execute("INSERT INTO radius_das VALUES (?, ?)", (fingerprint, encrypted))
+        self.db.executemany("DELETE FROM radius_das WHERE fingerprint=?", [(key,) for key in changes.get("das_delete", ())])
 
     def events(self):
         return [json.loads(r[0]) for r in self.db.execute("SELECT data FROM events ORDER BY id")]

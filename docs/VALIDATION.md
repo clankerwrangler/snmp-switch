@@ -2,6 +2,156 @@
 
 On 2026-09-09, the compact Simulation control passed the existing headless Chromium flow in 28.537 s, including keyboard disclosure, focus across refresh, presentation-only navigation, pause/resume, manual advancement, real stale-revision feedback, and the 390 px mobile layout. The synthetic instance kept SNMP disabled and identity unset; its processes, loopback socket, database, and key were cleaned up. No screenshots were taken. TypeScript/Vite and the two existing pure clock tests also passed (zero INET attempts). The existing `ScenarioPauseManual` model check passed before implementation; no clock model or command behavior changed.
 
+## Recorded RADIUS integration checks
+
+Executed on 2026-09-10. Results are separate source checkpoints, not one combined
+end-to-end run or a claim that the latest application image has been published.
+
+| Check | Actual result |
+|---|---|
+| Earlier engine/API/MIB/dispatcher integration checkpoint | 972 passed; 80 subtests passed; 14 skipped and one real-listener API case deselected; 110.63 s; 151 upstream warnings |
+| Final scope: changed controller/API/engine/MIB regression selection | 372 passed; one real-listener API case deselected; 19.09 s; INET0 |
+| Maintained full browser flow (`tests/ui-smoke.cjs`) | Passed in 39.387 s; existing flow plus RADIUS settings, copied profiles, safe attributes and grouped history; no page errors/screenshots or mobile overflow |
+| Changed native helper callers | Nine private-input/cancellation/capability/incremental cases passed in 0.18 s, INET0; synthetic child scripts, not a native EAP/crypto matrix rerun |
+| Current Docker test selection | Source/collection check includes 26 native-channel and 109 codec cases; eight wire cases include the new independent PAE walk/bulk/action case; collection creates no sockets |
+| Final shutdown and capacity follow-up | 56 passed in 2.00 s, INET0; includes actual SQLite rollback during close, retained replay ownership, full-cache denial/cached replay, and accounting record/byte bounds |
+| Network boundary for that selection | AF_INET/AF_INET6 creation prohibited; zero attempts; native/codec modules and the UDP wire module not rerun |
+| PAE observations/actions | Fourteen focused cases; current/last sessions, exact types/indexes, conditional omission, atomic actions, stale events, completion versus retirement, and reboot |
+| Incremental native-channel decoder | Three pure Python cases passed in 0.08 s, INET0; fragmented literal EAP metadata does not authorize without a complete NAS result; no native process or crypto rerun |
+| PAE application responder | Four cases across v2c and all v3 security profiles; real BER/USM with an in-memory transport; explicit IEEE view, final-PDU validation, action echo and GET completion |
+| Manifest and API | 129 definitions: 123 readable, ten writable, six inaccessible indexes; deterministic manifest and regenerated OpenAPI |
+| Current UI | TypeScript/Vite build passed; packaged assets match the tested build |
+| Current headless Chromium forms | Passed in 6.852 s; accounting/DAS plus existing RADIUS forms, sparse secrets, independent destinations, timer precedence, retained grants, desktop/mobile; no page errors or screenshots |
+
+The browser used synthetic authorization, disabled SNMP/identity, disabled
+accounting/DAS, a prebound ephemeral loopback HTTP socket, exact-origin requests,
+and guards against UDP/native authentication. It did not perform a RADIUS or PAE
+wire test. Browser/app processes exited, the socket closed, and the synthetic
+database/key were removed. Earlier browser checkpoints cover selected-port
+presentation and pending/canceled advancement through the same API/DOM owners.
+
+Three focused regressions first reproduced a PAE observation defect: Initialize,
+plain Reauthenticate, and independent session expiry could retire an unfinished
+EAP capture while still publishing aggregate counters as exact. The shared
+retirement path now preserves numeric history, omits incomplete observations
+until management boot, and rejects late events/results. Completed Accept/Reject
+consumption remains precise. The correction's initial 12-case and 247-case
+integration logs passed before the larger selection. The independent-expiry
+regression installs a due policy directly; it is not native timing evidence.
+
+The final shutdown check reproduced a queued DAS handler deleting its reservation
+before `close_dynamic` could persist a tombstone. Handlers now retain reservations
+during closure; the existing close owner persists retirement before draining and
+removing them. A failed SQL retirement keeps the reservation for retry. The
+corrected focused selection followed the 972-case checkpoint; the counts are
+not additive. Cache-capacity tests prefill valid-shaped records rather than
+sending thousands of datagrams. No current-image wire claim follows from them.
+
+The final scope completes independently configurable accounting timeout/attempts/
+backoff, captured delivery policy and the absolute original retention horizon.
+Focused tests cover timeout while connecting, receiving, or backing off; a policy
+change retires old queued/in-flight ownership without changing grants. A new
+combined host-mode regression covers raced single-host ownership, per-client
+VLAN/tag admission, membership references, API/SNMP baseline changes, selective
+VLAN deletion, and shared-service accounting.
+
+The maintained browser takes a disposable CA certificate through
+`SWITCHLAB_TEST_RADIUS_CA_FILE`, alongside its existing URL/password/browser
+inputs. The bounded local runner generated that certificate using the existing
+test fixture and removed it afterward. It kept all RADIUS destinations/listeners
+disabled, prohibited external authentication/UDP, and used synthetic response
+presentation only for simultaneous successful/pending/failed client rows.
+The actual authenticated API test separately verifies returned-versus-effective
+attributes, absent/present/invalid values, private-value omission, and bounded
+event history. The browser checks actual refresh completion before asserting
+open disclosure, focus, selected port, and unchanged scroll.
+
+The existing Docker CI runs Python tests, clean-runtime checks, and its isolated
+ordinary LAN/SNMP flow; it does not run an external RADIUS server or the browser.
+The new independent PAE UDP test is prepared for that CI and was not run locally.
+Current native EAP-to-PAE event/UDP integration is established by the separate
+controlled current-image fixture below, not the local no-network checks.
+RADIUS deployment source/NAT paths remain separate. Earlier controlled
+RADIUS fixture evidence remains separate; no additional listener or live-service
+execution is implied.
+
+### Current production-image fixture
+
+A current production-stage image, built from 37 frozen application/UI/native
+inputs, completed the controlled fixture in **28.569 s** with the packaged
+helper and no application-source mount or helper override. Independent
+puresnmp 2.0.1 read IEEE cells after real EAP-TLS and PEAP-MSCHAPv2 exchanges:
+TLS had 8 received/9 transmitted internal EAPOL frames; PEAP had 11/12. Typed
+state/backend/controlled status, identity-response diagnostics, silent-session
+ingress counters, and session cells agreed with the Engine. The wire assertions
+check ASN.1 tags and declared response lengths, not process-exit or MPPE status.
+
+With the task-only Access server paused, an actual unfinished TLS renewal
+advanced its observed counters to 9/10. Initialize under final unauthorized
+control then exposed `noSuchInstance` for potentially incomplete aggregates,
+retained the last valid session, preserved the unrelated PEAP grant, and allowed
+no late grant after the server resumed. A fresh successful exchange did not
+restore precision; management boot started a new observable counter epoch.
+Private numeric-history preservation and adversarial scheduling variants remain
+covered by the focused Engine tests rather than a private wire inspection.
+
+The same run exercised current MAB/accounting/DAS integration, configured
+accounting retry policy, three chronological collector samples, cancellation of
+old queued configuration, real generation-based `Acct-Delay-Time` of 3 seconds,
+and cached Disconnect replay after graceful app close/restart and replacement
+authentication. Full 300-second expiry is covered by the focused remaining-time
+tests, not claimed from a wire case bounded to 60 seconds. There were 29 trusted
+sender datagrams, including 11 SNMP requests with declared responses of 89–455
+octets, plus one untrusted-source negative packet. No private packets, keys,
+community, or raw opaque values were exported.
+
+All 16 preexisting containers were unchanged. Every fixture container, private
+network/volume, and synthetic credential was removed. The listener was bound
+only inside the isolated fixture at its approved address/UDP 11610; no host port
+was published. The original broader Net-SNMP/USM and deployment LAN/NAT cases
+remain normal CI or separate deployment scope.
+
+Three maintained regressions also passed with their existing owners (11 tests,
+INET0): populated encrypted schema-3 Store close/reload and durable migration,
+same-port duplicate-source removal retaining its grant, and idle expiration
+releasing a single-host slot for the next eligible subject. Earlier fixture-only
+TimeTicks conversion, exception-sentinel re-encoding, and post-restart readiness
+failures are retained locally; no application change was made to fit them.
+
+### Earlier real protocol checkpoints
+
+The pinned wpa_supplicant 2.12 helper includes upstream Message-Authenticator
+length fix `aa02cfa569477f67f3915c8b9a83d1a7ca93693d` and the protected managed
+result patches in `runtime/eap/`. Its prerequisite had 15 passing channel,
+correlation, integrity, backpressure, and cancellation checks, followed by real
+TLS 1.2 EAP-TLS and PEAP-MSCHAPv2 exchanges with isolated FreeRADIUS 3.2.10.
+Wrong server name, untrusted CA/client, wrong password, and expired-server
+negative cases passed. Authenticated NAS results and ordered attributes remain
+separate from peer/key success and process exit. The stock pending-request-loss
+hypothesis was disproved; actual stock 2.12 retains the pending request.
+
+A default nonroot production-stage image separately completed EAP-TLS/PEAP with
+the installed helper, matching receipt, and runtime libraries, without application
+source mounts or a compiler. Actual requests checked default NAS-Identifier with
+no synthetic loopback NAS-IP, explicit identifier with no NAS-IP, and explicit
+advertised IPv4. A later production-stage checkpoint completed real MAB,
+a silent TLS session, independent accounting, and CoA/Disconnect in 19.953 s.
+It covered all-match VLAN changes, atomic NAK, selector contradictions, State
+and Proxy-State, invalid/untrusted/stale drops, immediate zero timeout, cached
+duplicates against replacement sessions, sender-secret ABA, chronological
+cumulative interims, a delayed collector, idle expiry, and graceful Stop/Off.
+All task fixture objects and synthetic secrets were removed; existing services
+were unchanged and no ports were published.
+
+These real image checkpoints precede the latest PAE projection, observation
+retirement, and service-form changes. They do not prove current PAE wire/event
+completeness, full EAP/PAE conformance, TLS 1.3, NAC-product compatibility, LAN/NAT
+source fidelity, or every crash/power-loss interleaving. The RADIUS models ran
+before implementation and remain separate finite safety abstractions, not
+composition or implementation-refinement proofs. See the
+[formal report](../specification/CURRENT_VERIFICATION.md) and
+[RADIUS behavior](../specification/docs/RADIUS.md).
+
 ## Recorded users and groups checks
 
 Executed locally on 2026-09-08 with the pinned Python 3.12 environment and unchanged PySNMP 7.1.29:

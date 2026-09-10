@@ -1,0 +1,15 @@
+{
+  "version": "2.12",
+  "url": "https://w1.fi/releases/wpa_supplicant-2.12.tar.gz",
+  "sha256": "08e23937e16d0155e55cab2b51f51fbe10d80a1aa91c4e15442645059b737ef6",
+  "security_fix": "aa02cfa569477f67f3915c8b9a83d1a7ca93693d",
+  "patches": {
+    "0000-upstream-radius-ma-length.patch": "d13ac6ce687155dc736353ecb7cbe691fd4817075940ee0ade3f7e2e8d9394fc",
+    "0001-protected-secret-file.patch": "4d8d998cba8c061c784048521ede97e755929d0bae92c3024ebc7b6a084952e5",
+    "0002-native-certificate-result.patch": "3ebd30347c21c4d751c13bf27021e6b6097ea0a4f4da44bcab6c3c8eb72afe9c",
+    "0003-network-credential-line-bound.patch": "14587ca935094b4e43e8f3f9eae70098d52e17b4344ad92cb09b48cb77d5174e",
+    "0004-protected-attribute-file.patch": "1ee35ff2e4bd8a6534d0ec090adbae676a753601a61aa076a1498c5db3b71eb6",
+    "0005-switchlab-managed-result.patch": "226721ea0081ce5b8459d1ed629ccc6a59588cfba1588a2b38d526a60faebd29"
+  },
+  "config_sha256": "09b9d7a7b020e0792608f94962b9880f805ee1f851d8ee2108c0272589b767d4"
+}

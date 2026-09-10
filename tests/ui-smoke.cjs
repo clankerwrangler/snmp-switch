@@ -1,4 +1,5 @@
-// Run against a fresh local instance. Requires Playwright and Chromium.
+// Run against a fresh local instance. Requires Playwright, Chromium, and a disposable
+// CA certificate at SWITCHLAB_TEST_RADIUS_CA_FILE (configuration tests only).
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,6 +17,8 @@ const path = require('node:path');
   const state=()=>page.evaluate(async()=> (await fetch('/api/v1/state')).json());
   const screenshots=process.env.SWITCHLAB_TEST_SCREENSHOTS||path.join(__dirname,'../docs/screenshots');
   async function screenshot(name){if(screenshots==='0')return;fs.mkdirSync(screenshots,{recursive:true});await page.screenshot({path:path.join(screenshots,name),fullPage:true});}
+  assert.ok(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE,'Supply a disposable CA certificate for the RADIUS configuration flow');
+  const radiusCA=fs.readFileSync(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE,'utf8');
   const fixtureURL=process.env.SWITCHLAB_TEST_URL||'http://127.0.0.1:8765';
   const fixtureOrigin=new URL(fixtureURL).origin;
   await page.route('**/*',route=>new URL(route.request().url()).origin===fixtureOrigin?route.continue():route.abort());
@@ -622,6 +625,101 @@ const path = require('node:path');
   assert.ok((await vlan20.locator('td').nth(4).textContent()).split(', ').includes(String(snapshot.ports[sharedPort].bridge_port)));
   await page.locator('nav button[data-id=settings]').click();
   console.log('Independent VLAN browser passed: actual admitted/untagged/forbidden sets, explicit empty egress, untouched native preview/formula, unrelated edit preservation, rejected overlap and unchanged endpoint/source data.');
+  // RADIUS uses the existing settings/source/selected-port owners. No server or
+  // listener is enabled here; protocol interoperability is tested separately.
+  const radiusCard=page.locator('#radius-config');
+  const saveRadius=async()=>{await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});};
+  await radiusCard.locator('#radius-servers > summary').click();
+  await radiusCard.getByRole('button',{name:'+ Server',exact:true}).click();
+  await page.getByLabel('Label',{exact:true}).fill('Browser RADIUS');await page.getByLabel('Server IP address',{exact:true}).fill('192.0.2.10');
+  await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-radius-secret');await page.getByLabel('Enabled',{exact:true}).uncheck();await saveRadius();
+  let radiusState=await state();const radiusServer=radiusState.radius.servers[0];assert.ok(radiusServer.has_secret);assert.equal(radiusServer.enabled,false);
+  await radiusCard.locator('.setting-row').filter({hasText:'Browser RADIUS'}).getByRole('button',{name:'Edit',exact:true}).click();
+  assert.equal(await page.getByLabel('Shared secret (blank = unchanged)',{exact:true}).inputValue(),'');await page.getByLabel('Label',{exact:true}).fill('Browser RADIUS renamed');await saveRadius();
+  await radiusCard.locator('#radius-materials > summary').click();await radiusCard.getByRole('button',{name:'+ Trust bundle',exact:true}).click();
+  await page.getByLabel('Label',{exact:true}).fill('Browser trust');await page.locator('dialog textarea[name=certificate]').fill(radiusCA);await saveRadius();
+  radiusState=await state();const trust=Object.values(radiusState.radius.materials).find(m=>m.label==='Browser trust');
+  await radiusCard.locator('.setting-row').filter({hasText:'Browser trust'}).getByRole('button',{name:'Edit',exact:true}).click();
+  assert.equal(await page.locator('dialog textarea[name=certificate]').inputValue(),'');await page.getByLabel('Label',{exact:true}).fill('Browser trust renamed');await saveRadius();
+  await radiusCard.locator('#radius-templates > summary').click();await radiusCard.getByRole('button',{name:'+ Template',exact:true}).click();
+  await page.getByLabel('Template label',{exact:true}).fill('Browser supplicant');await page.locator('dialog [name=method]').selectOption('peap');
+  await page.getByLabel('Outer identity',{exact:true}).fill('outer-browser');await page.locator('dialog [name=trust_id]').selectOption(trust.id);
+  await page.getByLabel('Expected server DNS name',{exact:true}).fill('radius-fixture.invalid');await page.getByLabel('Inner username',{exact:true}).fill('inner-'+ 'x'.repeat(64));
+  await page.getByLabel('Password',{exact:true}).fill('synthetic-browser-peap-password');await saveRadius();
+  radiusState=await state();const template=Object.values(radiusState.radius.templates).find(t=>t.label==='Browser supplicant');
+  await page.locator('nav button[data-id=endpoints]').click();
+  for(const sourceEndpoint of [endpoint,second]){
+    await page.locator(`button[data-action=supplicants][data-id="${sourceEndpoint.id}"]`).click();
+    await page.locator('dialog [name=template_id]').selectOption(template.id);assert.equal(await page.locator('dialog [name=method]').inputValue(),'peap');
+    if(sourceEndpoint.id===endpoint.id)await page.getByLabel('Inner username',{exact:true}).fill('custom-browser-inner');
+    await saveRadius();
+  }
+  radiusState=await state();assert.equal(radiusState.endpoints[endpoint.id].sources[0].supplicant.username,'custom-browser-inner');
+  assert.equal(radiusState.endpoints[second.id].sources[0].supplicant.username,'inner-'+ 'x'.repeat(64));
+  assert.ok(radiusState.endpoints[endpoint.id].sources[0].supplicant.has_password);
+  await page.locator('nav button[data-id=settings]').click();
+  if(!await radiusCard.locator('#radius-templates').evaluate(el=>el.open))await radiusCard.locator('#radius-templates > summary').click();
+  await radiusCard.locator('.setting-row').filter({hasText:'Browser supplicant'}).getByRole('button',{name:'Edit',exact:true}).click();
+  await page.getByLabel('Inner username',{exact:true}).fill('changed-template-only');await saveRadius();
+  radiusState=await state();assert.equal(radiusState.endpoints[endpoint.id].sources[0].supplicant.username,'custom-browser-inner');assert.equal(radiusState.endpoints[second.id].sources[0].supplicant.username,'inner-'+ 'x'.repeat(64));
+  await radiusCard.locator('#radius-accounting > summary').click();await radiusCard.getByRole('button',{name:'+ Accounting target',exact:true}).click();
+  assert.equal(await page.getByLabel('UDP port',{exact:true}).inputValue(),'1813');await page.getByLabel('Label',{exact:true}).fill('Browser collector');
+  await page.getByLabel('Server IP address',{exact:true}).fill('192.0.2.11');await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-accounting-secret');await saveRadius();
+  await radiusCard.locator('.setting-row').filter({hasText:'Browser collector'}).getByRole('button',{name:'Edit',exact:true}).click();assert.equal(await page.getByLabel('Shared secret (blank = unchanged)',{exact:true}).inputValue(),'');await saveRadius();
+  for(const [mode,interval] of [['local',120],['off',0],['server',null]]){
+    await radiusCard.getByRole('button',{name:'Accounting settings',exact:true}).click();await page.locator('dialog [name=interim_mode]').selectOption(mode);
+    await page.getByLabel('Local interim interval (simulation seconds)',{exact:true}).fill('120');
+    await page.getByLabel('Response timeout (real seconds)',{exact:true}).fill('4');await page.getByLabel('Attempts per target',{exact:true}).fill('2');await page.getByLabel('Retry backoff base (real seconds)',{exact:true}).fill('0');await saveRadius();
+    radiusState=await state();assert.equal(radiusState.radius.accounting.interim_seconds,interval);assert.equal(radiusState.radius.accounting.response_timeout_seconds,4);assert.equal(radiusState.radius.accounting.attempts,2);assert.equal(radiusState.radius.accounting.retry_backoff_seconds,0);
+    assert.equal(radiusState.radius.accounting.enabled,false);assert.equal(radiusState.radius.response_timeout_seconds,3);assert.equal(radiusState.radius.attempts,3);
+  }
+  await radiusCard.locator('#radius-dynamic > summary').click();await radiusCard.getByRole('button',{name:'+ Trusted sender',exact:true}).click();
+  await page.getByLabel('Label',{exact:true}).fill('Browser sender');await page.getByLabel('Sender IP address',{exact:true}).fill('192.0.2.12');await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-das-secret');await saveRadius();
+  await radiusCard.locator('.setting-row').filter({hasText:'Browser sender'}).getByRole('button',{name:'Edit',exact:true}).click();assert.equal(await page.getByLabel('Shared secret (blank = unchanged)',{exact:true}).inputValue(),'');await saveRadius();
+  await radiusCard.getByRole('button',{name:'Dynamic authorization settings',exact:true}).click();await page.getByLabel('Bind IP address',{exact:true}).fill('127.0.0.1');await page.getByLabel('UDP port',{exact:true}).fill('3799');await saveRadius();
+  radiusState=await state();assert.equal(radiusState.radius.dynamic_authorization.enabled,false);assert.equal(radiusState.radius.dynamic_status.ready,false);assert.ok(radiusState.radius.dynamic_authorization.senders[0].has_secret);
+  for(const label of ['Browser collector','Browser sender']){await radiusCard.locator('.setting-row').filter({hasText:label}).getByRole('button',{name:'Delete',exact:true}).click();await page.locator('dialog').getByRole('button',{name:'Delete',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});}
+  await page.locator('nav button[data-id=overview]').click();await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).click();
+  const overviewClasses=await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).getAttribute('class');
+  const carrier=(await state()).ports[sharedPort].operational_up;
+  await openPort();await page.locator('dialog [name=auth_control]').selectOption('auto');await page.locator('dialog [name=auth_method]').selectOption('dot1x');await page.locator('dialog [name=auth_host_mode]').selectOption('multi-auth');await savePort();
+  assert.equal((await state()).ports[sharedPort].operational_up,carrier);
+  assert.equal(await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).getAttribute('class'),overviewClasses);
+  // Presentation-only responses exercise simultaneous successful, pending, failed
+  // clients and safe on-demand attributes. They never install a backend grant.
+  const macA=endpoint.sources[0].mac,macB=second.sources[0].mac,macC='02:11:22:33:44:77';
+  const safeResponse={nas_code:2,attributes:[{name:'Service-Type',status:'present',value:2},{name:'Tunnel-Private-Group-ID',status:'present',value:20},{name:'Session-Timeout',status:'absent'}],omitted:[{name:'Class',count:2},{name:'State',count:1}]};
+  const badResponse={nas_code:2,attributes:[{name:'Service-Type',status:'present',value:8},{name:'Idle-Timeout',status:'invalid'}],omitted:[{name:'Attribute 11',count:1}]};
+  const displayRadius=async route=>{const actual=await route.fetch(),body=await actual.json();body.authentication_sessions=[{id:'browser-display-session',port_id:sharedPort,mac:macA,method:'peap',vid:20,source:'radius',started_ms:0,in_octets:128,in_packets:2,lease_deadline_ms:null,idle_deadline_ms:null,reauthentication_deadline_ms:null}];body.authentication_clients=[{port_id:sharedPort,mac:macA,status:'authorized',method:'peap',response:safeResponse},{port_id:sharedPort,mac:macB,status:'pending',method:'peap'},{port_id:sharedPort,mac:macC,status:'failed',reason:'local-policy <b>not applied</b>',response:badResponse}];await route.fulfill({response:actual,json:body});};
+  const displayHistory=async route=>{const actual=await route.fetch(),body=await actual.json();body.events.push(...[900000,900001].map(id=>({id,kind:'authentication-failed',port_id:sharedPort,mac:macC,simulation_ms:1000,reason:'local-policy <b>not applied</b>',response:badResponse})));await route.fulfill({response:actual,json:body});};
+  const eventsURL=new URL('/api/v1/events?limit=2000',fixtureURL).href;
+  await page.route(statusURL,displayRadius);await page.route(eventsURL,displayHistory);
+  try{
+    await page.reload();await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).click();
+    assert.equal(await page.locator('.port-detail').count(),1);
+    const clientRows=detail.locator('.authentication-clients tbody tr');
+    await clientRows.filter({hasText:macA}).getByText('Authorized',{exact:true}).waitFor();await clientRows.filter({hasText:macB}).getByText('pending',{exact:true}).waitFor();await clientRows.filter({hasText:macC}).getByText('failed',{exact:true}).waitFor();
+    assert.equal(await clientRows.locator('td b').filter({hasText:'not applied'}).count(),0);
+    const currentDetails=page.locator(`[id="current-response-${sharedPort}-${macA}"]`);await currentDetails.locator(':scope > summary').click();
+    await currentDetails.getByText('Present × 2; value omitted',{exact:true}).waitFor();await currentDetails.getByText('absent',{exact:true}).waitFor();
+    const history=page.locator(`[id="auth-history-${sharedPort}-${macC}"]`);await history.locator(':scope > summary').click();await history.getByText('authentication-failed × 2',{exact:true}).waitFor();
+    const historical=history.locator('details');await historical.locator('summary').click();await historical.getByText('invalid',{exact:true}).waitFor();
+    await historical.locator('summary').focus();const scroll=await page.evaluate(()=>scrollY);
+    await history.evaluate(el=>el.dataset.refreshProbe='waiting');
+    await page.waitForFunction(id=>!document.getElementById(id).dataset.refreshProbe,`auth-history-${sharedPort}-${macC}`);
+    assert.equal(await history.evaluate(el=>el.open),true);assert.equal(await historical.evaluate(el=>el.open),true);
+    assert.equal(await historical.locator('summary').evaluate(el=>el===document.activeElement),true);
+    assert.equal(await page.locator('.port.selected').getAttribute('data-id'),sharedPort);assert.equal(await page.evaluate(()=>scrollY),scroll);
+    await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.setViewportSize({width:1440,height:1100});
+  }finally{await page.unroute(statusURL,displayRadius);await page.unroute(eventsURL,displayHistory);}
+  await page.reload();await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).click();
+  await openPort();await page.locator('dialog [name=auth_control]').selectOption('force-authorized');await savePort();
+  radiusState=await state();assert.equal(radiusState.authentication_sessions.length,0);assert.equal(radiusState.ports[sharedPort].operational_up,carrier);
+  assert.equal(radiusState.radius.accounting.targets.length,0);assert.equal(radiusState.radius.dynamic_authorization.senders.length,0);
+  assert.equal(radiusState.radius.servers.length,1);assert.equal(radiusState.radius.servers[0].enabled,false);
+  const radiusText=JSON.stringify(radiusState);for(const privateValue of ['synthetic-browser-radius-secret','synthetic-browser-peap-password','synthetic-browser-accounting-secret','synthetic-browser-das-secret','BEGIN CERTIFICATE'])assert.equal(radiusText.includes(privateValue),false);
+  await page.locator('nav button[data-id=settings]').click();
+  console.log('RADIUS browser passed: independent disabled destinations, captured retry policy, sparse secrets, copied profiles/templates, unchanged carrier/colors, selected-port successful/pending/failed presentation, grouped escaped history, safe on-demand attributes, focus/disclosure/scroll refresh and mobile. Presentation samples do not authorize backend sessions.');
   const final=await state();assert.equal(final.snmp.enabled,false);assert.equal(final.switch.identity.sys_object_id,null);
   await screenshot('settings.png');
   await page.setViewportSize({width:390,height:844});

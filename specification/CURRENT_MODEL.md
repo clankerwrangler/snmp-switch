@@ -16,6 +16,8 @@ and [application validation](../docs/VALIDATION.md) for implementation tests.
 | `GroupedAccess.tla` | Canonical communities/users/groups, policy projection into the existing access/SET owners, normalized migration, atomic saves, and shared-generation invalidation | Schema loading, group/credential commands, and incoming authorization |
 | `EntityInventory.tla` | Fixed physical/alias/interface identity, independent filtered snapshots, and actual-row-change timestamps | Read-only ENTITY projection and management uptime |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original MP/security record association, exact ownership through admission, consumption/discard, expiry, reuse, and response failure | Pinned response-lifetime integration |
+| `RadiusAuthorization.tla` | Current authorization captures, lease/VLAN invalidation, and link/accounting independence | Per-port/MAC authorization and existing runtime admission |
+| `RadiusDynamicAuthorization.tla` | Conjunctive session selection, all-or-none CoA/Disconnect, and cached duplicate decisions | Existing engine transaction and dynamic-request handling |
 | `StorageOutcomes.tla` | Published versus durable state, failed rollback/unknown commit, faulted effect gates, and validated new-incarnation recovery | Store/Engine failure and startup paths |
 | `SetTokenEquivalence.tla` | Finite token-allocation certificate and equality-only view of the unchanged SET graph | Model-checking reduction, not application behavior |
 | `TestSwitch.tla` and the `*Scenarios.tla` modules | Focused initial states, action sequences, independent expected outcomes, and required completion | Regression fixtures, not another state owner |
@@ -79,10 +81,20 @@ the fault. Recovery liveness assumes an external restart and available valid
 storage, not an automatic retry loop. Old queued work stays stale across repeated
 restarts.
 
+The two independent RADIUS graphs check authorization and dynamic-request safety.
+Authorization distinguishes explicit VLAN assignment from inherited PVID and
+rejects stale replies after invalidation or lease expiry. Authentication and
+accounting availability do not change carrier state. Dynamic requests match all
+selectors together, apply to all selected sessions or none, and reuse a cached
+decision without repeating effects. These graphs do not compose with `Switch`
+or establish liveness. Causal manual advancement, equal-deadline scheduling,
+real EAP/packet validation, and a bounded replay cache that survives graceful
+restart remain implementation-test obligations.
+
 ## Finite scope
 
 `configs/` is the executable source of bounds, selected actions, invariants, and
-fairness. There are 50 normal configurations and one explicit unreduced SET
+fairness. There are 52 normal configurations and one explicit unreduced SET
 diagnostic. The normal suite contains both general finite graphs and scripted
 traces; these do not collectively prove an unrestricted production-sized system.
 
@@ -96,6 +108,8 @@ traces; these do not collectively prove an unrestricted production-sized system.
 | SET scenarios | Seven scripted cases, VLANs 1/10/20, up to four varbinds; bitmap/absent-destroy cases use two ports. |
 | Response | One ticket plus foreign replacement identities; lifecycle graph, 19 reuse/diagnostic traces, 14 transaction traces, and 240 insertion-boundary branches. |
 | Storage | Four opaque durable values, three incarnation tokens, one queued item/four work kinds; graph and 40 recovery branches. |
+| RADIUS authorization | One client, two VLANs, three generation tokens, two-tick leases; automatic/manual ticks and independent accounting availability. |
+| RADIUS dynamic requests | Two clients, two VLANs, two session incarnations; one immutable request and its retained decision, optional conjunctive session selector, and per-client applicability. |
 | Groups | Two credentials, three groups, two views plus no-view, two opaque key bundles, three security levels, two source classes, two targets, one pending PDU. Eight normalized ownership cases and 54 queued/current-boundary traces replace detailed schema, conversion, form, and security-input cross-products. |
 
 Generation tokens are not reused while captured by outstanding work. Abstract

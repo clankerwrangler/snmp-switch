@@ -205,3 +205,31 @@ async def test_shared_v2_credential_polling_and_traps_are_independent(engine):
         if a:
             a.close()
         transport.close()
+
+
+async def test_independent_pae_walk_bulk_and_atomic_actions(engine):
+    e=engine;pid=next(iter(e.state.cfg.ports));index=e.state.cfg.ports[pid].if_index
+    await endpoint(e)
+    await e.execute('view-save',{'id':'pae','name':'Explicit IEEE PAE','includes':['1.0.8802.1.1.1']})
+    adapter,port=await start(e,polling={'enabled':True,'view_id':'pae'},writing={'enabled':True,'view_id':'pae'})
+    root='1.0.8802.1.1.1.1'
+    try:
+        c=client(port)
+        assert (await c.getnext(OID(root))).oid==OID(root+'.1.1.0')
+        rows=[row async for row in c.walk(OID(root+'.1.2.1.3'))]
+        assert [str(row.oid).split('.')[-1] for row in rows]==['101','102','103','104']
+        assert all(row.value.pythonize()==b'\x80' for row in rows)
+        bulk=await c.bulkget([],[OID(root)],max_list_size=8)
+        names=[tuple(map(int,str(name).split('.'))) for name in bulk.listing]
+        assert len(names)==8 and names==sorted(set(names))
+        actions={OID(f'{root}.1.2.1.5.{index}'):Integer(1),OID(f'{root}.1.2.1.4.{index}'):Integer(1),OID(f'{root}.2.1.1.6.{index}'):Integer(1)}
+        before=e.state
+        with pytest.raises(ErrorResponse):await c.multiset({**actions,OID(root+'.1.1.0'):Integer(2)})
+        assert e.state is before
+        response=await c.multiset(actions)
+        assert all(value.pythonize()==1 for value in response.values())
+        assert e.state.up(pid) and e.state.cfg.ports[pid].authentication.control=='force-unauthorized'
+        assert [event['kind'] for event in e.state.events if event['kind'].startswith('pae-')]==['pae-initialize']
+        for column in (4,5):assert (await c.get(OID(f'{root}.1.2.1.{column}.{index}'))).pythonize()==2
+        assert (await c.get(OID(f'{root}.2.1.1.1.{index}'))).pythonize()==9
+    finally:adapter.close()
