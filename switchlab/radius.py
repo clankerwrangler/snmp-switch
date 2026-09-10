@@ -613,18 +613,23 @@ async def mab_exchange(settings, server, profile, port, address, session_id, *, 
     family = socket.AF_INET6 if ipaddress.ip_address(server.address).version == 6 else socket.AF_INET
     loop = asyncio.get_running_loop()
     invalid, received_bytes = 0, 0
+    stage = "socket"
     try:
         with socket.socket(family, socket.SOCK_DGRAM) as udp:
             udp.setblocking(False)
+            stage = "bind"
             udp.bind((server.source_address or ("::" if family == socket.AF_INET6 else "0.0.0.0"), 0))
+            stage = "connect"
             await loop.sock_connect(udp, (server.address, server.port))
             for _ in range(settings.attempts):
+                stage = "send"
                 sent = await loop.sock_sendto(udp, request, (server.address, server.port))
                 if sent != len(request):
                     raise RadiusError("access_send_failed")
                 try:
                     async with asyncio.timeout(settings.response_timeout_seconds):
                         while True:
+                            stage = "receive"
                             response = await loop.sock_recv(udp, 4097)
                             received_bytes += len(response)
                             if received_bytes > 1048576 or invalid >= 512:
@@ -636,11 +641,22 @@ async def mab_exchange(settings, server, profile, port, address, session_id, *, 
                                 continue
                             if on_response is not None:
                                 on_response()
+                            stage = "close"
                             return NativeObservation(result, 0, 0, 0, int(result.code == 11), False, False, invalid)
                 except TimeoutError:
                     continue
-    except OSError:
-        raise RadiusError("access_transport_unavailable") from None
+            stage = "close"
+    except OSError as error:
+        import errno
+        # Fixed categories only: OS messages can contain addresses or private text.
+        category = {
+            errno.EADDRNOTAVAIL: "address_not_available",
+            errno.EAFNOSUPPORT: "address_family_not_supported",
+            errno.ENETUNREACH: "unreachable", errno.EHOSTUNREACH: "unreachable",
+            errno.ECONNREFUSED: "refused",
+            errno.EACCES: "permission_denied", errno.EPERM: "permission_denied",
+        }.get(error.errno, "failed")
+        raise RadiusError(f"access_transport_{stage}_{category}") from None
     return NativeObservation(None, 0, 0, 0, 0, True, False, invalid, settings.attempts)
 
 

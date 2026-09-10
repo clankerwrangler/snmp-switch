@@ -7,11 +7,16 @@ RADIUS for web-administrator login. Link state remains independent of access.
 
 ## Configure access
 
-1. Open **SNMP & settings → RADIUS access**. Add an ordered authentication
+1. Open **RADIUS**. Add an ordered authentication
    server with its IP address, UDP port (normally 1812), and shared secret.
-   Optional source addresses must exist in the application's network namespace.
-2. For EAP, add a CA trust bundle and, for TLS, a client certificate/private key.
-   Create a supplicant template or edit an endpoint's **Supplicants** directly.
+   Leave **Source IP address** blank for automatic source selection. An explicit
+   address must exist in the application's network namespace—not just on the
+   Docker host. This bind address is separate from the advertised NAS IPv4 identity.
+2. For EAP, open **Certificates → Add certificate**. Choose CA trust or a client
+   identity, then select PEM files or paste PEM text. TLS needs both a CA trust
+   bundle and a client certificate with its matching private key. Save the
+   certificates, then create a supplicant template or edit an endpoint's
+   **Supplicants** directly.
    Set the expected server DNS name. PEAP additionally needs an inner username
    and password. Certificate and server-name validation are required.
 3. In **Switch overview**, select the port and **Configure port**. Choose
@@ -33,6 +38,13 @@ not replayed after authorization. Optional no-supplicant fallback also waits
 for activity. Optional authenticated-Reject fallback can use the MAC already
 observed from the represented EAP peer. Invalid integrity, missing helpers,
 certificate failures, and unusable Access-Accept policy are not NAS Rejects.
+
+Certificate lists separate CA trust from client identities and show references
+to templates and copied source profiles. Labels and short record IDs distinguish
+selections; importing alone does not select a certificate for any profile.
+Certificate/chain inputs are limited to 256 KiB and keys to 64 KiB. Saved contents
+are not displayed. Editing without replacement inputs retains them; canceling
+discards the local draft. Referenced certificates cannot be deleted.
 
 Template application and cloning copy settings; later template edits do not
 change copies. A clone can retain the same credential identity even when its
@@ -105,7 +117,7 @@ requires an eligible client and does not generate synthetic MAB traffic.
 
 ## Accounting
 
-Open **Accounting** within the same RADIUS card. Add independent collectors
+Open **Accounting** on the RADIUS page. Add independent collectors
 (normally UDP 1813), then enable accounting. Access-server configuration does not
 implicitly create a collector. Accounting failure never changes access.
 
@@ -223,11 +235,20 @@ import preserves destination deployment/security settings. Reboot ends volatile
 grants, resets operational clocks/counters, and invalidates old work. It is not
 an exact mid-session recovery mechanism.
 
-Use the RADIUS card and selected-port client status to distinguish no supplicant,
+Use the RADIUS page and selected-port client status to distinguish no supplicant,
 profile conflict, unusable policy, native capability failure, NAS rejection,
 transport outage, and replay-clock gating. The [API schema](../../docs/openapi.json)
 contains the revision-checked settings, source/session actions, and advancement
 routes. [Validation](../../docs/VALIDATION.md) records actual tests and their limits.
+
+MAB transport reasons identify the failing socket, bind, connect, send, receive,
+or close stage with a fixed error category. For example,
+`access_transport_bind_address_not_available` means the chosen local source
+could not be bound; `access_transport_connect_unreachable` is an OS route error.
+A receive-side `refused` can follow a send; it is not an authenticated Reject.
+Unclassified OS errors use the stage-specific `failed` category. Reasons omit
+raw OS text and addresses. `server-unavailable` reports no usable server response,
+not proven delivery; `server-reject` requires a validated Access-Reject.
 
 Protocol sources: [RFC 2865](https://www.rfc-editor.org/rfc/rfc2865.html),
 [RFC 2866](https://www.rfc-editor.org/rfc/rfc2866.html),
