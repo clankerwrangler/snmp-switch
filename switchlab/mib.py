@@ -60,6 +60,7 @@ class Projection:
         self.state = state  # Published states are never subsequently changed by the engine.
         self.includes = [oid(p) for p in includes]
         self.values = {}
+        self.materialized = {}
         self.bases = set()
         self.filtered = {}
         elapsed = int((time.monotonic() - state.boot_start) * 100)
@@ -79,16 +80,32 @@ class Projection:
             self.values[full] = value
 
     def table(self, prefix, columns, rows):
-        for col in columns:
-            self.bases.add(oid(prefix) + (col,))
+        prefix = oid(prefix)
+        bases = {col: prefix + (col,) for col in columns}
+        self.bases.update(bases.values())
         for index, values in rows:
             for col, val in values.items():
-                self.put(oid(prefix)+(col,), index, val)
+                self.put(bases[col], index, val)
+
+    def materialize(self, name):
+        if name not in self.materialized:
+            syntax, value = self.values[name]
+            self.materialized[name] = syntax(value)
+        return self.materialized[name]
 
     def build(self):
-        s, I, O, C, G, T, H = self.state, a.Integer32, octets, a.Counter32, a.Gauge32, a.TimeTicks, a.Counter64
+        s = self.state
+        # Capture scalar facts now; construct ASN.1 only for cells this PDU reads.
+        # These descriptors never consult a later Runtime or authorization state.
+        I = lambda value: (a.Integer32, value)
+        O = lambda value: (octets, value)
+        C = lambda value: (a.Counter32, value)
+        G = lambda value: (a.Gauge32, value)
+        T = lambda value: (a.TimeTicks, value)
+        H = lambda value: (a.Counter64, value)
+        D = lambda value: (a.ObjectIdentifier, value)
         sw = s.cfg.switch
-        system = [O(sw.identity.sys_descr), a.ObjectIdentifier(sw.identity.sys_object_id) if sw.identity.sys_object_id else None,
+        system = [O(sw.identity.sys_descr), D(sw.identity.sys_object_id) if sw.identity.sys_object_id else None,
                   T(self.ticks), O(sw.contact), O(sw.name), O(sw.location), I(2)]
         for n, value in enumerate(system, 1):
             if value is not None:
@@ -136,11 +153,11 @@ class Projection:
         self.bases.update(CURRENT+(i,) for i in range(3,8))
         physical, aliases, contains = [], [], []
         for index, columns, if_index in entity_inventory(s.cfg):
-            physical.append(((index,), {column: (a.ObjectIdentifier if column == 3 else
+            physical.append(((index,), {column: (D if column == 3 else
                              I if column in (4, 5, 6, 16) else O)(value)
                              for column, value in columns.items()}))
             if if_index is not None:
-                aliases.append(((index, 0), {2: a.ObjectIdentifier(oid("1.3.6.1.2.1.2.2.1.1") + (if_index,))}))
+                aliases.append(((index, 0), {2: D(oid("1.3.6.1.2.1.2.2.1.1") + (if_index,))}))
                 contains.append(((1, index), {1: I(index)}))
         self.table(ENTITY + (1, 1, 1, 1), range(2, 20), physical)
         self.table(ENTITY + (1, 3, 2, 1), (2,), aliases)
@@ -205,6 +222,9 @@ class Projection:
         if cutoff in self.filtered:
             return self.filtered[cutoff]
         values = {}
+        if not any(CURRENT[:len(p)] == p or p[:len(CURRENT)] == CURRENT for p in self.includes):
+            self.filtered[cutoff] = values
+            return values
         s = self.state
         for vid, v in s.cfg.vlans.items():
             # Wrap resets conceptual row timestamps independently of USM time.
@@ -228,7 +248,8 @@ class Projection:
         name = oid(name)
         if not self.allowed(name):
             return name, exceptions.noSuchObject
-        val = self.current(self.cutoff(name)).get(name) if name[:len(CURRENT)] == CURRENT else self.values.get(name)
+        val = (self.current(self.cutoff(name)).get(name) if name[:len(CURRENT)] == CURRENT
+               else self.materialize(name) if name in self.values else None)
         if val is not None:
             return name, val
         known = any(name[:len(base)] == base for base in self.bases)
@@ -242,7 +263,7 @@ class Projection:
         candidates = [k for k in filtered if k > name]
         candidate = min(candidates) if candidates else None
         if normal is not None and (candidate is None or normal < candidate):
-            return normal, self.values[normal]
+            return normal, self.materialize(normal)
         if candidate is not None:
             return candidate, filtered[candidate]
         return name, exceptions.endOfMibView

@@ -466,3 +466,64 @@ def test_set_multiple_vlan_assignments_permute_as_sets_without_reordering_noops(
         repeat = plan_set(plan.candidate, [binding("egress", 20, a.OctetString(b"\xc0")),
                                           binding("egress", 10, a.OctetString(b"\x80"))], ALL_OBJECTS)
         assert not repeat.changed and repeat.candidate.model_dump() == before
+
+
+def test_projection_materializes_only_selected_normal_cells(engine, monkeypatch):
+    # Large typed tables must not be allocated merely to answer one cell.
+    original = rfc1902.Integer32
+    constructed = []
+    def integer(value):
+        constructed.append(value)
+        return original(value)
+    monkeypatch.setattr("switchlab.mib.a.Integer32", integer)
+    projection = Projection(engine.state, ["1.3.6.1.2.1.2", "1.3.6.1.2.1.31"])
+    assert constructed == []
+    name = oid("1.3.6.1.2.1.2.2.1.1.101")
+    first = projection.get(name)
+    assert first[0] == name and first[1].tagSet == original.tagSet and int(first[1]) == 101
+    assert constructed == [101]
+    assert projection.get(name)[1] is first[1]
+    assert projection.next(name[:-1])[1] is first[1]
+    assert constructed == [101]
+
+
+async def test_unread_projection_cells_keep_the_captured_publication(engine):
+    e = engine
+    pid = next(iter(e.state.cfg.ports))
+    old = Projection(e.state, ["1.3.6.1.2.1.31"])
+    name = oid("1.3.6.1.2.1.31.1.1.1.18.101")
+    # Publish before the old cell has ever been materialized.
+    await e.execute("port-edit", {"id": pid, "patch": {"alias": "New alias"}})
+    fresh = Projection(e.state, ["1.3.6.1.2.1.31"])
+    assert str(old.get(name)[1]) == ""
+    assert str(fresh.get(name)[1]) == "New alias"
+    assert old.state is not fresh.state
+
+
+def test_same_published_state_samples_uptime_per_projection(engine, monkeypatch):
+    state = engine.state
+    clock = [state.boot_start + 1]
+    monkeypatch.setattr("switchlab.mib.time.monotonic", lambda: clock[0])
+    early = Projection(state, ["1.3.6.1.2.1.1.3"])
+    clock[0] += 2
+    later = Projection(state, ["1.3.6.1.2.1.1.3"])
+    name = oid("1.3.6.1.2.1.1.3.0")
+    assert early.state is later.state
+    assert int(early.get(name)[1]) == 100
+    assert int(later.get(name)[1]) == 300
+    # Materializing later must not resample the captured clock.
+    assert int(early.get(name)[1]) == 100
+
+
+@pytest.mark.parametrize("prefix", [
+    "1.3.6.1.2.1.17.7.1.4.2", "1.3.6.1.2.1.17.7.1.4.2.1.4.0.1",
+])
+def test_current_family_ancestor_and_exact_instance_views(engine, prefix):
+    projection = Projection(engine.state, [prefix])
+    name = CURRENT + (4, 0, 1)
+    assert projection.get(name)[1].asOctets() == b"\xf0"
+    assert projection.next(name[:-1])[0] == name
+    absent = name[:-1] + (4094,)
+    expected = rfc1905.noSuchInstance if projection.allowed(absent) else rfc1905.noSuchObject
+    assert projection.get(absent)[1].tagSet == expected.tagSet
+    assert CURRENT + (4,) in projection.bases

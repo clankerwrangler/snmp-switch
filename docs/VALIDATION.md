@@ -1,5 +1,50 @@
 # Implementation validation
 
+The request-local SNMP read optimization was checked on 2026-09-10 against
+`b6cb94db`, using Python 3.12 and PySNMP 7.1.29. Synthetic 24- and 96-port states
+had one active source/learned MAC per port and four VLANs. The existing in-memory
+BER dispatcher exercised normal v2c authorization, GET, GETNEXT, GETBULK, and
+response encoding/decoding without INET sockets or network round trips.
+
+| Full read view workload | Before | After |
+|---|---:|---:|
+| 24-port projection construction, median | 10.480 ms | 3.387 ms |
+| 24-port ifDescr GETNEXT walk, 25 PDUs, median | 325.078 ms | 128.168 ms |
+| Same column with GETBULK, one PDU, median | 15.998 ms | 9.343 ms |
+| 648 IF/ifX cells with GETNEXT, 675 PDUs, one run | 9.067 s | 3.578 s |
+| Same 648 cells with GETBULK, 27 PDUs, one run | 522.650 ms | 275.846 ms |
+| 96-port ifDescr GETNEXT control, 97 PDUs, median | 5.323 s | 1.953 s |
+
+The interface-only view also improved: its 648-cell serial walk fell from
+7.935 s to 2.960 s. Typed result digests, row counts, and PDU counts matched
+before/after and across GET/NEXT/BULK. Column walks used three samples;
+projection construction used 15 at 24 ports and five at 96. These are local
+compute measurements, not deployment latency guarantees; network delay,
+manager request patterns, and inventory size also affect response times.
+
+Profiling attributed roughly 90% of the original single-varbind dispatcher
+cost to eager projection construction. Only selected ordinary cells now allocate
+ASN.1 values; overlapping current-VLAN rows remain eager. Supported-column
+metadata, ordering, current-VLAN filtering,
+per-PDU clocks, and authorization are preserved. Engine snapshots, API JSON,
+and simulation ticks were measured separately; transaction/storage owners and
+UI assets were not changed.
+
+The affected maintained MIB/PAE and named in-memory read/lifetime checks passed
+148 tests in 5.19 s with zero INET attempts. They cover sparse/exact-instance
+views, old and fresh publications, same-state uptime, current read denial,
+conditional PAE omissions, and last-confirmed reads after storage faults.
+A fixed-clock comparison against the preserved prior projection matched 26,762
+GET/NEXT probes and 7,490 walked cells across 18 view/wrap cases, including ASN.1
+tags/BER, exceptions, cutoffs, and successor order. The unchanged ReadAccess and
+EntityReadConsistency checks completed before implementation: 95,744 and 3,456
+distinct states, respectively. Both searches completed with empty queues;
+ReadAccess also completed its temporal checks.
+They preserve the abstract read relation, not a proof of Python equivalence or
+performance. No new local listener, native EAP, host, or broad wire-suite run
+was performed. Logs, failed scratch fixture inputs, and baseline source remain
+local rather than shipped with the application.
+
 On 2026-09-10, the operator terminology, reduced interface help, separate SNMP/RADIUS/general settings,
 certificate file/paste forms, and selected-port detail passed the maintained
 headless browser flow in 48.202 s with native scrollbars visible. It covered sparse general/SNMP
