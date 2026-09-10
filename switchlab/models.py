@@ -38,6 +38,18 @@ def numeric_oid(value: str | None) -> str | None:
     return str(ObjectIdentifier(arcs))
 
 
+def numeric_oid_prefix(value: str) -> str:
+    value = value.strip()
+    if not re.fullmatch(r"\d+(?:\.\d+)*", value):
+        raise ValueError("Enter a numeric OID prefix")
+    if "." not in value:
+        root = int(value)
+        if root > 2:
+            raise ValueError("OID prefix root must be 0, 1, or 2")
+        return str(root)
+    return numeric_oid(value)
+
+
 class Record(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
@@ -387,10 +399,17 @@ class View(Record):
     @field_validator("includes")
     @classmethod
     def validate_oids(cls, values):
-        result = [numeric_oid(v) for v in values]
-        if any(v is None for v in result):
-            raise ValueError("View OIDs cannot be empty")
-        return result
+        return [numeric_oid_prefix(v) for v in values]
+
+
+def default_views(*, legacy=False):
+    views = {"all": View(id="all", name="All implemented objects" if legacy else "iso",
+                         includes=["1.3.6.1.2.1"] if legacy else ["1"])}
+    if not legacy:
+        views["internet"] = View(id="internet", name="internet", includes=["1.3.6.1"])
+    views["interfaces"] = View(id="interfaces", name="Identity and interfaces",
+        includes=["1.3.6.1.2.1.1", "1.3.6.1.2.1.2", "1.3.6.1.2.1.31"])
+    return views
 
 
 class PollingAccess(Record):
@@ -514,10 +533,7 @@ class Configuration(Record):
     attachments: dict[str, str] = Field(default_factory=dict)
     paused: bool = False
     snmp: SnmpSettings = Field(default_factory=SnmpSettings)
-    views: dict[str, View] = Field(default_factory=lambda: {
-        "all": View(id="all", name="All implemented objects", includes=["1.3.6.1.2.1"]),
-        "interfaces": View(id="interfaces", name="Identity and interfaces", includes=["1.3.6.1.2.1.1", "1.3.6.1.2.1.2", "1.3.6.1.2.1.31"]),
-    })
+    views: dict[str, View] = Field(default_factory=default_views)
     credentials: dict[str, Annotated[Community | UsmUser, Field(discriminator="version")]] = Field(default_factory=dict)
     groups: dict[str, AccessGroup] = Field(default_factory=dict)
     targets: dict[str, Target] = Field(default_factory=dict)

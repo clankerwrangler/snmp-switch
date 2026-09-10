@@ -55,6 +55,7 @@ async def test_independent_netsnmp_v3(engine,level):
         assert '2.999.123' in await command(*base,address,'1.3.6.1.2.1.1.2.0')
         await endpoint(e);await tick(e)
         assert 'INTEGER: 1' in await command(*base,address,'1.3.6.1.2.1.17.7.1.2.2.1.2.1001.2.0.0.0.0.16')
+        await e.execute('save-startup')
         await e.execute('reboot');await a.reboot()
         assert '2.999.123' in await command(*base,address,'1.3.6.1.2.1.1.2.0')
     finally:a.close()
@@ -330,7 +331,7 @@ async def test_independent_netsnmp_set_vlan_admin_permissions_and_restart(engine
             static + ".5.10", "i", "4", static + ".1.10", "s", "研发",
             static + ".2.10", "x", "80", static + ".4.10", "x", "80",
             static + ".3.10", "x", "40", pvid, "u", "10")
-        assert "INTEGER: 4" in created  # Echoed command, not the persisted active status.
+        assert "INTEGER: 4" in created  # Echoed command, not the active row status.
         assert "INTEGER: 1" in await command("snmpget", *base, static + ".5.10")
         name = await command("snmpget", "-Ox", *base, static + ".1.10")
         assert bytes.fromhex(name.split("Hex-STRING:", 1)[1].strip()) == "研发".encode()
@@ -355,12 +356,13 @@ async def test_independent_netsnmp_set_vlan_admin_permissions_and_restart(engine
             (static + ".5.1", "i", "6", "inconsistentValue"),
         ]
         for name, syntax, value, status in bad_cases:
-            before = e.state
+            before, startup = e.state, e.store.load()
             with pytest.raises(AssertionError) as failure:
                 await command("snmpset", *base, "1.3.6.1.2.1.2.2.1.7.102", "i", "1",
                               name, syntax, value, static + ".1.1", "s", "Not committed")
             assert status in str(failure.value) and "Failed object: ." + name in str(failure.value)
-            assert e.state is before and e.store.load() == before.cfg
+            assert e.state is before and e.store.load() == startup
+        await e.execute("save-startup")
         identity, boots, saved = a.engine_id, a.boots, e.state.cfg.model_dump()
         await e.execute("reboot")
         await a.reboot()

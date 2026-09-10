@@ -1,4 +1,5 @@
 """SQLite configuration transactions; encryption key lives outside the database."""
+import copy
 import json
 import os
 import sqlite3
@@ -7,8 +8,84 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
-from .models import Configuration, Identity
+from .models import Configuration, Identity, Port, Switch, RadiusSettings, default_views
 from pydantic import ValidationError
+
+
+# Physical lab fields remain automatically durable; every other switch/port
+# field belongs to the explicitly saved startup policy. These are simulator
+# hardware choices, not persistence rules inferred from MIB writability.
+LAB_SWITCH_FIELDS = ("id", "port_count", "base_mac", "description", "fdb_limit", "endpoint_limit", "source_limit")
+LAB_PORT_FIELDS = ("id", "if_index", "bridge_port", "name", "mode", "shared_partner", "forced_down", "speed", "mtu")
+
+
+def split_configuration(cfg):
+    startup = cfg.model_dump(mode="json")
+    lab = {"switch": {key: startup["switch"].pop(key) for key in LAB_SWITCH_FIELDS},
+           "ports": {pid: {key: port.pop(key) for key in LAB_PORT_FIELDS}
+                     for pid, port in startup["ports"].items()},
+           "radius": {key: startup["radius"].pop(key) for key in ("materials", "templates")}}
+    for key in ("endpoints", "attachments", "paused"):
+        lab[key] = startup.pop(key)
+    return lab, startup
+
+
+def _shape(value, keys):
+    if not isinstance(value, dict) or set(value) != set(keys):
+        raise ValueError("Invalid stored configuration fragment")
+
+
+def _default_port_policy(hardware):
+    return {key: value for key, value in Port.model_validate(hardware).model_dump(mode="json").items()
+            if key not in LAB_PORT_FIELDS}
+
+
+def reconciled_startup(startup, ports):
+    # Exact hardware IDs alone select saved policy. A replaced interface does not
+    # inherit the removed interface's policy merely by reusing its numeric index.
+    return {**startup, "ports": {pid: startup["ports"][pid] if pid in startup["ports"]
+                                else _default_port_policy(port)
+                                for pid, port in ports.items()}}
+
+
+def _complete_shape(value, normalized):
+    # Stored split records are complete, unlike sparse API requests and legacy
+    # whole-configuration inputs. Never let a model default fill a lost nested
+    # restriction (for example control=auto or a nonempty source-IP filter).
+    if isinstance(normalized, dict):
+        _shape(value, normalized)
+        for key, child in normalized.items():
+            _complete_shape(value[key], child)
+    elif isinstance(normalized, list):
+        if not isinstance(value, list) or len(value) != len(normalized):
+            raise ValueError("Invalid stored configuration collection")
+        for child, expected in zip(value, normalized):
+            _complete_shape(child, expected)
+
+
+def compose_configuration(lab, startup):
+    _shape(lab, ("switch", "ports", "radius", "endpoints", "attachments", "paused"))
+    _shape(startup, ("schema_version", "switch", "ports", "radius", "vlans", "snmp", "views", "credentials", "groups", "targets"))
+    _shape(lab["switch"], LAB_SWITCH_FIELDS)
+    _shape(startup["switch"], set(Switch.model_fields) - set(LAB_SWITCH_FIELDS))
+    _shape(lab["radius"], ("materials", "templates"))
+    _shape(startup["radius"], set(RadiusSettings.model_fields) - {"materials", "templates"})
+    if not isinstance(lab["ports"], dict) or not isinstance(startup["ports"], dict):
+        raise ValueError("Invalid stored port configuration")
+    for port in lab["ports"].values():
+        _shape(port, LAB_PORT_FIELDS)
+    for policy in startup["ports"].values():
+        _shape(policy, set(Port.model_fields) - set(LAB_PORT_FIELDS))
+    logical = reconciled_startup(startup, lab["ports"])
+    raw = {**logical, **{key: lab[key] for key in ("endpoints", "attachments", "paused")},
+           "switch": {**lab["switch"], **logical["switch"]},
+           "radius": {**lab["radius"], **logical["radius"]},
+           "ports": {pid: {**port, **logical["ports"][pid]} for pid, port in lab["ports"].items()}}
+    # Validation rejects malformed or missing cross-policy references. No
+    # restriction is dropped and no complete saved fragment gets defaulted.
+    cfg = Configuration.model_validate(copy.deepcopy(raw))
+    _complete_shape(raw, cfg.model_dump(mode="json"))
+    return cfg
 
 
 class RollbackFailed(RuntimeError):
@@ -80,10 +157,31 @@ class Store:
         self._confirmed_administrator = self.get("admin_hash")
         return result.rowcount == 1
 
+    def configuration_format(self):
+        keys = {row[0] for row in self.db.execute(
+            "SELECT key FROM kv WHERE key IN ('configuration_format', 'lab_configuration', 'startup_configuration', 'startup_revision')")}
+        if not keys:
+            return None
+        if keys != {"configuration_format", "lab_configuration", "startup_configuration", "startup_revision"}:
+            raise ValueError("Incomplete stored configuration")
+        version = self.get("configuration_format")
+        if type(version) is not int or version != 1:
+            raise ValueError("Invalid stored configuration format")
+        return version
+
     def load(self):
         self.require_healthy()
+        if self.configuration_format() is not None:
+            revision = self.get("startup_revision")
+            if type(revision) is not int or revision < 0:
+                raise ValueError("Invalid startup revision")
+            return compose_configuration(self.get("lab_configuration"), self.get("startup_configuration"))
         raw = self.get("configuration")
         if raw is not None:
+            # Missing saved fields retain their old effective access policy.
+            # Fresh defaults must not broaden an existing read or write grant.
+            if "views" not in raw:
+                raw = {**raw, "views": {key:view.model_dump() for key,view in default_views(legacy=True).items()}}
             try:
                 Identity.model_validate(raw["switch"]["identity"])
             except ValidationError:
@@ -116,11 +214,21 @@ class Store:
             self._rollback(failure)
             raise
 
-    def commit(self, state, idempotency, durable=True, radius_metadata=None):
+    def commit(self, state, idempotency, durable=True, radius_metadata=None, save_startup=False):
         with self.transaction():
-            if durable:
-                self.put("configuration", state.cfg.model_dump(mode="json"))
-                self.put("configuration_revision", state.configuration_revision)
+            initial = self.configuration_format() is None
+            if initial or durable:
+                lab, logical = split_configuration(state.cfg)
+                self.put("lab_configuration", lab)
+            if initial or save_startup:
+                self.put("startup_configuration", state.startup if state.startup else logical)
+                self.put("startup_revision", state.startup_revision)
+            if initial:
+                self.put("configuration_format", 1)
+                self.db.execute("DELETE FROM kv WHERE key = ?", ("configuration",))
+            # Revisions and protocol bookkeeping remain durable even when an
+            # ordinary logical edit does not save startup configuration.
+            self.put("configuration_revision", state.configuration_revision)
             self.put("revision", state.revision)
             self.put("idempotency", idempotency)
             self.put("outbox", state.outbox)

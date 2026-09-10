@@ -1518,6 +1518,45 @@
         }
       }
     },
+    "/api/v1/switch/save": {
+      "post": {
+        "tags": [
+          "switch"
+        ],
+        "summary": "Save-Startup Post  Switch Save",
+        "operationId": "save_startup_POST__switch_save_api_v1_switch_save_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Revision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/switch/reboot": {
       "post": {
         "tags": [

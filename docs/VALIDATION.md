@@ -1,82 +1,123 @@
 # Implementation validation
 
-The request-local SNMP read optimization was checked on 2026-09-10 against
-`b6cb94db`, using Python 3.12 and PySNMP 7.1.29. Synthetic 24- and 96-port states
-had one active source/learned MAC per port and four VLANs. The existing in-memory
-BER dispatcher exercised normal v2c authorization, GET, GETNEXT, GETBULK, and
-response encoding/decoding without INET sockets or network round trips.
+## Current read, configuration, and UI checks
 
-| Full read view workload | Before | After |
+Checked on 2026-09-10 against `079aa9eb`, with Python 3.12 and PySNMP 7.1.29.
+The final affected Engine, Store, API, MIB/PAE and named response-lifetime suite
+passed **614 tests in 64.14 s**, with one actual-listener API case excluded,
+46 upstream warnings and **zero INET attempts**. Input hashes remained unchanged
+during the run. This is not a new native, UDP, independent-client or deployment run.
+
+### Request-local reads
+
+Synthetic 24-port states had four VLANs and either 24 or zero learned MACs.
+The existing in-memory BER dispatcher exercised current v2c authorization,
+GET/NEXT/BULK and response encoding/decoding. Numeric typed outputs, table
+limits, row counts and PDU counts matched the retained baseline.
+
+| Full-view workload, median unless noted | Before | Current |
 |---|---:|---:|
-| 24-port projection construction, median | 10.480 ms | 3.387 ms |
-| 24-port ifDescr GETNEXT walk, 25 PDUs, median | 325.078 ms | 128.168 ms |
-| Same column with GETBULK, one PDU, median | 15.998 ms | 9.343 ms |
-| 648 IF/ifX cells with GETNEXT, 675 PDUs, one run | 9.067 s | 3.578 s |
-| Same 648 cells with GETBULK, 27 PDUs, one run | 522.650 ms | 275.846 ms |
-| 96-port ifDescr GETNEXT control, 97 PDUs, median | 5.323 s | 1.953 s |
+| Projection construction, 24 learned MACs | 3.477 ms | 0.117 ms |
+| Bridge-port table, 48 implemented cells, 49 GETNEXT PDUs | 260.291 ms | 64.923 ms |
+| Same bridge table, two GETBULK PDUs | 19.065 ms | 11.073 ms |
+| ifDescr, 24 cells, 25 GETNEXT PDUs | 145.608 ms | 47.633 ms |
+| ifAlias, 24 cells, 25 GETNEXT PDUs | 127.060 ms | 40.271 ms |
+| Q-BRIDGE FDB, 48 cells, 49 GETNEXT PDUs | 253.142 ms | 66.787 ms |
+| Current VLAN, 20 cells, 21 GETNEXT PDUs | 106.185 ms | 29.612 ms |
+| Static VLAN, 20 cells, 21 GETNEXT PDUs | 106.562 ms | 28.705 ms |
+| PAE configuration, 216 cells, 217 GETNEXT PDUs | 1,156.969 ms | 369.528 ms |
+| Prior IF/ifX workload, 648 cells, 675 GETNEXT PDUs, one replay | 3.578 s | 1.230 s |
+| Same IF/ifX workload, 27 GETBULK PDUs, one replay | 275.846 ms | 178.617 ms |
 
-The interface-only view also improved: its 648-cell serial walk fell from
-7.935 s to 2.960 s. Typed result digests, row counts, and PDU counts matched
-before/after and across GET/NEXT/BULK. Column walks used three samples;
-projection construction used 15 at 24 ports and five at 96. These are local
+Table walks used three samples and direct GETs five. A 96-binding request for
+bridge columns 1–4 retained 48 implemented values and 48 absent-object results;
+no unsupported column was invented. The zero-FDB control retained empty-table
+successors, reducing its one-PDU FDB query from 4.592 to 1.235 ms. These are local
 compute measurements, not deployment latency guarantees; network delay,
 manager request patterns, and inventory size also affect response times.
 
-Profiling attributed roughly 90% of the original single-varbind dispatcher
-cost to eager projection construction. Only selected ordinary cells now allocate
-ASN.1 values; overlapping current-VLAN rows remain eager. Supported-column
-metadata, ordering, current-VLAN filtering,
-per-PDU clocks, and authorization are preserved. Engine snapshots, API JSON,
-and simulation ticks were measured separately; transaction/storage owners and
-UI assets were not changed.
+Profiling 30 bridge PDUs attributed about 76% of baseline request time to
+constructing all 1,977 ordinary cells per PDU. The current projection registers
+complete column metadata first, builds only reached families, and constructs
+selected ordinary ASN.1 values. It retains the captured Runtime, view and one
+uptime/wrap sample; there is no cross-PDU cache. Request-local sorted TimeFilter
+keys preserve global successor order across sparse, hidden and empty families.
+A fixed-clock comparison covered 18 warm view/wrap cases; 20 additional cold
+cases avoided diagnostic pre-materialization and included empty FDB, root views,
+conditional PAE and unset identity. OID/tag/BER, exceptions, supported bases,
+cutoffs, ordering and delayed old-publication reads matched. Earlier unchanged
+ReadAccess and EntityReadConsistency evidence supplies the same abstract read
+boundary, not a Python equivalence or performance proof.
 
-The affected maintained MIB/PAE and named in-memory read/lifetime checks passed
-148 tests in 5.19 s with zero INET attempts. They cover sparse/exact-instance
-views, old and fresh publications, same-state uptime, current read denial,
-conditional PAE omissions, and last-confirmed reads after storage faults.
-A fixed-clock comparison against the preserved prior projection matched 26,762
-GET/NEXT probes and 7,490 walked cells across 18 view/wrap cases, including ASN.1
-tags/BER, exceptions, cutoffs, and successor order. The unchanged ReadAccess and
-EntityReadConsistency checks completed before implementation: 95,744 and 3,456
-distinct states, respectively. Both searches completed with empty queues;
-ReadAccess also completed its temporal checks.
-They preserve the abstract read relation, not a proof of Python equivalence or
-performance. No new local listener, native EAP, host, or broad wire-suite run
-was performed. Logs, failed scratch fixture inputs, and baseline source remain
-local rather than shipped with the application.
+### Running/startup and SET
 
-On 2026-09-10, the operator terminology, reduced interface help, separate SNMP/RADIUS/general settings,
-certificate file/paste forms, and selected-port detail passed the maintained
-headless browser flow in 48.202 s with native scrollbars visible. It covered sparse general/SNMP
-edits, draft-only file selection, size checks before reads, invalid input, sparse
-certificate/key replacement,
-reference and stale-revision errors, cancel-during-read isolation, all existing
-port/session controls, and keyboard/mobile/refresh behavior. Two held-read
-regressions first reproduced a Save combining an earlier certificate with a later
-key selection. Save now captures both PEM drafts and scalar/revision fields before
-reading either file; both exact-payload regressions pass. The earlier dialog-close
-correction clears the current form synchronously without affecting a later dialog.
-Original failures remain local. A document scrollbar gutter now keeps the shared
-main/header/sidebar/page frame stable across long and short routes. The maintained
-regression first failed on a 15 px width change; wide-layout measurements also
-showed a 7.5 px page shift. Desktop, wide, and mobile navigation checks now pass
-without hiding scrollbars or adding per-page offsets. Host-mode/method labels
-retain their original option values. Returned RADIUS attributes remain distinct
-from effective VLANs, and session/idle timestamps identify simulation-time
-timeouts rather than promising session termination. TypeScript/Vite passed;
-packaged assets match the build. CSS, fonts, notices, backend, API, and protocol
-values are unchanged.
+The current tests cover logical apply/discard, revision-checked Save, persistent
+physical edits without implicit startup Save, encrypted legacy migration and
+normal close/reopen. They retain monotonic revisions, effect-scoped idempotency,
+no repeated reboot, copied peer credentials/materials, accounting horizons and
+revocation, DAS decisions/generations/highwater, and independent manager/USM data.
+Fifteen Save/mixed/reboot and five migration fault cases distinguish actual write,
+commit, failed rollback and unknown outcomes. Recovery uses ordinary SQLite close
+with the failed transaction still open, not a fixture repair rollback.
 
-The synthetic instance kept SNMP disabled and identity unset, prohibited UDP and
-external RADIUS, and used only generated certificate/key inputs. Its processes,
-loopback socket, database, and keys were removed. The README overview is a
-1680 × 1296 viewport capture of a separate synthetic eight-port lab with one attached endpoint and learned MAC address. It includes the
-complete selected-port panel, waits for the toast to finish, and uses no stitched
-full-page capture or screenshot-only styling. Other inspection screenshots remain
-local. The unchanged `ScenarioPauseManual` check completed
-with 15 generated/14 distinct states and an empty queue before UI implementation;
-navigation and local drafts remain presentation stutters, not a new model.
-The text-only terminology pass required no new or repeated model/protocol run.
+A review reproduced nine missing nested fields being default-filled at split
+load, including auto port control and restricted access filters. Complete stored
+fragments now reject these omissions before publication while sparse API,
+normalized legacy migration and genuinely new-port defaults retain their owners.
+Both auto and force-unauthorized controls are covered. Original failures remain
+local. The updated StorageOutcomes graph completed its temporal checks with
+2,070,496 generated/172,689 distinct states; retained recovery and lifecycle
+checks completed 120 recovery branches and identity plus five legacy-seed outcomes.
+Four causal controls detected implicit/mixed autosave, hardware resurrection and
+uncertain startup overwrite. Exact inputs, focused-slice correspondence and
+limits are in [current formal verification](../specification/CURRENT_VERIFICATION.md).
+
+Supported SET profiling used the same 135 actual BER PDUs per version of the
+implementation: v2c memory/file SQLite and v3 authPriv memory, with 90 changed
+transactions and 45 no-ops. Initial explicit Save was outside timing. All echoes,
+status/revisions, running effects, unchanged startup and durable bookkeeping
+checks passed; no Projection was built. File SQLite retained WAL/FULL settings.
+
+| SET median | Original auto-persist | Startup split only | Current clone reuse |
+|---|---:|---:|---:|
+| v2c memory, admin change | 14.190 ms | 16.961 ms | 13.709 ms |
+| v2c file, admin change | 16.588 ms | 17.600 ms | 16.708 ms |
+| v2c memory, three-binding VLAN write | 15.788 ms | 17.654 ms | 14.689 ms |
+| v2c file, three-binding VLAN write | 17.555 ms | 18.384 ms | 16.573 ms |
+
+Running-only configuration is not zero disk I/O or itself a speed improvement.
+For SET alone, Runtime cloning no longer deep-copies the old cfg that is immediately
+replaced by a separately deep-copied plan candidate. Candidate isolation, full
+validation, all other Runtime copies, commit/fault/response ownership and non-SET
+paths remain. Five profiled memory SETs fell from 0.224 to 0.174 s, with cumulative
+deepcopy cost falling from 0.132 to 0.093 s. No-op processing is unchanged. Alias,
+old lazy-read, copy/validation/Store failure, no-op and stale-plan regressions pass.
+These small no-contention samples do not establish a universal SET latency target.
+
+### Packaged interface
+
+TypeScript 5.9.3 and Vite 7.1.12 built the packaged assets. The full maintained
+synthetic browser passed in **53.820 s**: root-prefix views and preserved references,
+RADIUS five-card layout/compact header actions and keyboard disclosures, one global
+Save/dirty marker, Apply versus durable-lab Save, actual stale Save rejection,
+reboot discard with lab/login retention, and existing source/port actions.
+PEM file/paste, pre-read size checks, sparse replacement, reference errors,
+click-time certificate/key snapshots and cancellation remain covered. Selected-port
+returned attributes/history, escaped labels, focus/open/scroll, and mobile frame
+geometry pass without changing carrier colors or hiding information. The first
+run found an ambiguous Add Server test locator; scoping it to authentication servers
+preserved all assertions. No application behavior was changed for that fixture fix.
+
+The browser kept SNMP disabled/identity unset, prohibited UDP/external RADIUS,
+and used only disposable certificates and state. Children, socket, database and
+keys were removed. Desktop RADIUS and mobile overview inspection images are local;
+the mobile image is not a RADIUS-route capture. Responsive RADIUS geometry and
+narrow-screen overflow checks are maintained in the browser. The existing README
+1680 × 1296 viewport overview remains representative and unchanged. No extra
+presentation-model run or screenshot-only CSS was introduced. Deeper native and
+wire evidence below belongs to its recorded earlier inputs. Current runtime/LAN
+caller fixtures now explicitly Save only where their restart assertions require
+it; those updated network fixtures were source/parse checked, not executed locally.
 
 The focused MAB method/transport tests passed 30 cases in 0.24 s with zero INET
 attempts. Injected socket-stage errors first reproduced 12 lost-diagnostic failures

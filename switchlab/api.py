@@ -390,6 +390,7 @@ def create_app(store=None, configuration=None):
         mutation("POST", "/clock/"+action, Revision, action)
     mutation("POST", "/clock/advance", Advance, "advance")
     mutation("POST", "/clock/advance/{id}/cancel", Revision, "advance-cancel", lambda d,p: {"id":p["id"]})
+    mutation("POST", "/switch/save", Revision, "save-startup")
     mutation("POST", "/switch/reboot", Revision, "reboot")
     mutation("PATCH", "/snmp/settings", SnmpPatch, "snmp-settings")
     for route, model, prefix in (("snmp/credentials", CredentialWrite, "credential"), ("snmp/groups", GroupWrite, "group"), ("snmp/views", ViewWrite, "view"), ("notifications/targets", TargetWrite, "target")):

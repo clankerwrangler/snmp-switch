@@ -59,6 +59,7 @@ with tempfile.TemporaryDirectory() as root:
         error,status,_,rows=asyncio.run(read_identity())
         assert not error and not status and str(rows[0][1])=='2.999.123'
         first=request('/api/v1/snmp/status')
+        command('/switch/save',{})
         stop(process);process=launch()
         csrf=request('/api/v1/auth/login','POST',{'password':'release-fixture-password'})['csrf_token']
         second=request('/api/v1/snmp/status')
@@ -67,6 +68,7 @@ with tempfile.TemporaryDirectory() as root:
         command('/switch',{'identity':{'sys_object_id':None}},'PATCH')
         assert not request('/api/v1/snmp/status')['ready']
         assert asyncio.run(read_identity())[0] is not None
+        command('/switch/save',{})
         stop(process);process=launch()
         csrf=request('/api/v1/auth/login','POST',{'password':'release-fixture-password'})['csrf_token']
         assert request('/api/v1/state')['switch']['identity']['sys_object_id'] is None

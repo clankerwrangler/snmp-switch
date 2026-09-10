@@ -1,7 +1,7 @@
 # Current finite model verification
 
-The 52-configuration normal catalog is supported by separate completed checks,
-not one combined 52-config run. All passing graphs below finished with zero
+The 53-configuration normal catalog is supported by separate completed checks,
+not one combined 53-config run. All passing graphs below finished with zero
 queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
@@ -17,7 +17,9 @@ application, wire, or operating-system correctness.
 | Response lifecycle graph | PASS; full temporal check | 210,495 / 23,175 |
 | Response reuse and transaction-integration traces | PASS | 109 / 90; 115 / 101 |
 | Entry-association trace | PASS; all 240 branches complete | 2,640 / 2,400 |
-| Storage graph and 40 recovery branches | PASS; full temporal checks | 1,105,000 / 25,313; 960 / 920 |
+| Running/startup storage graph | PASS; full temporal check; 113.542 s | 2,070,496 / 172,689 |
+| Storage recovery: 120 branches | PASS; full temporal check; 2.198 s | 3,000 / 2,880 |
+| Startup identity and five legacy-seeding outcomes | PASS; full temporal check; 1.032 s | 34 / 28 |
 | Group normalized ownership: eight cases | PASS; full temporal check; 1.952 s | 32 / 24 |
 | Group queued SET/current boundary: 54 cases | PASS; full temporal check; 2.346 s | 378 / 324 |
 | RADIUS authorization | PASS; finite safety check; 1.275 s | 16,753 / 1,356 |
@@ -32,6 +34,14 @@ input cross-products were intentionally retired. Existing engine, API, browser,
 and wire tests cover those implementation details; they are not an equivalent
 formal proof. Earlier results remain in Git with their original scope.
 
+The storage graph distinguishes running policy from durable lab/startup and
+retains both actual outcomes of an unknown commit. Recovery and startup traces
+were checked separately; later changes only remove duplicate witnesses in the
+unused general-graph wrappers, leaving their action/property slices unchanged.
+The general graph preserves the same successors and weak fairness. Earlier
+storage timeouts remain incomplete, including one with an empty BFS queue but
+unfinished final temporal checking; they are not the completed result above.
+
 SANY, generator byte-for-byte round-trip, and five small runner-routing/guard
 cases passed at their recorded checkpoints. These are supporting checks, not
 additional application-model graphs.
@@ -42,7 +52,7 @@ captured-token reuse, response leaks/foreign cleanup, stale durable overwrite,
 migration sharing, incomplete shared-member revocation, and failed conversion
 prefix publication. Actual counterexamples also drove response diagnostics,
 entry-association, error-index, no-op deletion, and selected-target corrections.
-The twelve reusable controls in `tests/check_mutations.py` run against current
+The sixteen reusable controls in `tests/check_mutations.py` run against current
 sources. The three grouped controls reach actual second-member stale success,
 cross-user policy modification, and rejected-save prefix publication. Other historical control definitions and exact inputs are in Git.
 The three RADIUS controls detect a stale reply installing a grant, a duplicate
@@ -50,6 +60,11 @@ changing cached ACK to NAK, and partial CoA effects under a NAK. The duplicate
 counterexample does not demonstrate replacement-session revocation. Both RADIUS
 checks are separate safety graphs, without fairness or a composition proof;
 causal scheduling and persistent replay remain application boundaries.
+The storage controls detect logical autosave, mixed-lab autosave, removed-hardware
+resurrection, and overwrite after an unconfirmed Save. The last counterexample
+uses a local focused config checking `UnconfirmedDurableSurvives` so it can reach
+the overwrite after the earlier forbidden edit; the maintained fault-gate control
+uses the full recovery config. Correct configs retain every assertion.
 Parsing failures, construction errors, interrupted searches, and timeouts remain
 failures or incomplete results; they do not count as detected behavioral defects.
 
@@ -139,7 +154,7 @@ python3 run_tlc.py --prepare-only
 needs only the tracked models/configs/generators plus Java and the TLA+ JAR;
 the runners prepare generated inputs automatically.
 Use `--mutations NAME ...` to select affected negative controls; otherwise all
-twelve run. Parsing errors and timeouts are not behavioral detection.
+sixteen run. Parsing errors and timeouts are not behavioral detection.
 Do not add generated logs, receipts, states, or historical source overlays to
 commits. Git retains the previously committed evidence and detailed report;
 there is no separate archive or version index. For an exact historical result,

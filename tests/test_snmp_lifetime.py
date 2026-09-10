@@ -319,7 +319,9 @@ def test_response_failures_cleanup_once_without_undoing_commit(exchange, stage, 
         x.send_response(captured)
     with fail_at(x, stage), pytest.raises((RuntimeError, error.StatusInformation)):
         x.owner.complete(captured[0], commit_and_respond)
-    assert store.load().switch.name == "Committed before response"
+    assert store.load().switch.name != "Committed before response"
+    assert store.get("revision") == candidate.revision
+    assert engine.state.cfg.switch.name == "Committed before response"
     assert engine.state is candidate and commits == [1]
     assert not x.owner.complete(captured[0], commit_and_respond)
     assert len(x.mp_pops) == len(x.sec_pops) == 1
@@ -1052,6 +1054,7 @@ async def app_exchange(engine, store, request):
             "minimum_security_level": fields["security_level"],
             "polling": fields.pop("polling"), "writing": fields.pop("writing")}))["id"]
     cid = (await engine.execute("credential-save", fields))["id"]
+    await engine.execute("save-startup")
     instance = ApplicationExchange(engine, store, level)
     instance.credential_id = cid
     try:
@@ -1116,7 +1119,7 @@ async def test_application_set_denials_keep_original_echo_and_state(app_exchange
     await configure_application(x, *access_write(x, fields))
     pdu = three_bindings((oid("1.3.6.1.2.1.2.2.1.7.101"), a.OctetString(b"bad")) if permission == "wrongtype" else None)
     before = x.engine.state
-    persisted = x.engine.store.get("configuration")
+    persisted = x.engine.store.load()
     x.send(pdu)
     await x.settle()
     response = x.decode()
@@ -1124,7 +1127,7 @@ async def test_application_set_denials_keep_original_echo_and_state(app_exchange
     assert int(v2c.apiPDU.get_request_id(response)) == 2147483647
     for (rn, rv), (qn, qv) in zip(v2c.apiPDU.get_varbinds(response), v2c.apiPDU.get_varbinds(pdu)):
         assert rn == qn and encoder.encode(rv) == encoder.encode(qv)
-    assert x.engine.state is before and x.engine.store.get("configuration") == persisted
+    assert x.engine.state is before and x.engine.store.load() == persisted
     x.empty()
 
 
@@ -1271,7 +1274,8 @@ async def test_application_set_commit_survives_failed_delivery(app_exchange, del
     pending = next(iter(x.adapter.pending_sets.values()))
     await x.settle()
     assert x.engine.state.revision == before.revision + 1
-    assert x.engine.store.load() == x.engine.state.cfg
+    assert x.engine.store.load() == before.cfg
+    assert x.engine.store.get("revision") == x.engine.state.revision
     assert x.engine.state.cfg.vlans[1].name == "Committed" and x.engine.idempotency == {}
     assert x.adapter.set_error == "set_delivery_failed"
     assert x.sink.attempts == 1 and len(x.sink.sent) == (delivery == "after")
@@ -1310,7 +1314,7 @@ async def test_application_set_storage_commit_rollback_and_unknown_outcomes(app_
     x = app_exchange
     store = x.engine.store
     before = x.engine.state
-    saved = store.get("configuration"), store.events(), store.last_event
+    saved = store.get("startup_configuration"), store.events(), store.last_event
     connection = store.db
     proxy = TransactionFault(connection, stage)
     original_put = store.put
@@ -1331,9 +1335,12 @@ async def test_application_set_storage_commit_rollback_and_unknown_outcomes(app_
             assert not x.sink.sent and x.adapter.set_error == "storage_commit_unknown"
             assert not connection.in_transaction
             if stage == "commit-after":
-                assert store.get("configuration")["vlans"]["1"]["name"] == "Committed"
+                assert store.get("startup_configuration") == saved[0]
+                assert store.get("revision") == before.revision + 1
+                assert store.get("configuration_revision") == before.configuration_revision + 1
+                assert store.events() != saved[1]
             else:
-                assert (store.get("configuration"), store.events(), store.last_event) == saved
+                assert (store.get("startup_configuration"), store.events(), store.last_event) == saved
             assert proxy.commit_calls == 1 and proxy.rollback_calls == 0
         else:
             response = x.decode()
@@ -1343,7 +1350,7 @@ async def test_application_set_storage_commit_rollback_and_unknown_outcomes(app_
                 assert x.adapter.set_error == "storage_rollback_failed"
             else:
                 assert not connection.in_transaction
-                assert (store.get("configuration"), store.events(), store.last_event) == saved
+                assert (store.get("startup_configuration"), store.events(), store.last_event) == saved
                 if stage == "commit-before":
                     assert proxy.commit_calls == proxy.rollback_calls == 1
         x.empty()
@@ -1564,6 +1571,7 @@ async def test_storage_fault_existing_startup_restores_set_and_notification_capa
     await tick(e)
     assert e.state.fdb
     tid = (await e.execute("target-save", {"address": "127.0.0.1", "credential_id": cid}))["id"]
+    await e.execute("save-startup")
     x = ApplicationExchange(e, store, level)
     x.credential_id = cid
     try:
@@ -1600,7 +1608,7 @@ async def test_storage_fault_existing_startup_restores_set_and_notification_capa
         for restart in range(2):
             store = Store(path, key)
             e = Engine(store.load(), store)
-            assert e.state.cfg.vlans[1].name == ("Committed" if stage == "commit-after" else "Default")
+            assert e.state.cfg.vlans[1].name == "Default"  # SET applied running; it did not save startup.
             assert e.state.cfg.switch.contact == "" and not e.state.fdb
             assert e.storage_status()["healthy"] and cid in e.state.cfg.credentials
             assert eid in e.state.cfg.endpoints and e.state.cfg.credentials[cid] == before.cfg.credentials[cid]
@@ -1776,6 +1784,10 @@ async def test_no_group_denies_incoming_without_changing_trap_profile(app_exchan
 async def test_application_pae_actions_require_explicit_view_and_commit_whole_pdu(app_exchange):
     from switchlab.mib import PAE, oid
     x=app_exchange
+    # This negative deliberately uses the old restricted MIB-II view. The fresh
+    # iso default includes IEEE objects and must not be treated as restricted.
+    await configure_application(x,'view-save',{'id':'legacy-mib','name':'Restricted MIB-II','includes':['1.3.6.1.2.1']})
+    await configure_application(x,*access_write(x,{'polling':{'view_id':'legacy-mib'},'writing':{'view_id':'legacy-mib'}}))
     port=next(iter(x.engine.state.cfg.ports.values()));index=port.if_index
     pdu=request(73)
     bindings=[(PAE+(1,2,1,5,index),a.Integer32(1)),
@@ -1792,10 +1804,10 @@ async def test_application_pae_actions_require_explicit_view_and_commit_whole_pd
     await configure_application(x,*access_write(x,{'polling':{'view_id':'pae'},'writing':{'view_id':'pae'}}))
     bad=bindings+[(oid('1.3.6.1.2.1.2.2.1.7')+(index,),a.Integer32(3))]
     v2c.apiPDU.set_varbinds(pdu,bad)
-    before=x.engine.state;persisted=x.engine.store.get('configuration')
+    before=x.engine.state;persisted=x.engine.store.load()
     x.send(pdu);await x.settle();response=x.decode()
     assert (int(v2c.apiPDU.get_error_status(response)),int(v2c.apiPDU.get_error_index(response)))==(10,5)
-    assert x.engine.state is before and x.engine.store.get('configuration')==persisted
+    assert x.engine.state is before and x.engine.store.load()==persisted
     v2c.apiPDU.set_varbinds(pdu,bindings)
     x.send(pdu);await x.settle();response=x.decode()
     assert int(v2c.apiPDU.get_error_status(response))==0
@@ -1862,4 +1874,38 @@ async def test_reads_use_fresh_publication_and_current_view_after_prior_read(app
     send_read(v2c.GetRequestPDU, [alias])
     assert not x.sink.sent and x.engine.state is before
     x.expire()
+    x.empty()
+
+
+async def test_root_and_internet_views_use_current_ber_read_policy(app_exchange):
+    from switchlab.mib import PAE
+    from pysnmp.proto import rfc1905
+    x = app_exchange
+    name = PAE + (2, 1, 1, 6, 101)
+    def read(kind, start):
+        pdu = kind()
+        if kind is v2c.GetBulkRequestPDU:
+            v2c.apiBulkPDU.set_defaults(pdu)
+            v2c.apiBulkPDU.set_non_repeaters(pdu, 0)
+            v2c.apiBulkPDU.set_max_repetitions(pdu, 2)
+        else: v2c.apiPDU.set_defaults(pdu)
+        v2c.apiPDU.set_varbinds(pdu, [(start, a.Null())])
+        before = x.engine.state
+        x.send(pdu)
+        result = v2c.apiPDU.get_varbinds(x.decode())
+        assert x.engine.state is before
+        return result
+    assert int(read(v2c.GetRequestPDU, name)[0][1]) == 3
+    for kind in (v2c.GetNextRequestPDU, v2c.GetBulkRequestPDU):
+        assert all(tuple(n)[:len(PAE)] == PAE for n,_ in read(kind, PAE + (2, 1)))
+    await configure_application(x, *access_write(x, {"polling":{"view_id":"internet"}}))
+    assert read(v2c.GetRequestPDU, name)[0][1].tagSet == rfc1905.noSuchObject.tagSet
+    for kind in (v2c.GetNextRequestPDU, v2c.GetBulkRequestPDU):
+        assert all(tuple(n)[:4] == (1,3,6,1) for n,_ in read(kind, PAE + (2, 1)))
+    for root in ("0", "2"):
+        view = await configure_application(x, "view-save", {"name":"Other root", "includes":[root]})
+        await configure_application(x, *access_write(x, {"polling":{"view_id":view["id"]}}))
+        assert read(v2c.GetRequestPDU, name)[0][1].tagSet == rfc1905.noSuchObject.tagSet
+        for kind in (v2c.GetNextRequestPDU, v2c.GetBulkRequestPDU):
+            assert all(value.tagSet == rfc1905.endOfMibView.tagSet for _,value in read(kind, PAE + (2, 1)))
     x.empty()

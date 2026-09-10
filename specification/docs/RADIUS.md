@@ -25,8 +25,9 @@ RADIUS for web-administrator login. Link state remains independent of access.
 4. Attach the endpoint. Inspect the selected port's client status, effective
    VLAN, session ID, counters, and timers. FDB learning still requires accepted
    ordinary activity; a successful authentication does not invent a data frame.
+5. Choose **Save configuration** to retain switch Access, accounting, and dynamic-authorization settings across reboot/restart. Certificates, templates, copied source profiles, and physical connections persist automatically without saving unrelated switch policy.
 
-**Force-authorized** uses saved VLAN admission. **Force-unauthorized** blocks
+**Force-authorized** uses configured VLAN admission. **Force-unauthorized** blocks
 ordinary ingress without forcing the physical link down. **Auto (authentication required)** requires a
 current authorization. **Single-host** permits one authenticated MAC;
 **Multi-auth** gives each MAC its own service; **Multi-host** shares the authenticated owner's service with
@@ -77,11 +78,11 @@ uses the port name. NAS identifiers describe the simulator, not its endpoints.
 
 ## Authorization and clocks
 
-An absent VLAN assignment inherits the saved **Port VLAN ID (PVID)**, shown as
+An absent VLAN assignment inherits the running **Port VLAN ID (PVID)**, shown as
 **Port default (PVID)**. An explicit assignment is shown as **RADIUS-assigned**. An explicit assignment must
 be one complete VLAN tunnel triple naming an existing, non-forbidden VID.
 It permits untagged activity or a matching explicit tag for that service.
-It never overwrites saved PVID, static membership, or untagged membership.
+It never overwrites configured PVID, static membership, or untagged membership.
 Current Q-BRIDGE egress membership includes active authorized VLAN membership;
 static tables and the current untagged table retain their configured meaning.
 Authorization cannot create VLANs or migrate old FDB observations.
@@ -150,8 +151,8 @@ is not exactly once; accounting responses do not authorize clients.
 
 ## CoA and Disconnect
 
-Open **Dynamic authorization clients (CoA / Disconnect)**. Configure
-**CoA / Disconnect settings** and add separate dynamic authorization clients.
+Open **Dynamic authorization clients (CoA / Disconnect)**. Choose
+**Configure** in that card, then add separate dynamic authorization clients.
 These clients send requests to Switch Lab; the listener defaults disabled.
 Each client has an exact source IP and its own secret. Authentication/accounting
 servers and SNMP credentials grant no incoming dynamic-authorization trust.
@@ -192,9 +193,11 @@ not a published ingress port. IPv6 deployment/NAT fidelity is not a tested claim
 
 The generated [object manifest](mib-coverage.csv) contains 34 selected definitions
 from IEEE8021-PAE-MIB revision `200406220000Z`, under `1.0.8802.1.1.1.1`.
-Port instances use **ifIndex**, not bridge-port/NAS-Port. Add the IEEE subtree
-explicitly to a polling or writing view; the historical `all` view covers MIB-II
-and is not silently broadened. Existing access and response-size checks apply.
+Port instances use **ifIndex**, not bridge-port/NAS-Port. Fresh **iso** (`1`)
+includes IEEE; **internet** (`1.3.6.1`) does not. The iso view retains internal
+ID `all`. Existing saved views, including the historical MIB-II `all`, are not
+broadened; explicitly edit their prefixes when IEEE access is wanted. Existing
+access and response-size checks apply.
 
 Only port control, Initialize, and Reauthenticate are writable. True action
 bindings coalesce per port; Initialize takes precedence when both actions are
@@ -236,9 +239,13 @@ private material use the existing encrypted Store. API/form reads expose
 presence flags, never saved key, certificate, password, shared-secret, Class,
 or State bytes. Blank secret fields preserve values in supported sparse edits.
 Scenario schema 1 excludes RADIUS settings, port authentication, and supplicants;
-import preserves destination deployment/security settings. Reboot ends volatile
-grants, resets operational clocks/counters, and invalidates old work. It is not
-an exact mid-session recovery mechanism.
+import preserves destination deployment/security settings and does not save
+logical switch changes to startup. Reboot restores saved switch policy over the
+current durable lab, ends volatile grants, resets operational clocks/counters,
+and invalidates old work. Accounting records retain their original horizons or
+are canceled when restored target policy differs. DAS decisions, highwater,
+USM identity/boots, and manager credentials are not restored from startup.
+Reboot is not an exact mid-session recovery mechanism.
 
 Use the RADIUS page and selected-port client status to distinguish no supplicant,
 profile conflict, unusable policy, native capability failure, NAS rejection,

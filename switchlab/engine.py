@@ -12,6 +12,7 @@ import time
 from dataclasses import asdict, dataclass, field, replace
 
 from .mib import entity_inventory, plan_set, current_vlan_ports
+from .storage import split_configuration, compose_configuration, reconciled_startup
 from .radius import AccessResult, Authorization, NasIdentity, RadiusError, authorization, resolve_nas_identity, access_attributes, mab_username, encode_attributes
 from .models import Configuration, Credential, CredentialAuth, Community, UsmUser, AccessGroup, PollingAccess, WritingAccess, incoming_policy, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, RadiusSettings, RadiusServer, RadiusMaterial, SupplicantProfile, SupplicantTemplate, DynamicSettings, DynamicSender, uid
 
@@ -197,6 +198,10 @@ class Runtime:
     cfg: Configuration
     revision: int = 0
     configuration_revision: int = 0
+    startup: dict = field(default_factory=dict, repr=False)
+    startup_revision: int = 0
+    configuration_dirty: bool = False
+    configuration_incarnation: str = field(default_factory=uid, repr=False)
     sim_ms: int = 0
     epoch: str = field(default_factory=uid)
     boot_start: float = field(default_factory=time.monotonic)
@@ -632,6 +637,14 @@ class Runtime:
         self.accounting_outbox.append(record)
         self.event("accounting", status="queued", record_id=record["id"], session_id=record["session_id"], accounting_type=status_type, late=late)
 
+    def accounting_policy_matches(self, record):
+        settings = self.cfg.radius.accounting
+        return (settings.enabled and
+                record["targets"] == [dict(id=target.id, signature=Engine._server_signature(target))
+                                      for target in settings.targets if target.enabled] and
+                record["delivery_policy"] == {name: getattr(settings, name) for name in
+                    ("response_timeout_seconds", "attempts", "retry_backoff_seconds")})
+
     def reconcile_accounting(self, before):
         shape = lambda c: (c.enabled,c.response_timeout_seconds,c.attempts,c.retry_backoff_seconds,
             [(target.id, target.enabled, Engine._server_signature(target)) for target in c.targets])
@@ -894,6 +907,7 @@ class Runtime:
         self.renewal_budget.clear()
         self.renewal_budget_time = 0
         if reboot:
+            self.configuration_incarnation = self.epoch
             self.pae.clear()
             self.last_auth_sessions.clear()
             self.activation = uid()
@@ -917,6 +931,9 @@ class Engine:
         self.store = store
         if store:
             store.require_healthy()
+            saved = store.load()
+            if saved is not None:
+                cfg = saved
         self.lock = asyncio.Lock()
         self._authentication_tasks = {}
         self._accounting_tasks = {}
@@ -957,6 +974,9 @@ class Engine:
                 operation.update(status="interrupted-on-boot", waiting_reason=None)
         self.state = Runtime(cfg, revision=store.get("revision", 0) if store else 0)
         self.state.configuration_revision = store.get("configuration_revision", 0) if store else 0
+        self.state.startup = (store.get("startup_configuration") if store else None) or split_configuration(cfg)[1]
+        self.state.startup_revision = store.get("startup_revision", self.state.configuration_revision) if store else 0
+        self.state.configuration_revision += 1
         if store:
             self.state.events = store.events()
             self.state.event_id = max((e["id"] for e in self.state.events), default=0)
@@ -966,6 +986,10 @@ class Engine:
             self.state.accounting_drops = store.get("radius_accounting_drops", {})
             if len(self.state.accounting_outbox) > 1024 or len(json.dumps(self.state.accounting_outbox).encode()) > 8*1024*1024:
                 raise ValueError("Invalid saved accounting queue")
+        for record in list(self.state.accounting_outbox):
+            if not self.state.accounting_policy_matches(record):
+                self.state.accounting_outbox.remove(record)
+                self.state.accounting_drop("configuration-change", record_id=record["id"])
         self.state.reset_operational(reboot=True, announce=False)
         self.state.event("boot")
         self.state.queue_accounting(7)
@@ -1046,6 +1070,7 @@ class Engine:
                     fdb=[dict(r, remaining_ms=max(0, r["expires_at_ms"] - s.sim_ms)) for r in s.fdb.values()],
                     counters=dict(learning_discards=s.learned_discards, notification_drops=s.notification_drops, vlan_deletes=s.vlan_deletes),
                     queued_notifications=len(s.outbox), storage_status=self.storage_status())
+        data["configuration_status"] = dict(unsaved=s.configuration_dirty, startup_revision=s.startup_revision)
         data["advance"] = self.advance_status()
         data["radius"]["dynamic_status"] = dict(ready=bool(self._das_protocol and self._dynamic_current(self._das_protocol)),
             clock_safe=self.dynamic_clock_safe(), reason=self._das_error, cached=len(self._das_cache), pending=len(self._das_pending), drops=self._das_drops.copy())
@@ -1365,9 +1390,7 @@ class Engine:
             return None
         record = next((item for item in self.state.accounting_outbox if item["id"] == record_id), None)
         if record is None or self.accounting_expired(record):return None
-        targets = {target.id: target for target in self.state.cfg.radius.accounting.targets if target.enabled}
-        if any(item["id"] not in targets or self._server_signature(targets[item["id"]]) != item["signature"] for item in record["targets"]):return None
-        return record
+        return record if self.state.accounting_policy_matches(record) else None
 
     async def service_accounting(self):
         for record_id, task in list(self._accounting_tasks.items()):
@@ -1526,16 +1549,22 @@ class Engine:
         if key and key in self.idempotency:
             prior = self.idempotency[key]
             require(prior["signature"] == signature, "Idempotency key was used for another command")
+            require(prior.get("configuration_incarnation", self.state.configuration_incarnation) == self.state.configuration_incarnation,
+                    "Command belongs to an earlier running configuration; use a new idempotency key")
             return prior["result"]
         require(expected is None or expected == self.state.revision, "Stale state revision; reload and retry")
         require(expected_config is None or expected_config == self.state.configuration_revision, "Configuration changed while editing; reload and retry")
         old = self.state
-        s = copy.deepcopy(old)
+        # SET installs its separately copied candidate before touching cfg. Keep
+        # the old published cfg immutable without copying it just to discard it.
+        s = copy.deepcopy(old, {id(old.cfg): old.cfg} if action == "snmp-set" else None)
         affected_e, affected_p = set(), set()
         result = self._apply(s, action, payload, affected_e, affected_p)
         s.cfg = Configuration.model_validate(s.cfg.model_dump(mode="json"))
         s.reconcile_authentication(old)
         s.reconcile_accounting(old)
+        if action == "reboot":
+            s.queue_accounting(7)
         if action != "reboot":
             lifecycle = lambda c: (c.snmp, c.switch.identity.sys_object_id)
             if lifecycle(s.cfg) != lifecycle(old.cfg):
@@ -1601,6 +1630,12 @@ class Engine:
         durable = action not in ("advance", "job", "notification-result", "coldStart", "test-notification", "radius-begin", "radius-result", "radius-pae-events", "radius-discover", "source-authentication", "radius-session-action", "accounting-prune", "accounting-event", "accounting-result", "radius-shutdown", "radius-dynamic", "advance-continue", "advance-cancel", "advance-fail")
         if durable:
             s.configuration_revision += 1
+        if action == "save-startup":
+            s.startup = split_configuration(s.cfg)[1]
+            s.startup_revision = s.configuration_revision
+        if durable:
+            lab, logical = split_configuration(s.cfg)
+            s.configuration_dirty = logical != reconciled_startup(s.startup, lab["ports"])
         result = dict(result or {}, revision=s.revision, configuration_revision=s.configuration_revision, simulation_ms=s.sim_ms)
         idem = copy.deepcopy(self.idempotency)
         if s.advance_operation:
@@ -1611,6 +1646,8 @@ class Engine:
                     entry["result"].update(advance=public_operation.copy(), simulation_ms=s.advance_operation["reached_ms"])
         if key:
             idem[key] = dict(signature=signature, result=result)
+            if action not in ("save-startup", "reboot") and split_configuration(old.cfg)[1] != split_configuration(s.cfg)[1]:
+                idem[key]["configuration_incarnation"] = s.configuration_incarnation
             idem = dict(list(idem.items())[-256:])
         updates = dict(radius_updates or {})
         generations = self._next_dynamic_generations(s.cfg)
@@ -1625,7 +1662,8 @@ class Engine:
         if retired:updates.setdefault("das_put", {}).update(retired)
         if self.store:
             try:
-                self.store.commit(s, idem, durable=durable, **({"radius_metadata":updates} if updates else {}))
+                self.store.commit(s, idem, durable=durable, **({"radius_metadata":updates} if updates else {}),
+                                  **({"save_startup":True} if action == "save-startup" else {}))
             except Exception:
                 if self.storage_fault:
                     self._cancel_inactive_authentication()
@@ -2080,10 +2118,19 @@ class Engine:
             return {"advance": {k:v for k,v in operation.items() if k != "epoch"}}
         elif action == "job":
             return {"accepted": s.observe(Job(**d))}
+        elif action == "save-startup":
+            s.event("configuration-saved")
         elif action == "reboot":
-            s.reset_operational(reboot=True)
+            restored = compose_configuration(split_configuration(cfg)[0], s.startup)
+            # Capture Stop/Off with the old session and target policy, then reset
+            # against startup on the current physical lab. Reconciliation below
+            # cancels revoked generations; it never restores old protocol queues.
+            for key in list(s.radius_sessions):
+                s.end_session(key, "management-reboot")
+            s.queue_accounting(8, reason="management-reboot")
+            s.cfg = restored
+            s.reset_operational(reboot=True, announce=False)
             s.event("boot")
-            s.queue_accounting(7)
         elif action == "import":
             require(set(d) == {"schema_version", "ports", "vlans", "endpoints", "attachments", "paused", "lab_settings"} and d["schema_version"] == 1,
                     "Invalid lab schema; deployment settings cannot be imported", 422)

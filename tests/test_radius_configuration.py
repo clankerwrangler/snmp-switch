@@ -18,17 +18,20 @@ def test_radius_server_order_sparse_secret_and_redaction(store):
         two=change(client,'/radius/servers',{'label':'Backup','address':'192.0.2.2','secret':'synthetic-two'}).json()['id']
         response=change(client,'/radius/servers',{'id':two,'label':'First','position':0,'secret':''})
         assert response.status_code==200
-        saved=store.load();assert [s.id for s in saved.radius.servers]==[two,one]
+        saved=client.app.state.engine.state.cfg;assert [s.id for s in saved.radius.servers]==[two,one]
         assert saved.radius.servers[0].secret=='synthetic-two'
         state=client.get('/api/v1/state').json();text=json.dumps(state)
         assert 'synthetic-one' not in text and 'synthetic-two' not in text
         assert all(s['has_secret'] and 'secret' not in s for s in state['radius']['servers'])
-        before=store.get('configuration')
+        before=client.app.state.engine.state.cfg.model_dump(mode='json')
         bad=change(client,'/radius/settings',{'nas_identifier':''},method='PATCH')
-        assert bad.status_code==422 and store.get('configuration')==before
+        assert bad.status_code==422 and client.app.state.engine.state.cfg.model_dump(mode='json')==before
         assert change(client,'/radius/settings',{'nas_identifier':'Override'},method='PATCH').status_code==200
         assert change(client,'/radius/settings',{'nas_identifier':None},method='PATCH').status_code==200
-        assert store.load().radius.nas_identifier is None
+        assert client.app.state.engine.state.cfg.radius.nas_identifier is None
+        assert not store.load().radius.servers
+        assert change(client,'/switch/save').status_code==200
+        assert [s.id for s in store.load().radius.servers]==[two,one]
 
 
 def test_templates_make_independent_copies_and_material_references_are_protected(configured,store):
@@ -51,9 +54,9 @@ def test_templates_make_independent_copies_and_material_references_are_protected
         assert saved.endpoints[endpoint].sources[0].supplicant.username=='custom'
         assert saved.radius.templates[tid].profile.password=='replacement' and saved.radius.templates[tid].revision==1
         assert change(client,f'/radius/materials/{trust.id}',method='DELETE').status_code==422
-        before=store.get('configuration')
+        before=client.app.state.engine.state.cfg.model_dump(mode='json')
         assert change(client,f'/endpoints/{endpoint}/supplicant',{'source_id':source_id,'profile':{'trust_id':'missing'}}).status_code==422
-        assert store.get('configuration')==before
+        assert client.app.state.engine.state.cfg.model_dump(mode='json')==before
         state=client.get('/api/v1/state').json();text=json.dumps(state)
         assert 'synthetic-profile-password' not in text and 'replacement' not in text and 'BEGIN CERTIFICATE' not in text and 'PRIVATE KEY' not in text
         assert state['endpoints'][endpoint]['sources'][0]['supplicant']['has_password']
@@ -136,5 +139,5 @@ async def test_populated_encrypted_v3_store_migration_preserves_baseline_and_rel
         saved=migrated.state.cfg.model_dump(mode='json')
     finally:store.close()
     store=Store(str(path),key)
-    try:assert store.load().model_dump(mode='json')==saved and store.get('configuration')['schema_version']==4
+    try:assert store.load().model_dump(mode='json')==saved and store.get('startup_configuration')['schema_version']==4 and store.get('configuration') is None
     finally:store.close()

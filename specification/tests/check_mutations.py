@@ -26,6 +26,8 @@ MUTATIONS += [
     ('radius_partial_coa_on_nak', 'RadiusDynamicAuthorization', 'RadiusDynamicAuthorization.tla', 'IF Applicable /\\ c \\in Matched\n                  THEN', 'IF c \\in Matched /\\ (Applicable \\/ (operation = "coa" /\\ c \\in canApply /\\ requestedVlan \\in VLANs))\n                  THEN'),
 ]
 
+MUTATIONS += [('running_apply_autosaves', 'StartupLifecycle', 'StorageOutcomes.tla', '[] OTHER -> store.durable\n    IN [published', '[] operation \\in {"api","set"} -> [store.durable EXCEPT !.startup = published.policy]\n          [] OTHER -> store.durable\n    IN [published'), ('mixed_lab_autosaves_policy', 'StartupLifecycle', 'StorageOutcomes.tla', 'operation = "lab" -> [store.durable EXCEPT !.lab = ReplacementLab]', 'operation = "lab" -> [store.durable EXCEPT !.lab = ReplacementLab, !.startup = published.policy]'), ('startup_resurrects_hardware', 'StartupLifecycle', 'StorageOutcomes.tla', 'RebootLab == store.durable.lab', 'RebootLab == [store.durable.lab EXCEPT !.ports = @ \\cup DOMAIN store.saved]'), ('storage_fault_gate_removed', 'StorageRecovery', 'StorageOutcomes.tla', 'CommitAllowed == Gate', 'CommitAllowed == store.open /\\ store.active')]
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jar', required=True, type=Path)

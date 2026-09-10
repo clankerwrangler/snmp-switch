@@ -108,6 +108,16 @@ const path = require('node:path');
       await page.locator(`nav button[data-id="${destination}"]`).click();
       await page.evaluate(()=>window.scrollTo(0,0));
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      if(destination==='radius'){
+        assert.equal(await page.locator('#radius-config.settings-grid > .card').count(),5);
+        const layout=await page.locator('#radius-config').evaluate(el=>{
+          const box=e=>{const r=e.getBoundingClientRect();return {x:r.x,width:r.width};};
+          return {container:box(el),access:box(el.querySelector('#radius-access')),templates:box(el.querySelector('#radius-templates')),certificates:box(el.querySelector('#radius-materials'))};
+        });
+        assert.ok(Math.abs(layout.certificates.width-layout.container.width)<1);
+        if(viewport.width>680){assert.ok(layout.access.width<layout.container.width);assert.ok(layout.templates.x>layout.access.x);}
+        else{assert.ok(Math.abs(layout.access.x-layout.templates.x)<1);assert.ok(Math.abs(layout.access.width-layout.container.width)<1);}
+      }
       frames.push(await page.evaluate(destination=>{
         const box=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {x:r.x,width:r.width};};
         return {destination,overflow:document.documentElement.scrollHeight>innerHeight,
@@ -183,7 +193,7 @@ const path = require('node:path');
   await screenshot('overview.png');
   await page.getByRole('button',{name:'Configure port',exact:true}).click();
   await page.getByLabel('Alias',{exact:true}).fill('Edited through the browser');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
   // Port-view detachment changes only the attachment, using the existing revision-checked DELETE.
   const attachedBefore=await state();
@@ -225,7 +235,7 @@ const path = require('node:path');
   await page.locator(`button[data-action="select-port"][data-id="${sharedPort}"]`).click();
   await detail.getByRole('button',{name:'Configure port',exact:true}).click();
   await page.locator('dialog select[name=mode]').selectOption('shared');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
   await attachFromPort(endpoint.id,sharedPort);
   await page.locator('nav button[data-id=endpoints]').click();
@@ -322,7 +332,7 @@ const path = require('node:path');
   assert.equal(await page.locator('dialog [name=oid]').count(),0);
   await page.getByLabel('Location',{exact:true}).fill('Synthetic settings location');
   const generalWrite=page.waitForRequest(r=>r.url().endsWith('/api/v1/switch')&&r.method()==='PATCH');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Apply',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
   const generalPayload=(await generalWrite).postDataJSON();
   assert.equal('identity' in generalPayload,false);assert.equal('queue_limit' in generalPayload,false);
   assert.deepEqual((await state()).switch.identity,beforeGeneral.switch.identity);
@@ -330,7 +340,7 @@ const path = require('node:path');
   await page.locator('nav button[data-id=snmp]').click();await page.locator('button[data-action=identity]').click();
   assert.equal(await page.locator('dialog [name=name]').count(),0);assert.equal(await page.locator('dialog [name=aging_seconds]').count(),0);
   const snmpIdentityWrite=page.waitForRequest(r=>r.url().endsWith('/api/v1/switch')&&r.method()==='PATCH');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Apply',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
   const identityPayload=(await snmpIdentityWrite).postDataJSON();assert.equal('name' in identityPayload,false);assert.equal('aging_seconds' in identityPayload,false);
   assert.equal((await state()).switch.location,'Synthetic settings location');
   const initialHost=(await state()).snmp.host;
@@ -339,7 +349,7 @@ const path = require('node:path');
   assert.equal(await page.getByRole('checkbox',{name:'Enable SNMP',exact:true}).isChecked(),false);
   assert.equal(await page.getByRole('checkbox',{name:'Explicitly enable SNMP',exact:true}).count(),0);
   await page.getByLabel('Listen IP address',{exact:true}).fill('127.0.0.2');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
   await page.reload();
   await page.locator('nav button[data-id=snmp]').click();
@@ -348,7 +358,7 @@ const path = require('node:path');
   assert.equal(await page.getByRole('checkbox',{name:'Enable SNMP',exact:true}).isChecked(),false);
   assert.equal((await state()).switch.identity.sys_object_id,null);
   await page.getByLabel('Listen IP address',{exact:true}).fill(initialHost);
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
   console.log('Listener form passed: exact Enable SNMP label, custom address roundtrip after reload, SNMP remains disabled.');
   assert.equal(await page.title(),'Switch Lab');
@@ -366,7 +376,7 @@ const path = require('node:path');
   const writeNets=()=>page.getByLabel('Write source networks (optional)',{exact:true});
   async function saveForm(path){
     const pending=page.waitForResponse(r=>r.url().includes('/api/v1/'+path)&&['POST','PUT'].includes(r.request().method()));
-    await page.getByRole('button',{name:'Save changes',exact:true}).click();
+    await page.getByRole('button',{name:'Apply',exact:true}).click();
     const response=await pending;assert.equal(response.status(),200,await response.text());
     const payload=response.request().postDataJSON(),body=await response.json();
     await page.locator('dialog').waitFor({state:'hidden'});return {payload,body};
@@ -381,7 +391,7 @@ const path = require('node:path');
   }
   async function failure(path,status,text){
     const pending=page.waitForResponse(r=>r.url().includes('/api/v1/'+path)&&['POST','PUT','DELETE'].includes(r.request().method()));
-    await page.getByRole('button',{name:'Save changes',exact:true}).click();
+    await page.getByRole('button',{name:'Apply',exact:true}).click();
     assert.equal((await pending).status(),status);
     await page.locator('.form-error').filter({hasText:text}).waitFor();
   }
@@ -471,14 +481,14 @@ const path = require('node:path');
   await page.getByLabel('Privacy passphrase (AES-128)',{exact:true}).fill('inline-browser-priv');
   await page.getByLabel('Destination IP address',{exact:true}).fill('invalid-address');
   let response=page.waitForResponse(r=>r.url().endsWith('/api/v1/notifications/targets')&&r.request().method()==='POST');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
   assert.equal((await response).status(),422);
   await page.locator('.form-error').filter({hasText:'IP'}).waitFor();
   assert.deepEqual((await state()).credentials,beforeTraps.credentials);
   assert.deepEqual((await state()).targets,beforeTraps.targets);
   await page.getByLabel('Destination IP address',{exact:true}).fill('127.0.0.1');
   response=page.waitForResponse(r=>r.url().endsWith('/api/v1/notifications/targets')&&r.request().method()==='POST');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
   const createdResponse=await response;assert.equal(createdResponse.status(),200);
   const created=await createdResponse.json();
   const inlinePayload=createdResponse.request().postDataJSON();
@@ -498,7 +508,7 @@ const path = require('node:path');
   await page.locator('dialog select[name=version]').selectOption('2c');
   assert.deepEqual(await page.locator('dialog select[name=credential_id]').locator('option').evaluateAll(o=>o.map(x=>x.value)),[sharedId]);
   response=page.waitForResponse(r=>r.url().endsWith('/api/v1/notifications/targets/'+created.id)&&r.request().method()==='PUT');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
   const selected=await response;assert.equal(selected.status(),200);
   assert.equal('new_credential' in selected.request().postDataJSON(),false);
   assert.equal(selected.request().postDataJSON().credential_id,sharedId);
@@ -514,6 +524,11 @@ const path = require('node:path');
   await page.locator('dialog').waitFor({state:'hidden'});
   snapshot=await state();assert.equal(Object.keys(snapshot.targets).length,0);assert.equal(Object.keys(snapshot.credentials).length,2);
   console.log('Shared trap browser checks passed: inline create/cancel/failure atomicity, version filtering, secret-free selection, polling separation and retained credentials.');
+  const initialViews=(await state()).views;
+  assert.deepEqual(initialViews.all,{id:'all',name:'iso',includes:['1']});
+  assert.deepEqual(initialViews.internet,{id:'internet',name:'internet',includes:['1.3.6.1']});
+  assert.deepEqual(initialViews.interfaces.includes,['1.3.6.1.2.1.1','1.3.6.1.2.1.2','1.3.6.1.2.1.31']);
+  assert.equal(await page.locator('button[data-action=view][data-id=all]').locator('..').locator('..').locator('b').textContent(),'iso');
   // Inactive restrictions survive missing views, with literal labels and no injected markup.
   await editCredential('Browser polling');await access().selectOption('none');await saveCredential('2c');
   await page.locator(`button[data-action=group][data-id="${transferredGroup}"]`).click();
@@ -541,12 +556,30 @@ const path = require('node:path');
   beforeInvalid=await state();await failure('snmp/credentials',422,'Unknown read view');
   assert.deepEqual((await state()).credentials,beforeInvalid.credentials);assert.deepEqual((await state()).targets,beforeInvalid.targets);
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.getByRole('button',{name:'+ View',exact:true}).click();
+  await page.getByLabel('Name',{exact:true}).fill('Invalid prefix');
+  for(const prefix of ['3','1.40','1..3']){
+    beforeInvalid=await state();
+    await page.locator('dialog input[name=includes]').fill(prefix);
+    await failure('snmp/views',422,'OID');
+    snapshot=await state();assert.deepEqual(snapshot.views,beforeInvalid.views);assert.equal(snapshot.configuration_revision,beforeInvalid.configuration_revision);
+  }
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
   async function addView(name){
     await page.getByRole('button',{name:'+ View',exact:true}).click();
+    assert.equal(await page.locator('dialog input[name=includes]').inputValue(),'1');
     await page.getByLabel('Name',{exact:true}).fill(name);
-    return (await saveForm('snmp/views')).body.id;
+    const id=(await saveForm('snmp/views')).body.id;
+    assert.deepEqual((await state()).views[id].includes,['1']);
+    return id;
   }
   const readViewId=await addView('Browser read'),writeViewId=await addView('Browser write');
+  for(const prefix of ['1.3.6.1','1']){
+    await page.locator(`button[data-action=view][data-id="${readViewId}"]`).click();
+    await page.locator('dialog input[name=includes]').fill(prefix);
+    await saveForm('snmp/views');assert.deepEqual((await state()).views[readViewId].includes,[prefix]);
+  }
+  console.log('Root-prefix view checks passed: iso/internet defaults, root create/edit, invalid atomic rejection and stable internal references.');
   await openLiteral();await access().selectOption('read-write');
   assert.equal(await readView().inputValue(),'all');assert.equal(await writeView().inputValue(),'');
   await readView().selectOption(readViewId);await writeView().selectOption(writeViewId);
@@ -620,13 +653,30 @@ const path = require('node:path');
   assert.equal((await state()).snmp.enabled,false);assert.equal((await state()).switch.identity.sys_object_id,null);
   console.log('Unified access browser passed: four modes, sparse/hidden drafts, explicit conversions, shared users/groups, mismatch/defaults, missing views, literal labels, real atomic errors, one listener status and exact title.');
 
+  await page.locator('nav button[data-id=radius]').click();
+  for(const [section,action] of [['radius-templates','radius-template'],['radius-accounting','accounting-settings'],['radius-dynamic','dynamic-settings']]){
+    const disclosure=page.locator('#'+section),summary=disclosure.locator(':scope > summary');
+    for(const opened of [false,true]){
+      if(await disclosure.evaluate(el=>el.open)!==opened)await summary.click({position:{x:8,y:8}});
+      const control=summary.locator(`button[data-action=${action}]`);
+      await control.focus();await page.keyboard.press('Enter');await page.locator('dialog[open]').waitFor();
+      assert.equal(await disclosure.evaluate(el=>el.open),opened);
+      await page.getByRole('button',{name:'Cancel',exact:true}).click();
+      assert.equal(await disclosure.evaluate(el=>el.open),opened);
+    }
+    await summary.focus();await page.keyboard.press('Space');
+    assert.equal(await disclosure.evaluate(el=>el.open),false);
+  }
+  await page.locator('nav button[data-id=snmp]').click();
+
+
   // The port form preserves independent egress sets and previews native API convenience.
   await page.locator('nav button[data-id=vlans]').click();
   for(const vid of [10,20,30]){
     await page.getByRole('button',{name:'+ Add VLAN',exact:true}).click();
     await page.getByLabel('VLAN ID',{exact:true}).fill(String(vid));
     await page.getByLabel('Name',{exact:true}).fill('Browser VLAN '+vid);
-    await page.getByRole('button',{name:'Save changes',exact:true}).click();
+    await page.getByRole('button',{name:'Apply',exact:true}).click();
     await page.locator('dialog').waitFor({state:'hidden'});
   }
   await page.locator('nav button[data-id=overview]').click();
@@ -634,7 +684,7 @@ const path = require('node:path');
   const openPort=()=>detail.getByRole('button',{name:'Configure port',exact:true}).click();
   const savePort=async()=>{
     const request=page.waitForRequest(r=>r.url().endsWith('/api/v1/ports/'+sharedPort)&&r.method()==='PATCH');
-    await page.getByRole('button',{name:'Save changes',exact:true}).click();
+    await page.getByRole('button',{name:'Apply',exact:true}).click();
     const payload=(await request).postDataJSON();
     await page.locator('dialog').waitFor({state:'hidden'});
     return payload;
@@ -682,7 +732,7 @@ const path = require('node:path');
   await openPort();
   await page.getByLabel(flabel).fill('1');
   response=page.waitForResponse(r=>r.url().endsWith('/api/v1/ports/'+sharedPort)&&r.request().method()==='PATCH');
-  await page.getByRole('button',{name:'Save changes',exact:true}).click();
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
   assert.equal((await response).status(),422);
   await page.locator('.form-error').filter({hasText:'forbidden VLANs cannot be admitted'}).waitFor();
   assert.deepEqual((await state()).ports[sharedPort],snapshot.ports[sharedPort]);
@@ -699,14 +749,14 @@ const path = require('node:path');
   // RADIUS uses the existing source/selected-port owners. No server or
   // listener is enabled here; protocol interoperability is tested separately.
   const radiusCard=page.locator('#radius-config');
-  const saveRadius=async()=>{await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});};
+  const saveRadius=async()=>{await page.locator('dialog button[type=submit]').click();await page.locator('dialog[open]').waitFor({state:'hidden'});};
   await radiusCard.locator('#radius-servers > summary').click();
   await radiusCard.locator('#radius-servers > summary').focus();
   await radiusCard.evaluate(el=>el.dataset.refreshProbe='waiting');
   await page.waitForFunction(()=>!document.getElementById('radius-config').dataset.refreshProbe);
   assert.equal(await radiusCard.locator('#radius-servers').evaluate(el=>el.open),true);
   assert.equal(await radiusCard.locator('#radius-servers > summary').evaluate(el=>el===document.activeElement),true);
-  await radiusCard.getByRole('button',{name:'+ Server',exact:true}).click();
+  await radiusCard.locator('#radius-servers button[data-action=radius-server]').click();
   await page.getByText(/In Docker bridge mode, the local source IP must exist inside the container/).waitFor();
   await page.getByLabel('Label',{exact:true}).fill('Browser RADIUS');await page.getByLabel('Server IP address',{exact:true}).fill('192.0.2.10');
   await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-radius-secret');await page.getByLabel('Enabled',{exact:true}).uncheck();await saveRadius();
@@ -839,7 +889,7 @@ const path = require('node:path');
   assert.equal(radiusState.endpoints[second.id].sources[0].supplicant.username,'inner-'+ 'x'.repeat(64));
   assert.ok(radiusState.endpoints[endpoint.id].sources[0].supplicant.has_password);
   await page.locator('nav button[data-id=radius]').click();
-  await certRow('Browser trust renamed').getByText('1 templates · 2 copied source profiles',{exact:true}).waitFor();
+  await certRow('Browser trust renamed').getByText('1 template · 2 copied source profiles',{exact:true}).waitFor();
   await certRow('Browser trust renamed').getByRole('button',{name:'Delete',exact:true}).click();
   const beforeReferencedDelete=(await state()).radius.materials;
   await page.locator('dialog').getByRole('button',{name:'Delete',exact:true}).click();
@@ -849,21 +899,21 @@ const path = require('node:path');
   await radiusCard.locator('.setting-row').filter({hasText:'Browser supplicant'}).getByRole('button',{name:'Edit',exact:true}).click();
   await page.getByLabel('Inner username',{exact:true}).fill('changed-template-only');await saveRadius();
   radiusState=await state();assert.equal(radiusState.endpoints[endpoint.id].sources[0].supplicant.username,'custom-browser-inner');assert.equal(radiusState.endpoints[second.id].sources[0].supplicant.username,'inner-'+ 'x'.repeat(64));
-  await radiusCard.locator('#radius-accounting > summary').click();await radiusCard.getByRole('button',{name:'+ Accounting server',exact:true}).click();
+  await radiusCard.locator('#radius-accounting > summary').click();await radiusCard.locator('#radius-accounting > summary button[data-action=accounting-target]').click();
   assert.equal(await page.getByLabel('UDP port',{exact:true}).inputValue(),'1813');await page.getByLabel('Label',{exact:true}).fill('Browser collector');
   await page.getByLabel('Server IP address',{exact:true}).fill('192.0.2.11');await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-accounting-secret');await saveRadius();
   await radiusCard.locator('.setting-row').filter({hasText:'Browser collector'}).getByRole('button',{name:'Edit',exact:true}).click();assert.equal(await page.getByLabel('Shared secret (blank = unchanged)',{exact:true}).inputValue(),'');await saveRadius();
   for(const [mode,interval] of [['local',120],['off',0],['server',null]]){
-    await radiusCard.getByRole('button',{name:'Accounting settings',exact:true}).click();await page.locator('dialog [name=interim_mode]').selectOption(mode);
+    await radiusCard.locator('#radius-accounting > summary button[data-action=accounting-settings]').click();await page.locator('dialog [name=interim_mode]').selectOption(mode);
     await page.getByLabel('Local interim interval (simulation seconds)',{exact:true}).fill('120');
     await page.getByLabel('RADIUS response timeout (real seconds)',{exact:true}).fill('4');await page.getByLabel('Attempts per server',{exact:true}).fill('2');await page.getByLabel('Retry backoff base (real seconds)',{exact:true}).fill('0');await saveRadius();
     radiusState=await state();assert.equal(radiusState.radius.accounting.interim_seconds,interval);assert.equal(radiusState.radius.accounting.response_timeout_seconds,4);assert.equal(radiusState.radius.accounting.attempts,2);assert.equal(radiusState.radius.accounting.retry_backoff_seconds,0);
     assert.equal(radiusState.radius.accounting.enabled,false);assert.equal(radiusState.radius.response_timeout_seconds,3);assert.equal(radiusState.radius.attempts,3);
   }
-  await radiusCard.locator('#radius-dynamic > summary').click();await radiusCard.getByRole('button',{name:'+ Dynamic authorization client',exact:true}).click();
+  await radiusCard.locator('#radius-dynamic > summary').click();await radiusCard.locator('#radius-dynamic > summary button[data-action=dynamic-sender]').click();
   await page.getByLabel('Label',{exact:true}).fill('Browser sender');await page.getByLabel('Client IP address',{exact:true}).fill('192.0.2.12');await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-das-secret');await saveRadius();
   await radiusCard.locator('.setting-row').filter({hasText:'Browser sender'}).getByRole('button',{name:'Edit',exact:true}).click();assert.equal(await page.getByLabel('Shared secret (blank = unchanged)',{exact:true}).inputValue(),'');await saveRadius();
-  await radiusCard.getByRole('button',{name:'CoA / Disconnect settings',exact:true}).click();await page.getByLabel('Bind IP address',{exact:true}).fill('127.0.0.1');await page.getByLabel('UDP port',{exact:true}).fill('3799');await saveRadius();
+  await radiusCard.locator('#radius-dynamic > summary button[data-action=dynamic-settings]').click();await page.getByLabel('Bind IP address',{exact:true}).fill('127.0.0.1');await page.getByLabel('UDP port',{exact:true}).fill('3799');await saveRadius();
   radiusState=await state();assert.equal(radiusState.radius.dynamic_authorization.enabled,false);assert.equal(radiusState.radius.dynamic_status.ready,false);assert.ok(radiusState.radius.dynamic_authorization.senders[0].has_secret);
   for(const label of ['Browser collector','Browser sender']){await radiusCard.locator('.setting-row').filter({hasText:label}).getByRole('button',{name:'Delete',exact:true}).click();await page.locator('dialog').getByRole('button',{name:'Delete',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});}
   await page.locator('nav button[data-id=overview]').click();await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).click();
@@ -924,6 +974,60 @@ const path = require('node:path');
   const radiusText=JSON.stringify(radiusState);for(const privateValue of ['synthetic-browser-radius-secret','synthetic-browser-peap-password','synthetic-browser-accounting-secret','synthetic-browser-das-secret','BEGIN CERTIFICATE'])assert.equal(radiusText.includes(privateValue),false);
   await page.locator('nav button[data-id=radius]').click();
   console.log('RADIUS browser passed: independent disabled destinations, captured retry policy, sparse secrets, copied profiles/templates, unchanged carrier/colors, selected-port successful/pending/failed presentation, grouped escaped history, safe on-demand attributes, focus/disclosure/scroll refresh and mobile. Presentation samples do not authorize backend sessions.');
+  // Explicit startup save is global; lab saves never save dirty switch policy.
+  assert.equal(await page.getByRole('button',{name:'Save configuration',exact:true}).count(),1);
+  const saveConfiguration=async()=>{
+    const response=page.waitForResponse(r=>r.url().endsWith('/api/v1/switch/save')&&r.request().method()==='POST');
+    await page.getByRole('button',{name:'Save configuration',exact:true}).click();
+    assert.equal((await response).status(),200);
+    await page.locator('#configuration-status').getByText('Saved',{exact:true}).waitFor();
+    assert.equal((await state()).configuration_status.unsaved,false);
+  };
+  const deniedSaveState=await state();
+  assert.equal((await page.request.post(new URL('/api/v1/switch/save',fixtureURL).href,{data:{expected_configuration_revision:deniedSaveState.configuration_revision}})).status(),403);
+  assert.deepEqual((await state()).configuration_status,deniedSaveState.configuration_status);
+  await saveConfiguration();
+  await page.locator('nav button[data-id=vlans]').click();
+  await page.getByRole('button',{name:'+ Add VLAN',exact:true}).click();
+  await page.getByLabel('VLAN ID',{exact:true}).fill('3099');await page.getByLabel('Name',{exact:true}).fill('Saved browser VLAN');
+  await page.getByRole('button',{name:'Apply',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
+  await page.locator('#configuration-status').getByText('Unsaved changes',{exact:true}).waitFor();
+  const beforeSave=await state(),saveURL=new URL('/api/v1/switch/save',fixtureURL).href;
+  await page.route(saveURL,async route=>{
+    const body=route.request().postDataJSON();body.expected_configuration_revision=beforeSave.configuration_revision-1;
+    await route.continue({postData:JSON.stringify(body)});
+  });
+  try{
+    const denied=page.waitForResponse(r=>r.url()===saveURL&&r.request().method()==='POST');
+    await page.getByRole('button',{name:'Save configuration',exact:true}).click();assert.equal((await denied).status(),409);
+    await page.locator('#toast').getByText('Configuration changed while editing; reload and retry',{exact:true}).waitFor();
+    assert.deepEqual((await state()).configuration_status,beforeSave.configuration_status);
+  }finally{await page.unroute(saveURL);}
+  await page.getByRole('button',{name:'Save configuration',exact:true}).focus();
+  await page.locator('#save-configuration').evaluate(el=>el.dataset.refreshProbe='waiting');
+  await page.waitForFunction(()=>!document.getElementById('save-configuration').dataset.refreshProbe);
+  assert.equal(await page.locator('#save-configuration').evaluate(el=>el===document.activeElement),true);
+  await saveConfiguration();
+  const savedStartup=await state();
+  await page.locator('button[data-action=edit-vlan][data-id="3099"]').click();
+  await page.getByLabel('Name',{exact:true}).fill('Unsaved browser VLAN');await page.getByRole('button',{name:'Apply',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
+  await page.locator('nav button[data-id=endpoints]').click();
+  await page.locator(`button[data-action=edit-endpoint][data-id="${endpoint.id}"]`).click();
+  await page.getByLabel('Display name',{exact:true}).fill('Durable browser endpoint');
+  await page.getByRole('button',{name:'Save endpoint',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
+  const dirtyLab=await state();assert.equal(dirtyLab.configuration_status.unsaved,true);
+  assert.equal(dirtyLab.configuration_status.startup_revision,savedStartup.configuration_status.startup_revision);
+  await page.locator('nav button[data-id=settings]').click();await page.locator('button[data-action=reboot]').click();
+  await page.locator('dialog').getByText(/Discard unsaved switch settings/).waitFor();
+  const bootResponse=page.waitForResponse(r=>r.url().endsWith('/api/v1/switch/reboot')&&r.request().method()==='POST');
+  await page.locator('dialog').getByRole('button',{name:'Reboot switch',exact:true}).click();assert.equal((await bootResponse).status(),200);await page.locator('dialog[open]').waitFor({state:'hidden'});
+  const booted=await state();assert.equal(booted.vlans['3099'].name,'Saved browser VLAN');
+  assert.equal(booted.endpoints[endpoint.id].name,'Durable browser endpoint');assert.deepEqual(booted.attachments,dirtyLab.attachments);
+  assert.equal(booted.simulation_ms,0);assert.equal(booted.configuration_status.unsaved,false);
+  assert.ok(booted.configuration_revision>dirtyLab.configuration_revision);assert.ok(booted.revision>dirtyLab.revision);
+  assert.equal((await (await page.request.get(new URL('/api/v1/auth/status',fixtureURL).href)).json()).authenticated,true);
+  await page.locator('nav button[data-id=radius]').click();
+  console.log('Running/startup browser passed: one global revision-checked Save, Apply versus durable lab Save, dirty/focus refresh, real stale rejection, saved restore with physical edits retained and manager login preserved.');
   const final=await state();assert.equal(final.snmp.enabled,false);assert.equal(final.switch.identity.sys_object_id,null);
   await screenshot('settings.png');
   await page.setViewportSize({width:390,height:844});

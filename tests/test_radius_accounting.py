@@ -225,3 +225,41 @@ async def test_accounting_waits_end_at_original_retention_before_retry_or_failov
     assert result is None and loop.time()-start<1
     assert len(connected)==1 and len(sent)==(0 if blocked=='connect' else 1)
     assert engine.accounting_remaining(record)==0 and engine.state.radius_sessions
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restore", ["process", "reboot"])
+@pytest.mark.parametrize("change", ["none", "secret", "delivery", "disable"])
+async def test_startup_accounting_preserves_horizon_or_retires_revoked_records(configured, store, restore, change):
+    cfg,pid,eid = configured
+    target = RadiusServer(label="Collector",address="192.0.2.5",secret="saved-collector")
+    cfg.radius.accounting.enabled=True;cfg.radius.accounting.targets=[target]
+    engine=Engine(cfg,store)
+    if change == "secret":
+        await engine.execute("accounting-target-save",{"id":target.id,"secret":"unsaved-collector"})
+    elif change == "delivery":
+        await engine.execute("accounting-settings",{"attempts":2})
+    elif change == "disable":
+        await engine.execute("accounting-settings",{"enabled":False})
+        await engine.execute("save-startup")
+        await engine.execute("accounting-settings",{"enabled":True})
+    await grant(engine,pid,eid,controls())
+    original = copy.deepcopy(engine.state.accounting_outbox)
+    assert original
+    sequence = engine.state.accounting_sequence
+    if restore == "process": engine=Engine(store.load(),store)
+    else: await engine.execute("reboot")
+    retained = {record["id"]:record for record in engine.state.accounting_outbox}
+    if change == "none":
+        for record in original:
+            assert retained[record["id"]] == record
+            assert engine.accounting_current(record["id"]) is not None
+    else:
+        assert not set(retained) & {r["id"] for r in original}
+        assert engine.state.accounting_drops["configuration-change"] >= len(original)
+    assert engine.state.accounting_sequence >= sequence
+    if change != "disable":
+        assert engine.state.accounting_outbox[-1]["status_type"] == 7
+        assert engine.accounting_current(engine.state.accounting_outbox[-1]["id"]) is not None
+    else: assert not engine.state.accounting_outbox
+    assert not engine.state.radius_sessions

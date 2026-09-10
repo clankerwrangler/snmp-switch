@@ -158,7 +158,10 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
         polling(False)  # Compose still publishes the previous listener port.
         command("/switch", {"identity": {"sys_object_id": None}}, "PATCH")
         assert api("/api/v1/state")["snmp"]["port"] == next_port
+        command("/switch/save")
         print(json.dumps({f"listener_port_{snmp_port}_to_{next_port}_saved": "passed"}))
+    else:
+        command("/switch/save")
     print(json.dumps({"non_loopback_http_and_assets": "passed", "session_login_logout": "passed",
         "same_origin_csrf": "passed", "cross_origin_and_missing_csrf_rejected": "passed",
         "snmp_identity_gate": "passed", "snmp_loopback_and_lan_listener": "passed",

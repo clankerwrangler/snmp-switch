@@ -230,3 +230,36 @@ async def test_failed_close_retirement_preserves_reservation_until_successful_re
     monkeypatch.setattr(store,'_radius_metadata',original)
     await engine.close_dynamic()
     assert not engine._das_pending and len(store.radius_decisions())==1 and protocol.transport.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restore", ["process", "reboot"])
+async def test_startup_trust_restore_keeps_durable_replay_and_new_generation(store, restore):
+    engine,protocol,pid,sender,wall,elapsed = configured_engine(store)
+    packet=request(code=40)
+    first=await send(engine,protocol,packet)
+    assert first[0][0] == 41
+    receipt=copy.deepcopy(store.radius_decisions())
+    first_generation=engine._das_generations[sender.id]["generation"]
+    with store.transaction():
+        store.put("admin_hash","synthetic-manager-hash")
+        store.put("engine_identity","40000102030405060708090a0b")
+        store.put("engine_boots",9)
+    await engine.execute("dynamic-sender-save",{"id":sender.id,"secret":"unsaved-trust"})
+    middle_generation=engine._das_generations[sender.id]["generation"]
+    assert first_generation != middle_generation
+    highwater=store.get("radius_replay_high_water",0)
+    if restore == "process":
+        engine=Engine(store.load(),store);engine._das_wall=lambda:1001.;engine._das_clock=lambda:11.
+    else: await engine.execute("reboot")
+    assert engine._das_generations[sender.id]["generation"] not in (first_generation,middle_generation)
+    assert engine.state.cfg.radius.dynamic_authorization.senders[0].secret == SECRET.decode()
+    assert store.radius_decisions() == receipt and store.get("radius_replay_high_water",0) >= highwater
+    assert store.get("admin_hash") == "synthetic-manager-hash" and store.get("engine_boots") == 9
+    assert store.get("engine_identity") == "40000102030405060708090a0b"
+    replacement=AccessSession("replacement",pid,MAC,"mab",Authorization(1,"port-default"),nas_identity=NasIdentity(b"Switch Lab"))
+    engine.state.radius_sessions[(pid,MAC)] = replacement
+    p=DynamicListener(engine,engine._dynamic_binding());p.transport=Transport();engine._das_protocol=p
+    before=engine.state
+    assert await send(engine,p,packet) == [] and engine.state is before
+    assert engine.state.radius_sessions[(pid,MAC)].id == "replacement"
