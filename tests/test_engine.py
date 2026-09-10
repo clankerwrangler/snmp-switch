@@ -222,11 +222,11 @@ async def test_inline_target_storage_failure_rolls_back(engine, store, monkeypat
     import sqlite3
     e = engine
     before = e.state
-    persisted, events, idem = store.get("configuration"), store.events(), store.get("idempotency")
+    persisted, events, idem = store.get("startup_configuration"), store.events(), store.get("idempotency")
     original_put = store.put
     def fail_after_configuration(key, value):
         original_put(key, value)
-        if key == "configuration":
+        if key == "configuration_revision":
             raise sqlite3.OperationalError("synthetic write failure")
     with monkeypatch.context() as patch:
         patch.setattr(store, "put", fail_after_configuration)
@@ -234,9 +234,12 @@ async def test_inline_target_storage_failure_rolls_back(engine, store, monkeypat
             await e.execute("target-save", {"address": "127.0.0.1", "new_credential": {
                 "label": "Atomic", "community": "synthetic-atomic"}}, key="atomic")
     assert e.state is before and not e.idempotency
-    assert store.get("configuration") == persisted and store.events() == events and store.get("idempotency") == idem
+    assert store.get("startup_configuration") == persisted and store.events() == events and store.get("idempotency") == idem
     result = await e.execute("target-save", {"address": "127.0.0.1", "new_credential": {
         "label": "Atomic", "community": "synthetic-atomic"}}, key="atomic")
+    assert e.state.cfg.targets[result["id"]].credential_id == result["credential_id"]
+    assert store.load().targets == {}  # Applied running policy is not an implicit Save.
+    await e.execute("save-startup")
     assert store.load().targets[result["id"]].credential_id == result["credential_id"]
 
 
@@ -255,8 +258,8 @@ def set_binding(suffix, value):
 
 
 def stored_state(store):
-    return ({key: store.get(key) for key in ("configuration", "configuration_revision", "revision",
-                                            "outbox", "idempotency")}, store.events(), store.last_event)
+    return ({key: store.get(key) for key in ("configuration", "configuration_format", "lab_configuration", "startup_configuration", "startup_revision",
+                                            "configuration_revision", "revision", "outbox", "idempotency")}, store.events(), store.last_event)
 
 
 async def test_set_one_transition_learning_notifications_and_noop(engine):
@@ -277,7 +280,9 @@ async def test_set_one_transition_learning_notifications_and_noop(engine):
     assert not e.state.fdb and eid not in {key[0] for key in e.state.jobs}
     assert e.state.cfg.endpoints == before.cfg.endpoints and e.state.cfg.attachments == before.cfg.attachments
     assert [x["event"]["kind"] for x in e.state.outbox] == ["linkUp", "linkDown"]
-    assert e.idempotency == {} and e.store.load() == e.state.cfg
+    assert e.idempotency == {} and e.store.load().vlans[1].name == "Default"
+    assert all(p.admin_up for p in e.store.load().ports.values())
+    assert e.store.get("revision") == e.state.revision
     before, persisted = e.state, stored_state(e.store)
     for request in (commands, [], [set_binding("17.7.1.4.3.1.5.200", a.Integer32(6))]):
         assert not (await apply_set(e, request)).changed
@@ -300,7 +305,7 @@ async def test_set_rejected_candidate_preserves_whole_runtime_and_storage(engine
     assert engine.state is before and stored_state(engine.store) == persisted
 
 
-@pytest.mark.parametrize("failure_key", ["configuration", "outbox"])
+@pytest.mark.parametrize("failure_key", ["configuration_revision", "outbox"])
 async def test_set_real_midtransaction_rollback_and_retry(engine, monkeypatch, failure_key):
     import sqlite3
     e = engine
@@ -324,7 +329,8 @@ async def test_set_real_midtransaction_rollback_and_retry(engine, monkeypatch, f
     assert e.state is before and stored_state(e.store) == persisted
     await apply_set(e, request)
     assert not e.state.fdb and e.state.cfg.vlans[1].name == "Atomic"
-    assert e.store.load() == e.state.cfg
+    assert e.store.load().vlans[1].name == "Default"
+    assert e.store.get("revision") == e.state.revision
 
 
 async def test_absent_destroy_does_not_rearm_unrelated_tagged_sources(engine):
@@ -385,6 +391,7 @@ async def test_write_generation_distinct_shared_views_and_reboot(engine):
     await e.execute("credential-save", {"id": ids[0], "writing": {"networks": ["192.0.2.0/24"]}})
     assert e.state.credential_generations[ids[0]] != old[ids[0]]
     assert e.state.credential_generations[ids[1]] == old[ids[1]]
+    await e.execute("save-startup")
     before = e.state
     await e.execute("reboot")
     assert e.state.activation != before.activation
@@ -412,6 +419,7 @@ async def test_vlan_permission_persistence_scenario_and_legacy_defaults(engine):
     assert scenario["schema_version"] == 1 and "credentials" not in scenario
     await e.execute("import", scenario)
     assert e.state.cfg.ports[pid].untagged == [] and e.state.cfg.ports[pid].forbidden == [10]
+    await e.execute("save-startup")
     restored = Engine(e.store.load(), e.store)
     assert restored.state.cfg == e.state.cfg
     assert restored.state.cfg.credentials[result["id"]].writing.enabled
@@ -459,7 +467,8 @@ def test_schema2_groups_preserve_encrypted_policy_and_identity(store, level, rea
     assert community.polling.model_dump() == policy["polling"] and community.writing.model_dump() == policy["writing"]
     assert (community.username, community.auth_key, community.priv_key) == ("retained-inactive", "inactive-auth", "inactive-priv")
     e = Engine(cfg, store)
-    assert store.load() == cfg and store.get("configuration")["schema_version"] == 4
+    assert store.load() == cfg and store.get("startup_configuration")["schema_version"] == 4
+    assert store.get("configuration") is None and store.get("configuration_format") == 1
     assert store.get("engine_identity") == "40000102030405060708090a0b" and store.get("engine_boots") == 9
     assert e.export()["schema_version"] == 1 and not {"credentials", "groups"} & e.export().keys()
     assert "synthetic-auth" not in str(e.snapshot()) and "inactive-auth" not in str(e.snapshot())
@@ -571,7 +580,7 @@ async def test_conversion_group_and_user_rollback_together(engine, monkeypatch):
     original = e.store.put
     def fail_after_write(key, value):
         original(key, value)
-        if key == "configuration":
+        if key == "configuration_revision":
             raise sqlite3.OperationalError("Synthetic conversion write failure")
     with monkeypatch.context() as patch:
         patch.setattr(e.store, "put", fail_after_write)
@@ -618,3 +627,396 @@ def test_schema2_generated_group_ids_are_url_safe_distinct_and_repeatable():
     for cid, user in cfg.credentials.items():
         assert user.id == cid and user.group_id in cfg.groups
         assert set(user.group_id) <= set("user-policy:0123456789abcdef")
+
+
+@pytest.mark.parametrize("prefix,normalized", [("0", "0"), ("1", "1"), ("2", "2"), (" 01 ", "1")])
+def test_view_root_prefix_is_not_a_complete_identity(prefix, normalized):
+    from switchlab.models import View
+    assert View(name="Root", includes=[prefix]).includes == [normalized]
+    with pytest.raises(ValidationError):
+        Identity(sys_object_id=prefix)
+
+
+@pytest.mark.parametrize("prefix", ["", " ", "3", "3.1", "1.40", "1..3", ".1", "1.", "-1", "1.3.-1", "1.3.4294967296", "1." + ".".join(["3"] * 128)])
+def test_invalid_view_prefix_is_rejected(prefix):
+    from switchlab.models import View
+    with pytest.raises(ValidationError):
+        View(name="Invalid", includes=[prefix])
+
+
+def test_fresh_view_defaults_are_iso_and_internet_without_access():
+    from switchlab.models import Configuration, PollingAccess, WritingAccess, initial_configuration
+    for cfg in (Configuration(), initial_configuration(4)):
+        assert cfg.views["all"].model_dump() == {"id":"all", "name":"iso", "includes":["1"]}
+        assert cfg.views["internet"].model_dump() == {"id":"internet", "name":"internet", "includes":["1.3.6.1"]}
+        assert cfg.views["interfaces"].includes == ["1.3.6.1.2.1.1", "1.3.6.1.2.1.2", "1.3.6.1.2.1.31"]
+        assert not cfg.credentials and not cfg.groups and not cfg.snmp.enabled
+    assert PollingAccess().model_dump() == {"enabled":False, "view_id":"all", "networks":[]}
+    assert WritingAccess().model_dump() == {"enabled":False, "view_id":None, "networks":[]}
+
+
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
+@pytest.mark.parametrize("view_kind", ["omitted", "stock", "custom", "empty"])
+def test_saved_views_preserve_effective_policy_on_close_reload(tmp_path, version, view_kind):
+    import copy
+    from cryptography.fernet import Fernet
+    from switchlab.models import initial_configuration
+    from switchlab.storage import Store
+    legacy_views = {
+        "all": {"id":"all", "name":"All implemented objects", "includes":["1.3.6.1.2.1"]},
+        "interfaces": {"id":"interfaces", "name":"Identity and interfaces", "includes":["1.3.6.1.2.1.1", "1.3.6.1.2.1.2", "1.3.6.1.2.1.31"]},
+    }
+    custom_views = {
+        "all": {"id":"all", "name":"iso", "includes":["1.3.6.1.2.1.2"]},
+        "internet": {"id":"internet", "name":"internet", "includes":["1.3.6.1.2.1.31"]},
+        "custom": {"id":"custom", "name":"All implemented objects", "includes":["1.0.8802.1.1.1.1.2.1.1.6"]},
+    }
+    raw = initial_configuration(4).model_dump(mode="json")
+    raw["schema_version"] = version
+    if version < 4:
+        raw.pop("radius")
+        for port in raw["ports"].values(): port.pop("authentication")
+    if version < 3: raw.pop("groups")
+    expected_views = custom_views if view_kind == "custom" else {} if view_kind == "empty" else legacy_views
+    if view_kind == "omitted": raw.pop("views")
+    else: raw["views"] = copy.deepcopy(expected_views)
+    enabled = view_kind != "empty"
+    read = {"enabled":enabled, "view_id":"all", "networks":["192.0.2.0/24"]}
+    write = {"enabled":enabled, "view_id":"all", "networks":["2001:db8::/32"]}
+    credential = {"id":"saved", "label":"Saved", "version":"2c", "community":"synthetic-saved-view", "enabled":True}
+    if version == 1:
+        credential.update(purpose="polling" if enabled else "notification", view_id="all", networks=read["networks"])
+    else: credential.update(polling=read, writing=write)
+    raw["credentials"] = {"saved":credential}
+    original = copy.deepcopy(raw); path = str(tmp_path / "saved.db"); key = Fernet.generate_key()
+    store = Store(path, key)
+    try:
+        with store.transaction(): store.put("configuration", raw)
+        encrypted = store.db.execute("SELECT value FROM kv WHERE key='configuration'").fetchone()[0]
+        loaded = store.load()
+        assert {k:v.model_dump() for k,v in loaded.views.items()} == expected_views
+        assert loaded.credentials["saved"].polling.model_dump() == read
+        if version != 1: assert loaded.credentials["saved"].writing.model_dump() == write
+        assert store.get("configuration") == original == raw
+        assert store.db.execute("SELECT value FROM kv WHERE key='configuration'").fetchone()[0] == encrypted
+    finally: store.close()
+    restored = Store(path, key)
+    try:
+        again = restored.load()
+        assert again == loaded and restored.get("configuration") == original
+        engine = Engine(again, restored)
+        assert {k:v.model_dump() for k,v in engine.state.cfg.views.items()} == expected_views
+        assert restored.load() == loaded
+        assert "views" not in engine.export()
+    finally: restored.close()
+
+
+@pytest.mark.parametrize("restore", ["process", "reboot"])
+async def test_running_startup_logical_and_mixed_lab_lifetimes(tmp_path, restore):
+    from cryptography.fernet import Fernet
+    from switchlab.models import initial_configuration
+    from switchlab.storage import Store
+    key = Fernet.generate_key()
+    path = str(tmp_path / "startup.db")
+    store = Store(path, key)
+    try:
+        cfg = initial_configuration(2); cfg.paused = True
+        e = Engine(cfg, store); pid = next(iter(cfg.ports))
+        await e.execute("vlan-create", {"vid": 20})
+        await e.execute("port-edit", {"id": pid, "patch": {
+            "pvid": 20, "admitted": [1,20], "alias": "unsaved", "mode": "shared", "speed": 100000000}})
+        eid = await endpoint(e, active=False)
+        assert e.state.cfg.ports[pid].pvid == 20
+        assert 20 not in store.load().vlans
+        assert store.load().ports[pid].mode == "shared"
+        if restore == "process":
+            store.close(); store = Store(path, key); e = Engine(store.load(), store)
+        else:
+            await e.execute("reboot")
+        assert e.state.cfg.ports[pid].pvid == 1
+        assert e.state.cfg.ports[pid].alias == ""
+        assert e.state.cfg.ports[pid].mode == "shared"
+        assert e.state.cfg.ports[pid].speed == 100000000
+        assert e.state.cfg.attachments == {eid: pid}
+        assert eid in e.state.cfg.endpoints and e.state.cfg.paused
+        assert not e.snapshot()["configuration_status"]["unsaved"]
+        await e.execute("vlan-create", {"vid": 20})
+        await e.execute("port-edit", {"id": pid, "patch": {"pvid": 20, "admitted": [1,20], "admin_up": False}})
+        revision = e.state.configuration_revision
+        before = e.state
+        with pytest.raises(CommandError, match="Configuration changed"):
+            await e.execute("save-startup", expected_config=revision-1)
+        assert e.state is before
+        await e.execute("save-startup", expected_config=revision)
+        saved_revision = e.snapshot()["configuration_status"]["startup_revision"]
+        assert saved_revision == e.state.configuration_revision
+        assert not e.snapshot()["configuration_status"]["unsaved"]
+        await e.execute("port-edit", {"id": pid, "patch": {"pvid": 1, "admin_up": True}})
+        await e.execute("detach", {"id": eid})
+        await e.execute("endpoint-delete", {"id": eid})
+        before_revision = e.state.configuration_revision
+        if restore == "process":
+            store.close(); store = Store(path, key); e = Engine(store.load(), store)
+        else:
+            await e.execute("reboot")
+        assert e.state.configuration_revision > before_revision
+        assert e.state.cfg.ports[pid].pvid == 20 and not e.state.cfg.ports[pid].admin_up
+        assert not e.state.cfg.endpoints and not e.state.cfg.attachments
+        assert e.snapshot()["configuration_status"]["startup_revision"] == saved_revision
+        assert not e.state.fdb and e.state.sim_ms == 0
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("restore", ["process", "reboot"])
+async def test_running_startup_effect_scoped_idempotency(engine, restore):
+    e = engine; pid = next(iter(e.state.cfg.ports))
+    payload = {"name": "Running name", "description": "Durable hardware description"}
+    await e.execute("switch-edit", payload, key="mixed")
+    physical = await e.execute("endpoint-create", {"name": "Durable client"}, key="physical")
+    await e.execute("save-startup", key="save")
+    await e.execute("switch-edit", {"name": "Discard me"}, key="logical")
+    reboot = await e.execute("reboot", key="reboot-once")
+    if restore == "process":
+        e = Engine(e.store.load(), e.store)
+    epoch, revision = e.state.epoch, e.state.revision
+    assert await e.execute("reboot", key="reboot-once") == reboot
+    assert (e.state.epoch, e.state.revision) == (epoch, revision)
+    assert await e.execute("endpoint-create", {"name": "Durable client"}, key="physical") == physical
+    for action, body, key in [("switch-edit", payload, "mixed"),
+                              ("switch-edit", {"name": "Discard me"}, "logical")]:
+        with pytest.raises(CommandError, match="earlier running configuration") as error:
+            await e.execute(action, body, key=key)
+        assert error.value.status == 409
+    assert e.state.cfg.switch.name == "Running name"
+    assert e.state.cfg.switch.description == "Durable hardware description"
+
+
+@pytest.mark.parametrize("action", ["save-startup", "switch-edit", "reboot"])
+@pytest.mark.parametrize("stage", ["mid-write", "commit-before", "rollback", "commit-after", "commit-rolled-back"])
+async def test_startup_sqlite_failure_publication_and_recovery(tmp_path, monkeypatch, action, stage):
+    import sqlite3
+    from cryptography.fernet import Fernet
+    from switchlab.models import initial_configuration
+    from switchlab.storage import Store, StorageFault, RollbackFailed, CommitUncertain
+    from test_snmp_lifetime import TransactionFault
+    path = str(tmp_path / "fault.db"); key = Fernet.generate_key(); store = Store(path, key)
+    e = Engine(initial_configuration(1), store)
+    await e.execute("switch-edit", {"name": "Unsaved"})
+    before, persisted = e.state, stored_state(store)
+    connection = store.db; proxy = TransactionFault(connection, stage); original = store.put
+    def fail(name, value):
+        original(name, value)
+        if name == "outbox":
+            raise sqlite3.OperationalError("Synthetic write failure")
+    try:
+        with monkeypatch.context() as patcher:
+            if stage == "mid-write": patcher.setattr(store, "put", fail)
+            else: patcher.setattr(store, "db", proxy)
+            expected = RollbackFailed if stage == "rollback" else CommitUncertain if stage in ("commit-after", "commit-rolled-back") else sqlite3.OperationalError
+            with pytest.raises(expected):
+                await e.execute(action, {"name": "Mixed", "description": "New hardware"} if action == "switch-edit" else {}, key="uncertain")
+        assert e.state is before and "uncertain" not in e.idempotency
+        if stage in ("commit-after", "commit-rolled-back", "rollback"):
+            assert e.storage_fault
+            for command in ("save-startup", "reboot", "pause"):
+                with pytest.raises(StorageFault): await e.execute(command)
+            with pytest.raises(StorageFault): store.load()
+        else:
+            assert not e.storage_fault and stored_state(store) == persisted
+        # Ordinary SQLite close, including a still-open failed rollback, owns
+        # recovery. Do not repair the connection with a test-only rollback.
+        store.close(); store = Store(path, key)
+        recovered = Engine(store.load(), store)
+        committed = stage == "commit-after"
+        assert recovered.state.cfg.switch.name == ("Unsaved" if committed and action == "save-startup" else "Switch Lab")
+        assert recovered.state.cfg.switch.description == ("New hardware" if committed and action == "switch-edit" else "Generic Ethernet switch management simulation")
+        assert recovered.state.configuration_revision >= before.configuration_revision
+        assert not recovered.snapshot()["configuration_status"]["unsaved"]
+        assert ("uncertain" in recovered.idempotency) == committed
+        if committed:
+            current = recovered.state
+            if action == "switch-edit":
+                with pytest.raises(CommandError, match="earlier running configuration"):
+                    await recovered.execute(action, {"name":"Mixed", "description":"New hardware"}, key="uncertain")
+            else:
+                await recovered.execute(action, key="uncertain")
+            assert recovered.state is current
+    finally:
+        if not store.closed: store.close()
+
+
+@pytest.mark.parametrize("stage", ["mid-write", "commit-before", "rollback", "commit-after", "commit-rolled-back"])
+def test_startup_legacy_split_migration_is_atomic(tmp_path, monkeypatch, stage):
+    import sqlite3
+    from cryptography.fernet import Fernet
+    from switchlab.models import initial_configuration
+    from switchlab.storage import Store, RollbackFailed, CommitUncertain
+    from test_snmp_lifetime import TransactionFault
+    path = str(tmp_path / "migration.db"); key = Fernet.generate_key(); store = Store(path, key)
+    cfg = initial_configuration(2); cfg.switch.name = "Preserved legacy"
+    raw = cfg.model_dump(mode="json")
+    with store.transaction():
+        store.put("configuration", raw); store.put("configuration_revision", 41); store.put("revision", 70)
+    connection = store.db; original = store.put
+    def fail(name, value):
+        original(name, value)
+        if name == "configuration_format": raise sqlite3.OperationalError("Synthetic migration failure")
+    try:
+        with monkeypatch.context() as patcher:
+            if stage == "mid-write": patcher.setattr(store, "put", fail)
+            else: patcher.setattr(store, "db", TransactionFault(connection, stage))
+            expected = RollbackFailed if stage == "rollback" else CommitUncertain if stage in ("commit-after", "commit-rolled-back") else sqlite3.OperationalError
+            with pytest.raises(expected): Engine(store.load(), store)
+        store.close(); store = Store(path, key)
+        assert (store.get("configuration") is None) == (stage == "commit-after")
+        if stage != "commit-after":
+            assert store.get("configuration") == raw
+            assert store.get("configuration_format") is None
+            assert store.get("lab_configuration") is None and store.get("startup_configuration") is None
+        restored = Engine(store.load(), store)
+        assert restored.state.cfg == cfg and restored.state.configuration_revision > 41
+        assert store.get("configuration") is None and store.get("configuration_format") == 1
+        assert store.load() == cfg
+    finally: store.close()
+
+
+def test_startup_composition_retains_ids_defaults_replacements_and_rejects_missing_restrictions():
+    from switchlab.models import initial_configuration, Port, Vlan, Community
+    from switchlab.storage import split_configuration, compose_configuration
+    cfg = initial_configuration(2); first, removed = list(cfg.ports)
+    cfg.vlans[20] = Vlan(vid=20, fdb_id=1020)
+    cfg.ports[first].pvid = 20; cfg.ports[first].admitted = [1,20]
+    cfg.ports[removed].admin_up = False
+    cfg.credentials["manager"] = Community(id="manager", label="Manager", community="synthetic", polling={"enabled":True, "view_id":"all"})
+    lab, startup = split_configuration(cfg)
+    assert compose_configuration(lab, startup) == cfg
+    old = lab["ports"].pop(removed)
+    replacement = Port(if_index=old["if_index"], bridge_port=old["bridge_port"], name="Replacement")
+    lab["ports"][replacement.id] = {key:getattr(replacement,key) for key in old}
+    restored = compose_configuration(lab, startup)
+    assert set(restored.ports) == {first,replacement.id} and removed not in restored.ports
+    assert restored.ports[first].pvid == 20
+    assert restored.ports[replacement.id].pvid == 1 and restored.ports[replacement.id].admin_up
+    assert restored.ports[replacement.id].authentication.control == "force-authorized"
+    bad = copy.deepcopy(startup); bad["views"].pop("all")
+    with pytest.raises(ValidationError, match="Unknown read view"): compose_configuration(lab,bad)
+    bad = copy.deepcopy(startup); bad["ports"][first].pop("forbidden")
+    with pytest.raises(ValueError, match="configuration fragment"): compose_configuration(lab,bad)
+    lab["attachments"]["missing-client"] = removed
+    with pytest.raises(ValidationError, match="attachment"): compose_configuration(lab,startup)
+
+
+@pytest.mark.parametrize("field", ["configuration_format", "lab_configuration", "startup_configuration", "startup_revision"])
+def test_startup_partial_even_null_is_not_fresh_configuration(store, field):
+    with store.transaction(): store.put(field, None)
+    with pytest.raises(ValueError, match="Incomplete stored configuration"): store.load()
+
+
+async def test_startup_import_idempotency_tracks_actual_logical_effect(engine):
+    e = engine
+    scenario = e.export(); scenario["lab_settings"]["aging_seconds"] = 60
+    scenario["endpoints"]["new"] = {"id":"new", "name":"Imported durable client", "sources":[], "active":False}
+    await e.execute("import", scenario, key="mixed-import")
+    incarnation = e.state.configuration_incarnation
+    await e.execute("import", e.export())
+    assert e.state.configuration_incarnation == incarnation
+    before = e.state
+    await e.execute("import", scenario, key="mixed-import")
+    assert e.state is before
+    await e.execute("reboot")
+    assert e.state.cfg.switch.aging_seconds == 300 and "new" in e.state.cfg.endpoints
+    with pytest.raises(CommandError, match="earlier running configuration"):
+        await e.execute("import", scenario, key="mixed-import")
+
+
+async def test_set_candidate_clone_isolated_from_old_runtime_plan_and_lazy_reads(engine, monkeypatch):
+    from switchlab.models import Configuration
+    e=engine;await endpoint(e);await tick(e)
+    before=e.state;old_cfg=before.cfg.model_dump(mode="json");old_fdb=copy.deepcopy(before.fdb);old_events=copy.deepcopy(before.events)
+    old_projection=Projection(before,["1"])
+    binding=set_binding("2.2.1.7.101",a.Integer32(2));plan=plan_set(before.cfg,[binding],["1"])
+    copied=[];original=Configuration.__deepcopy__
+    def observed(self,memo=None):
+        copied.append(id(self));return original(self,memo)
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Configuration,"__deepcopy__",observed)
+        async with e.lock: e.commit_set_locked(plan)
+    assert id(before.cfg) not in copied and copied.count(id(plan.candidate)) == 1
+    assert before.cfg.model_dump(mode="json") == old_cfg and before.fdb == old_fdb and before.events == old_events
+    assert int(old_projection.get(binding[0])[1]) == 1
+    assert int(Projection(e.state,["1"]).get(binding[0])[1]) == 2
+    assert plan.candidate is not e.state.cfg and e.state.cfg is not before.cfg
+    pid=next(iter(e.state.cfg.ports));published=e.state.cfg.model_dump(mode="json")
+    plan.candidate.ports[pid].admin_up=True;plan.candidate.switch.name="Changed after commit"
+    assert e.state.cfg.model_dump(mode="json") == published
+    with pytest.raises(CommandError,match="Stale SET plan"):
+        async with e.lock: e.commit_set_locked(plan)
+    same=e.state
+    async with e.lock: e.commit_set_locked(plan_set(same.cfg,[binding],["1"]))
+    assert e.state is same
+
+
+@pytest.mark.parametrize("stage", ["candidate-copy", "validation", "store"])
+async def test_set_clone_elision_failure_never_mutates_published_runtime(engine,monkeypatch,stage):
+    from switchlab.models import Configuration
+    e=engine;await endpoint(e);await tick(e)
+    before=e.state;saved=copy.deepcopy(before);persisted=stored_state(e.store)
+    plan=plan_set(before.cfg,[set_binding("2.2.1.7.101",a.Integer32(2))],["1"])
+    candidate=plan.candidate.model_dump(mode="json")
+    def fail(*args,**kwargs):raise ValueError("Synthetic selected boundary failure")
+    original=Configuration.model_copy
+    def fail_candidate(self,*args,**kwargs):
+        if self is plan.candidate: fail()
+        return original(self,*args,**kwargs)
+    with monkeypatch.context() as patcher:
+        if stage == "candidate-copy":patcher.setattr(Configuration,"model_copy",fail_candidate)
+        elif stage == "validation":patcher.setattr(Configuration,"model_validate",classmethod(fail))
+        else:patcher.setattr(e.store,"commit",fail)
+        with pytest.raises(ValueError,match="Synthetic selected boundary failure"):
+            async with e.lock:e.commit_set_locked(plan)
+    assert e.state is before and e.state == saved
+    assert plan.candidate.model_dump(mode="json") == candidate
+    assert stored_state(e.store) == persisted
+
+
+@pytest.mark.parametrize("owner,path", [
+    ("startup", ("ports", "port", "authentication", "control")),
+    ("startup", ("ports", "port", "authentication", "fallback_no_supplicant")),
+    ("startup", ("credentials", "restricted", "enabled")),
+    ("startup", ("credentials", "restricted", "polling", "view_id")),
+    ("startup", ("credentials", "restricted", "polling", "networks")),
+    ("startup", ("radius", "servers", 0, "enabled")),
+    ("startup", ("radius", "accounting", "attempts")),
+    ("lab", ("endpoints", "client", "active")),
+    ("lab", ("endpoints", "client", "sources", 0, "octets")),
+])
+def test_startup_nested_omission_never_fills_current_restrictions(store,owner,path):
+    from switchlab.models import initial_configuration, Community, RadiusServer, Endpoint
+    from switchlab.storage import split_configuration
+    cfg=initial_configuration(1);pid=next(iter(cfg.ports));cfg.ports[pid].authentication.control="auto"
+    cfg.ports[pid].authentication.fallback_no_supplicant=False
+    cfg.credentials["restricted"]=Community(id="restricted",label="Restricted",community="synthetic",enabled=False,
+        polling={"enabled":True,"view_id":"interfaces","networks":["192.0.2.0/24"]})
+    cfg.radius.servers=[RadiusServer(label="Disabled",address="192.0.2.1",secret="synthetic",enabled=False)]
+    cfg.endpoints["client"]=Endpoint(id="client",name="Silent",active=False,sources=[Source(mac="02:00:00:00:00:11",octets=512)])
+    Engine(cfg,store)
+    fragment=store.get("startup_configuration" if owner=="startup" else "lab_configuration")
+    actual_path=[pid if key=="port" else key for key in path]
+    parent=fragment
+    for key in actual_path[:-1]:parent=parent[key]
+    del parent[actual_path[-1]]
+    with store.transaction():store.put("startup_configuration" if owner=="startup" else "lab_configuration",fragment)
+    with pytest.raises(ValueError):store.load()
+
+
+def test_startup_complete_force_unauthorized_is_preserved_and_omission_rejected(store):
+    from switchlab.models import initial_configuration
+    cfg=initial_configuration(1);pid=next(iter(cfg.ports))
+    cfg.ports[pid].authentication.control="force-unauthorized"
+    Engine(cfg,store)
+    assert store.load().ports[pid].authentication.control == "force-unauthorized"
+    broken=store.get("startup_configuration")
+    del broken["ports"][pid]["authentication"]["control"]
+    with store.transaction():store.put("startup_configuration",broken)
+    with pytest.raises(ValueError,match="configuration fragment"):store.load()

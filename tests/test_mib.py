@@ -527,3 +527,92 @@ def test_current_family_ancestor_and_exact_instance_views(engine, prefix):
     expected = rfc1905.noSuchInstance if projection.allowed(absent) else rfc1905.noSuchObject
     assert projection.get(absent)[1].tagSet == expected.tagSet
     assert CURRENT + (4,) in projection.bases
+
+
+@pytest.mark.parametrize("root", ["0", "2"])
+def test_other_root_views_have_no_implemented_instances(engine, root):
+    m = Projection(engine.state, [root])
+    assert m.get("1.3.6.1.2.1.1.5.0")[1].tagSet == rfc1905.noSuchObject.tagSet
+    assert m.next((0, 0))[1].tagSet == rfc1905.endOfMibView.tagSet
+    assert not m._table_keys and not m.filtered
+
+
+def test_iso_and_internet_views_distinguish_ieee_and_set_access(engine):
+    from switchlab.mib import PAE, SetError, plan_set
+    s = engine.state; pid = next(iter(s.cfg.ports)); index = s.cfg.ports[pid].if_index
+    name = PAE + (2, 1, 1, 6, index)
+    iso = s.cfg.views["all"].includes; internet = s.cfg.views["internet"].includes
+    assert int(Projection(s, iso).get(name)[1]) == 3
+    assert Projection(s, internet).get(name)[1].tagSet == rfc1905.noSuchObject.tagSet
+    assert Projection(s, iso).next((0, 0))[0][:len(PAE)] == PAE
+    assert Projection(s, internet).next((0, 0))[0][:4] == (1, 3, 6, 1)
+    plan = plan_set(s.cfg, [(name, rfc1902.Integer32(2))], iso)
+    assert plan.candidate.ports[pid].authentication.control == "auto"
+    with pytest.raises(SetError) as error:
+        plan_set(s.cfg, [(name, rfc1902.Integer32(2))], internet)
+    assert (error.value.status, error.value.index) == ("noAccess", 1)
+    assert s.cfg.ports[pid].authentication.control == "force-authorized"
+
+
+def test_unread_families_and_unknown_columns_do_not_build_rows(engine, monkeypatch):
+    import switchlab.mib as mib
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Unrelated inventory or link facts were read")
+    monkeypatch.setattr(mib, "entity_inventory", forbidden)
+    monkeypatch.setattr(engine.state, "up", forbidden)
+    m = Projection(engine.state, ["1"])
+    bridge = oid("1.3.6.1.2.1.17.1.4.1")
+    assert not m._table_keys and not m.filtered
+    assert m.get(ENTITY + (1, 1, 1, 1, 1, 99))[1].tagSet == rfc1905.noSuchObject.tagSet
+    assert m.get("1.3.6.1.2.1.1.2.0")[1].tagSet == rfc1905.noSuchObject.tagSet
+    assert not m._table_keys
+    assert int(m.get(bridge + (2, 1))[1]) == 101
+    assert m.next(bridge + (2, 1))[0] == bridge + (2, 2)
+    assert set(m._table_keys) == {bridge} and not m.filtered
+
+
+async def test_unread_families_keep_old_published_facts(engine):
+    e = engine
+    endpoint_id = await endpoint(e)
+    await tick(e)
+    pid = next(iter(e.state.cfg.ports))
+    alias = oid("1.3.6.1.2.1.31.1.1.1.18.101")
+    fdb = oid("1.3.6.1.2.1.17.7.1.2.2.1.2.1001.2.0.0.0.0.16")
+    from switchlab.mib import PAE
+    control = PAE + (2, 1, 1, 6, 101)
+    old = Projection(e.state, ["1"])
+    assert not old._table_keys
+    await e.execute("port-edit", {"id":pid, "patch":{"alias":"new alias", "authentication":{"control":"force-unauthorized"}}})
+    await e.execute("clear", {"port_id":pid})
+    new = Projection(e.state, ["1"])
+    assert old.state is not new.state and not old._table_keys
+    assert old.get(alias)[1].asOctets() == b"" and new.get(alias)[1].asOctets() == b"new alias"
+    assert int(old.get(control)[1]) == 3 and int(new.get(control)[1]) == 1
+    assert int(old.get(fdb)[1]) == 1
+    assert new.get(fdb)[1].tagSet == rfc1905.noSuchInstance.tagSet
+    assert endpoint_id in e.state.cfg.endpoints
+
+
+def test_global_successor_skips_empty_and_hidden_families(engine):
+    m = Projection(engine.state, ["1.3.6.1"])
+    assert not engine.state.fdb
+    # Empty legacy FDB must not end the walk before Q-BRIDGE scalars.
+    assert m.next("1.3.6.1.2.1.17.4.2.0")[0] == oid("1.3.6.1.2.1.17.7.1.1.1.0")
+    # Exhausted cutoff/column advances to static VLAN, not a renewed cutoff.
+    assert m.next(CURRENT + (7, 100, 4094))[0] == oid("1.3.6.1.2.1.17.7.1.4.3.1.1.1")
+    assert m.next(CURRENT + (8, 100, 0))[0] == oid("1.3.6.1.2.1.17.7.1.4.3.1.1.1")
+    target = oid("1.3.6.1.2.1.31.1.1.1.18.101")
+    narrow = Projection(engine.state, ["1.3.6.1.2.1.17.4.3", ".".join(map(str, target))])
+    assert narrow.next((0, 0))[0] == target
+    assert narrow.next(target)[1].tagSet == rfc1905.endOfMibView.tagSet
+    assert not narrow.filtered
+
+
+def test_full_diagnostic_enumeration_keeps_all_ordinary_keys(engine):
+    m = Projection(engine.state, ["1"])
+    assert not m._table_keys
+    keys = m.keys
+    assert keys == sorted(m.values)
+    assert set(m._table_keys) == set(m._tables)
+    assert not m.filtered and not m.materialized
+    assert all(m.get(name)[1].tagSet for name in keys)

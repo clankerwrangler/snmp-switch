@@ -107,6 +107,7 @@ async def test_sha256_aes_usm_and_reboot(engine,level):
         assert not error and not status,(error,status)
         assert str(result[0][1])=='1.3.999.123'
         boots=a.boots;engine_id=a.engine_id
+        await e.execute('save-startup')
         await e.execute('reboot');await a.reboot()
         assert a.boots==boots+1 and a.engine_id==engine_id
         error,status,index,result=await get()

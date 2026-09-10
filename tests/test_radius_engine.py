@@ -212,3 +212,40 @@ async def test_initial_state_absent_and_invalidated_work_never_calls_exchange(co
     await engine.execute("detach",{"id":eid});await engine.execute("attach",{"id":eid,"port_id":pid})
     assert not (await engine.authenticate(pid,capture["mac"],capture["attempt_id"],exchange=exchange))["accepted"]
     assert calls==[None]
+
+
+@pytest.mark.asyncio
+async def test_startup_save_preserves_attempt_and_durable_peer_catalog(configured, store):
+    from switchlab.models import SupplicantTemplate, RadiusServer
+    cfg,pid,eid = configured
+    server = RadiusServer(label="Saved Access", address="192.0.2.1", secret="synthetic-startup-secret")
+    cfg.radius.servers = [server]
+    engine = Engine(cfg, store)
+    capture = await begin(engine,pid,eid)
+    before = engine.state
+    await engine.execute("save-startup", expected_config=before.configuration_revision)
+    assert engine.state.radius_attempts == before.radius_attempts
+    assert engine.state.activation == before.activation
+    assert engine.state.credential_generations == before.credential_generations
+    assert engine.state.epoch == before.epoch
+    await engine.execute("radius-server-save", {"id":server.id,"secret":"unsaved-access-secret"})
+    assert not engine.state.current_attempt((pid,capture["mac"]),capture["attempt_id"])
+    profile = cfg.endpoints[eid].sources[0].supplicant.model_dump()
+    template = await engine.execute("radius-template-save", {"label":"Durable template", "profile":profile})
+    material = next(iter(cfg.radius.materials.values()))
+    await engine.execute("radius-material-save", {"id":material.id,"label":"Durable material rename"})
+    await engine.execute("source-supplicant-save", {"id":eid,"source_id":cfg.endpoints[eid].sources[0].id,
+        "profile":{**profile,"identity":"durable-peer-identity"}})
+    startup_revision = engine.state.startup_revision
+    restored = Engine(store.load(),store)
+    assert restored.state.cfg.radius.servers[0].secret == "synthetic-startup-secret"
+    assert restored.state.cfg.radius.materials[material.id].label == "Durable material rename"
+    assert template["id"] in restored.state.cfg.radius.templates
+    assert restored.state.cfg.endpoints[eid].sources[0].supplicant.identity == "durable-peer-identity"
+    assert restored.state.startup_revision == startup_revision
+    assert not restored.state.radius_attempts and not restored.state.radius_sessions
+    assert not restored.state.configuration_dirty
+    for content in (json.dumps(restored.snapshot()),json.dumps(restored.export())):
+        assert "synthetic-startup-secret" not in content and "BEGIN PRIVATE KEY" not in content
+    for (encrypted,) in store.db.execute("SELECT value FROM kv"):
+        assert b"BEGIN PRIVATE KEY" not in encrypted and b"synthetic-startup-secret" not in encrypted

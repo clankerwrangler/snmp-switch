@@ -58,52 +58,81 @@ def current_vlan_ports(state, vid):
 class Projection:
     def __init__(self, state, includes):
         self.state = state  # Published states are never subsequently changed by the engine.
-        self.includes = [oid(p) for p in includes]
-        self.values = {}
+        self.includes = tuple(oid(p) for p in includes)
+        self._values = {}
         self.materialized = {}
         self.bases = set()
         self.filtered = {}
+        self._filtered_keys = {}
+        self._tables = {}
+        self._table_keys = {}
         elapsed = int((time.monotonic() - state.boot_start) * 100)
         self.ticks = elapsed % 2**32
         self.wrapped = elapsed // 2**32 != state.uptime_epoch
         self.build()
-        self.keys = sorted(self.values)
+        self._scalar_keys = sorted(self._values)
+        self._families = sorted((*self._tables, CURRENT))
+
+    @property
+    def values(self):
+        # Full ordinary enumeration is an inspection path, not a read-PDU cost.
+        for prefix in self._tables:
+            self.load_table(prefix)
+        return self._values
+
+    @property
+    def keys(self):
+        return sorted(self.values)
 
     def allowed(self, name):
         return any(name[:len(p)] == p for p in self.includes)
+
+    def overlaps(self, prefix):
+        return any(prefix[:len(p)] == p or p[:len(prefix)] == prefix for p in self.includes)
 
     def put(self, base, suffix, value):
         base = oid(base)
         self.bases.add(base)
         full = base + tuple(suffix)
         if self.allowed(full):
-            self.values[full] = value
+            self._values[full] = value
 
     def table(self, prefix, columns, rows):
         prefix = oid(prefix)
         bases = {col: prefix + (col,) for col in columns}
         self.bases.update(bases.values())
-        for index, values in rows:
-            for col, val in values.items():
-                self.put(bases[col], index, val)
+        self._tables[prefix] = (bases, rows)
+
+    def load_table(self, prefix):
+        if prefix not in self._table_keys:
+            bases, rows = self._tables[prefix]
+            keys = []
+            if self.overlaps(prefix):
+                for index, values in rows():
+                    for column, value in values.items():
+                        name = bases[column] + tuple(index)
+                        if self.allowed(name):
+                            self._values[name] = value
+                            keys.append(name)
+            self._table_keys[prefix] = sorted(keys)
+        return self._table_keys[prefix]
 
     def materialize(self, name):
         if name not in self.materialized:
-            syntax, value = self.values[name]
+            syntax, value = self._values[name]
             self.materialized[name] = syntax(value)
         return self.materialized[name]
 
     def build(self):
+        # Builders use only this immutable published Runtime and this PDU's time.
         s = self.state
-        # Capture scalar facts now; construct ASN.1 only for cells this PDU reads.
-        # These descriptors never consult a later Runtime or authorization state.
-        I = lambda value: (a.Integer32, value)
-        O = lambda value: (octets, value)
-        C = lambda value: (a.Counter32, value)
-        G = lambda value: (a.Gauge32, value)
-        T = lambda value: (a.TimeTicks, value)
-        H = lambda value: (a.Counter64, value)
-        D = lambda value: (a.ObjectIdentifier, value)
+        I = lambda value, syntax=a.Integer32: (syntax, value)
+        O = lambda value, syntax=octets: (syntax, value)
+        C = lambda value, syntax=a.Counter32: (syntax, value)
+        G = lambda value, syntax=a.Gauge32: (syntax, value)
+        T = lambda value, syntax=a.TimeTicks: (syntax, value)
+        H = lambda value, syntax=a.Counter64: (syntax, value)
+        D = lambda value, syntax=a.ObjectIdentifier: (syntax, value)
         sw = s.cfg.switch
         system = [O(sw.identity.sys_descr), D(sw.identity.sys_object_id) if sw.identity.sys_object_id else None,
                   T(self.ticks), O(sw.contact), O(sw.name), O(sw.location), I(2)]
@@ -111,119 +140,138 @@ class Projection:
             if value is not None:
                 self.put(f"1.3.6.1.2.1.1.{n}", (0,), value)
         self.put("1.3.6.1.2.1.2.1", (0,), I(len(s.cfg.ports)))
-        ports, extended, bridge, qports = [], [], [], []
-        for pid, p in s.cfg.ports.items():
-            c, up = s.counters[pid], s.up(pid)
-            physical = ((int(sw.base_mac.replace(":", ""), 16) + p.bridge_port) % 2**48).to_bytes(6, "big")
-            physical = bytes([(physical[0] | 2) & 254]) + physical[1:]
-            ports.append(((p.if_index,), {1: I(p.if_index), 2: O(p.name), 3: I(6), 4: I(p.mtu),
-                5: G(min(p.speed, 2**32-1) if up else 0), 6: O(physical), 7: I(1 if p.admin_up else 2), 8: I(1 if up else 2),
-                9: T(c["last_change"]), 10: C(c["in_octets"] % 2**32), 11: C(c["in_ucast"] % 2**32),
-                13: C(c["in_discards"] % 2**32), **{i: C(0) for i in (14, 16, 17, 19, 20)}}))
-            extended.append(((p.if_index,), {1: O(p.name), 6: H(c["in_octets"] % 2**64), 7: H(c["in_ucast"] % 2**64),
-                10: H(0), 11: H(0), 14: I(1 if p.link_notifications else 2), 15: G(p.speed//1000000 if up else 0),
-                17: I(1), 18: O(p.alias), 19: T(c["discontinuity"])}))
-            bridge.append(((p.bridge_port,), {1: I(p.bridge_port), 2: I(p.if_index)}))
-            qports.append(((p.bridge_port,), {1: G(p.pvid), 2: I(1), 3: I(1), 4: I(2)}))
-        self.table("1.3.6.1.2.1.2.2.1", [1,2,3,4,5,6,7,8,9,10,11,13,14,16,17,19,20], ports)
+
+        def interfaces():
+            rows = []
+            for pid, p in s.cfg.ports.items():
+                c, up = s.counters[pid], s.up(pid)
+                physical = ((int(sw.base_mac.replace(":", ""), 16) + p.bridge_port) % 2**48).to_bytes(6, "big")
+                physical = bytes([(physical[0] | 2) & 254]) + physical[1:]
+                rows.append(((p.if_index,), {1: I(p.if_index), 2: O(p.name), 3: I(6), 4: I(p.mtu),
+                    5: G(min(p.speed, 2**32-1) if up else 0), 6: O(physical), 7: I(1 if p.admin_up else 2), 8: I(1 if up else 2),
+                    9: T(c["last_change"]), 10: C(c["in_octets"] % 2**32), 11: C(c["in_ucast"] % 2**32),
+                    13: C(c["in_discards"] % 2**32), **{i: C(0) for i in (14, 16, 17, 19, 20)}}))
+            return rows
+        self.table("1.3.6.1.2.1.2.2.1", [1,2,3,4,5,6,7,8,9,10,11,13,14,16,17,19,20], interfaces)
+
+        def extended():
+            return [((p.if_index,), {1: O(p.name), 6: H(s.counters[pid]["in_octets"] % 2**64),
+                7: H(s.counters[pid]["in_ucast"] % 2**64), 10: H(0), 11: H(0),
+                14: I(1 if p.link_notifications else 2), 15: G(p.speed//1000000 if s.up(pid) else 0),
+                17: I(1), 18: O(p.alias), 19: T(s.counters[pid]["discontinuity"])}) for pid,p in s.cfg.ports.items()]
         self.table("1.3.6.1.2.1.31.1.1.1", [1,6,7,10,11,14,15,17,18,19], extended)
-        self.table("1.3.6.1.2.1.17.1.4.1", [1,2], bridge)
-        self.table("1.3.6.1.2.1.17.7.1.4.5.1", [1,2,3,4], qports)
+
+        self.table("1.3.6.1.2.1.17.1.4.1", [1,2], lambda: [
+            ((p.bridge_port,), {1:I(p.bridge_port), 2:I(p.if_index)}) for p in s.cfg.ports.values()])
+        self.table("1.3.6.1.2.1.17.7.1.4.5.1", [1,2,3,4], lambda: [
+            ((p.bridge_port,), {1:G(p.pvid), 2:I(1), 3:I(1), 4:I(2)}) for p in s.cfg.ports.values()])
         for base, val in {
-            "17.1.1": O(bytes.fromhex(sw.base_mac.replace(":", ""))), "17.1.2": I(len(ports)), "17.1.3": I(2),
+            "17.1.1": O(bytes.fromhex(sw.base_mac.replace(":", ""))), "17.1.2": I(len(s.cfg.ports)), "17.1.3": I(2),
             "17.4.1": C(s.learned_discards % 2**32), "17.4.2": I(sw.aging_seconds),
             "17.7.1.1.1": I(1), "17.7.1.1.2": I(4094), "17.7.1.1.3": G(4094),
             "17.7.1.1.4": G(len(s.cfg.vlans)), "17.7.1.1.5": I(2), "17.7.1.4.1": C(s.vlan_deletes % 2**32),
         }.items():
             self.put("1.3.6.1.2.1."+base, (0,), val)
-        legacy, full = [], []
-        for (fid, address), r in s.fdb.items():
-            mac_index = tuple(bytes.fromhex(address.replace(":", "")))
-            if r["vid"] == sw.legacy_vlan:
-                legacy.append((mac_index, {1: O(bytes(mac_index)), 2: I(r["bridge_port"]), 3: I(3)}))
-            full.append(((fid,)+mac_index, {2: I(r["bridge_port"]), 3: I(3)}))
-        self.table("1.3.6.1.2.1.17.4.3.1", [1,2,3], legacy)
-        self.table("1.3.6.1.2.1.17.7.1.2.2.1", [2,3], full)
-        self.table("1.3.6.1.2.1.17.7.1.2.1.1", [2], [((v.fdb_id,), {2: C(sum(1 for r in s.fdb.values() if r["fdb_id"] == v.fdb_id))}) for v in s.cfg.vlans.values()])
-        static = []
-        for vid, v in s.cfg.vlans.items():
-            static.append(((vid,), {1: O(v.name), 2: O(port_list(s, lambda p: vid in p.admitted)),
-                3: O(port_list(s, lambda p: vid in p.forbidden)), 4: O(port_list(s, lambda p: vid in p.untagged)), 5: I(1)}))
-        self.table("1.3.6.1.2.1.17.7.1.4.3.1", [1,2,3,4,5], static)
-        self.bases.update(CURRENT+(i,) for i in range(3,8))
-        physical, aliases, contains = [], [], []
-        for index, columns, if_index in entity_inventory(s.cfg):
-            physical.append(((index,), {column: (D if column == 3 else
-                             I if column in (4, 5, 6, 16) else O)(value)
-                             for column, value in columns.items()}))
-            if if_index is not None:
-                aliases.append(((index, 0), {2: D(oid("1.3.6.1.2.1.2.2.1.1") + (if_index,))}))
-                contains.append(((1, index), {1: I(index)}))
-        self.table(ENTITY + (1, 1, 1, 1), range(2, 20), physical)
-        self.table(ENTITY + (1, 3, 2, 1), (2,), aliases)
-        self.table(ENTITY + (1, 3, 3, 1), (1,), contains)
-        self.put(ENTITY + (1, 4, 1), (0,), T(s.entity_last_change))
-        self.put(PAE + (1, 1), (0,), I(1))
-        pae_ports, configuration, statistics, diagnostics, sessions = [], [], [], [], []
-        for pid, port in s.cfg.ports.items():
-            index = (port.if_index,)
-            facts = s.pae.get(pid)
-            port_values = {3: O(b"\x80"), 4: I(2), 5: I(2)}
-            if facts and facts["version"] is not None:port_values[2] = G(facts["version"])
-            pae_ports.append((index, port_values))
-            control = port.authentication.control
-            multiple = control == "auto" and port.authentication.host_mode == "multi-auth"
-            cfg_values = {3:I(1),4:I(1),6:I({"force-unauthorized":1,"auto":2,"force-authorized":3}[control]),14:I(2)}
-            active = next((session for session in s.radius_sessions.values() if session.port_id==pid),None)
-            if not multiple:
-                if control != "auto":
-                    cfg_values.update({1:I(8 if control=="force-authorized" else 9),2:I(6),5:I(1 if control=="force-authorized" else 2)})
-                else:
-                    cfg_values[5] = I(1 if active else 2)
-                    if not s.up(pid):cfg_values.update({1:I(2),2:I(6)})
-                    elif facts:
-                        if facts["state"] is not None:cfg_values[1]=I(facts["state"])
-                        if facts["backend"] is not None:cfg_values[2]=I(facts["backend"])
-                    elif port.authentication.method=="mab":cfg_values.update({1:I(2),2:I(6)})
-                if active and active.policy.session_timeout is not None:
-                    enabled = active.policy.termination_action == 1
-                    period = active.policy.session_timeout if enabled else 0
-                else:
-                    period = s.cfg.radius.reauthentication_seconds
-                    enabled = period > 0
-                cfg_values.update({12:G(period),13:I(1 if enabled else 2)})
-                last = s.last_auth_sessions.get(pid)
-                if active:
-                    last = dict(id=active.id,in_octets=active.in_octets,in_packets=active.in_packets,
-                        started_ms=active.started_ms,ended_ms=s.sim_ms,cause=999)
-                if last:
-                    row={1:H(last["in_octets"] % 2**64),3:C(last["in_packets"] % 2**32),5:O(last["id"]),6:I(1),
-                         7:T(((last["ended_ms"]-last["started_ms"])//10) % 2**32)}
-                    if last["cause"] is not None:row[8]=I(last["cause"])
-                    sessions.append((index,row))
-            configuration.append((index,cfg_values))
-            if facts is None or facts["precise"]:
-                counters = facts["counters"] if facts else [0]*8
-                stat = {col:C(value % 2**32) for col,value in enumerate(counters,1)}
-                diag = facts["diagnostics"] if facts else [0]*4
-                diagnostics.append((index,{col:C(value % 2**32) for col,value in enumerate(diag,3)}))
-            else:stat={}
-            if facts and facts["precise"] and facts["last_version"] is not None:
-                stat.update({11:G(facts["last_version"]),12:O(facts["last_source"])})
-            statistics.append((index,stat))
-        self.table(PAE+(1,2,1),(2,3,4,5),pae_ports)
-        self.table(PAE+(2,1,1),(1,2,3,4,5,6,12,13,14),configuration)
-        self.table(PAE+(2,2,1),(1,2,3,4,5,6,7,8,11,12),statistics)
-        self.table(PAE+(2,3,1),(3,4,5,6),diagnostics)
-        self.table(PAE+(2,4,1),(1,3,5,6,7,8),sessions)
 
+        def legacy_fdb():
+            rows = []
+            for (_, address), r in s.fdb.items():
+                if r["vid"] == sw.legacy_vlan:
+                    index = tuple(bytes.fromhex(address.replace(":", "")))
+                    rows.append((index, {1:O(bytes(index)), 2:I(r["bridge_port"]), 3:I(3)}))
+            return rows
+        self.table("1.3.6.1.2.1.17.4.3.1", [1,2,3], legacy_fdb)
+        self.table("1.3.6.1.2.1.17.7.1.2.2.1", [2,3], lambda: [
+            ((fid,)+tuple(bytes.fromhex(address.replace(":", ""))), {2:I(r["bridge_port"]), 3:I(3)})
+            for (fid,address),r in s.fdb.items()])
+        self.table("1.3.6.1.2.1.17.7.1.2.1.1", [2], lambda: [
+            ((v.fdb_id,), {2:C(sum(1 for r in s.fdb.values() if r["fdb_id"] == v.fdb_id))}) for v in s.cfg.vlans.values()])
+
+        def static_vlans():
+            return [((vid,), {1:O(v.name), 2:O(port_list(s, lambda p: vid in p.admitted)),
+                3:O(port_list(s, lambda p: vid in p.forbidden)), 4:O(port_list(s, lambda p: vid in p.untagged)), 5:I(1)})
+                for vid,v in s.cfg.vlans.items()]
+        self.table("1.3.6.1.2.1.17.7.1.4.3.1", [1,2,3,4,5], static_vlans)
+        self.bases.update(CURRENT+(i,) for i in range(3,8))
+
+        def physical_inventory():
+            return [((index,), {column: (D if column == 3 else I if column in (4,5,6,16) else O)(value)
+                for column,value in columns.items()}) for index,columns,_ in entity_inventory(s.cfg)]
+        self.table(ENTITY+(1,1,1,1), range(2,20), physical_inventory)
+        self.table(ENTITY+(1,3,2,1), (2,), lambda: [
+            ((index,0), {2:D(oid("1.3.6.1.2.1.2.2.1.1")+(if_index,))})
+            for index,_,if_index in entity_inventory(s.cfg) if if_index is not None])
+        self.table(ENTITY+(1,3,3,1), (1,), lambda: [
+            ((1,index), {1:I(index)}) for index,_,if_index in entity_inventory(s.cfg) if if_index is not None])
+        self.put(ENTITY+(1,4,1), (0,), T(s.entity_last_change))
+        self.put(PAE+(1,1), (0,), I(1))
+        pae_cache = None
+        def pae_rows():
+            nonlocal pae_cache
+            if pae_cache is not None:
+                return pae_cache
+            pae_ports, configuration, statistics, diagnostics, sessions = [], [], [], [], []
+            for pid, port in s.cfg.ports.items():
+                index = (port.if_index,)
+                facts = s.pae.get(pid)
+                port_values = {3: O(b"\x80"), 4: I(2), 5: I(2)}
+                if facts and facts["version"] is not None:port_values[2] = G(facts["version"])
+                pae_ports.append((index, port_values))
+                control = port.authentication.control
+                multiple = control == "auto" and port.authentication.host_mode == "multi-auth"
+                cfg_values = {3:I(1),4:I(1),6:I({"force-unauthorized":1,"auto":2,"force-authorized":3}[control]),14:I(2)}
+                active = next((session for session in s.radius_sessions.values() if session.port_id==pid),None)
+                if not multiple:
+                    if control != "auto":
+                        cfg_values.update({1:I(8 if control=="force-authorized" else 9),2:I(6),5:I(1 if control=="force-authorized" else 2)})
+                    else:
+                        cfg_values[5] = I(1 if active else 2)
+                        if not s.up(pid):cfg_values.update({1:I(2),2:I(6)})
+                        elif facts:
+                            if facts["state"] is not None:cfg_values[1]=I(facts["state"])
+                            if facts["backend"] is not None:cfg_values[2]=I(facts["backend"])
+                        elif port.authentication.method=="mab":cfg_values.update({1:I(2),2:I(6)})
+                    if active and active.policy.session_timeout is not None:
+                        enabled = active.policy.termination_action == 1
+                        period = active.policy.session_timeout if enabled else 0
+                    else:
+                        period = s.cfg.radius.reauthentication_seconds
+                        enabled = period > 0
+                    cfg_values.update({12:G(period),13:I(1 if enabled else 2)})
+                    last = s.last_auth_sessions.get(pid)
+                    if active:
+                        last = dict(id=active.id,in_octets=active.in_octets,in_packets=active.in_packets,
+                            started_ms=active.started_ms,ended_ms=s.sim_ms,cause=999)
+                    if last:
+                        row={1:H(last["in_octets"] % 2**64),3:C(last["in_packets"] % 2**32),5:O(last["id"]),6:I(1),
+                             7:T(((last["ended_ms"]-last["started_ms"])//10) % 2**32)}
+                        if last["cause"] is not None:row[8]=I(last["cause"])
+                        sessions.append((index,row))
+                configuration.append((index,cfg_values))
+                if facts is None or facts["precise"]:
+                    counters = facts["counters"] if facts else [0]*8
+                    stat = {col:C(value % 2**32) for col,value in enumerate(counters,1)}
+                    diag = facts["diagnostics"] if facts else [0]*4
+                    diagnostics.append((index,{col:C(value % 2**32) for col,value in enumerate(diag,3)}))
+                else:stat={}
+                if facts and facts["precise"] and facts["last_version"] is not None:
+                    stat.update({11:G(facts["last_version"]),12:O(facts["last_source"])})
+                statistics.append((index,stat))
+            pae_cache = (pae_ports, configuration, statistics, diagnostics, sessions)
+            return pae_cache
+        self.table(PAE+(1,2,1), (2,3,4,5), lambda: pae_rows()[0])
+        self.table(PAE+(2,1,1), (1,2,3,4,5,6,12,13,14), lambda: pae_rows()[1])
+        self.table(PAE+(2,2,1), (1,2,3,4,5,6,7,8,11,12), lambda: pae_rows()[2])
+        self.table(PAE+(2,3,1), (3,4,5,6), lambda: pae_rows()[3])
+        self.table(PAE+(2,4,1), (1,3,5,6,7,8), lambda: pae_rows()[4])
 
     def current(self, cutoff):
         if cutoff in self.filtered:
             return self.filtered[cutoff]
         values = {}
-        if not any(CURRENT[:len(p)] == p or p[:len(CURRENT)] == CURRENT for p in self.includes):
+        if not self.overlaps(CURRENT):
             self.filtered[cutoff] = values
+            self._filtered_keys[cutoff] = []
             return values
         s = self.state
         for vid, v in s.cfg.vlans.items():
@@ -239,6 +287,7 @@ class Projection:
                 if self.allowed(name):
                     values[name] = value
         self.filtered[cutoff] = values
+        self._filtered_keys[cutoff] = sorted(values)
         return values
 
     def cutoff(self, name):
@@ -248,24 +297,44 @@ class Projection:
         name = oid(name)
         if not self.allowed(name):
             return name, exceptions.noSuchObject
-        val = (self.current(self.cutoff(name)).get(name) if name[:len(CURRENT)] == CURRENT
-               else self.materialize(name) if name in self.values else None)
-        if val is not None:
-            return name, val
         known = any(name[:len(base)] == base for base in self.bases)
-        return name, exceptions.noSuchInstance if known else exceptions.noSuchObject
+        if not known:
+            return name, exceptions.noSuchObject
+        if name[:len(CURRENT)] == CURRENT:
+            value = self.current(self.cutoff(name)).get(name)
+        else:
+            for prefix in self._tables:
+                if name[:len(prefix)] == prefix:
+                    self.load_table(prefix)
+                    break
+            value = self.materialize(name) if name in self._values else None
+        return name, value if value is not None else exceptions.noSuchInstance
 
     def next(self, name):
         name = oid(name)
-        idx = bisect_right(self.keys, name)
-        normal = self.keys[idx] if idx < len(self.keys) else None
-        filtered = self.current(self.cutoff(name))
-        candidates = [k for k in filtered if k > name]
-        candidate = min(candidates) if candidates else None
-        if normal is not None and (candidate is None or normal < candidate):
-            return normal, self.materialize(normal)
-        if candidate is not None:
-            return candidate, filtered[candidate]
+        index = bisect_right(self._scalar_keys, name)
+        scalar = self._scalar_keys[index] if index < len(self._scalar_keys) else None
+        for prefix in self._families:
+            # Registered table intervals are disjoint. An unknown/hidden/empty
+            # family cannot terminate a walk; continue to the global successor.
+            if name >= prefix[:-1] + (prefix[-1]+1,) or not self.overlaps(prefix):
+                continue
+            if scalar is not None and scalar < prefix:
+                return scalar, self.materialize(scalar)
+            if prefix == CURRENT:
+                cutoff = self.cutoff(name)
+                values = self.current(cutoff)
+                keys = self._filtered_keys[cutoff]
+            else:
+                keys = self.load_table(prefix)
+            index = bisect_right(keys, name)
+            if index < len(keys):
+                candidate = keys[index]
+                if scalar is not None and scalar < candidate:
+                    return scalar, self.materialize(scalar)
+                return candidate, values[candidate] if prefix == CURRENT else self.materialize(candidate)
+        if scalar is not None:
+            return scalar, self.materialize(scalar)
         return name, exceptions.endOfMibView
 
 

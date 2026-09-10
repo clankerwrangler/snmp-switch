@@ -20,7 +20,7 @@ sh scripts/init-key.sh
 docker compose up --build -d
 ```
 
-Open **http://localhost:8000** and create the administrator password. Later visits use that password; there are no default credentials. Configuration persists in the `switchlab-data` volume. Restoring it requires both the database and `secrets/config.key`.
+Open **http://localhost:8000** and create the administrator password. Later visits use that password; there are no default credentials. Physical lab edits persist automatically. Switch settings apply to running configuration; choose **Save configuration** to retain them across reboot or process restart. The `switchlab-data` volume stores the lab and startup configuration; restoring it requires both the database and `secrets/config.key`.
 
 Compose publishes TCP 8000 and UDP 161 on localhost by default. For LAN access, create `.env` beside `compose.yaml` with an IPv4 address assigned to the host, then run `docker compose up -d` again:
 
@@ -31,7 +31,7 @@ SWITCHLAB_HTTP_PORT=8000
 
 Replace the example address, then open `http://HOST_LAN_ADDRESS:8000` from another device. `SWITCHLAB_HTTP_PORT` changes the web port; `SWITCHLAB_BIND_ADDRESS` applies to both published protocols. Connectivity depends on the host firewall and routing. HTTP is unencrypted; HTTPS can be provided by a reverse proxy.
 
-SNMP starts disabled with no advertised object identity. Configure it in **SNMP** using the [identity and listener setup guide](specification/docs/IDENTITY_SETUP.md). To use a port other than 161, select the same listener port in the UI and `SWITCHLAB_SNMP_PORT` in `.env`, then recreate the container with `docker compose up -d`. A higher port such as 1161 is available when the host cannot publish 161.
+SNMP starts disabled with no advertised object identity. Configure it in **SNMP** using the [identity and listener setup guide](specification/docs/IDENTITY_SETUP.md). To use a port other than 161, select the same listener port in the UI and `SWITCHLAB_SNMP_PORT` in `.env`, choose **Save configuration**, then recreate the container with `docker compose up -d`. A higher port such as 1161 is available when the host cannot publish 161.
 
 ### Native alternative
 

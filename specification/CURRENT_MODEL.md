@@ -18,7 +18,7 @@ and [application validation](../docs/VALIDATION.md) for implementation tests.
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original MP/security record association, exact ownership through admission, consumption/discard, expiry, reuse, and response failure | Pinned response-lifetime integration |
 | `RadiusAuthorization.tla` | Current authorization captures, lease/VLAN invalidation, and link/accounting independence | Per-port/MAC authorization and existing runtime admission |
 | `RadiusDynamicAuthorization.tla` | Conjunctive session selection, all-or-none CoA/Disconnect, and cached duplicate decisions | Existing engine transaction and dynamic-request handling |
-| `StorageOutcomes.tla` | Published versus durable state, failed rollback/unknown commit, faulted effect gates, and validated new-incarnation recovery | Store/Engine failure and startup paths |
+| `StorageOutcomes.tla` | Running policy, explicit startup saves, durable lab independence, atomic outcomes, faulted gates, and new-incarnation recovery | Store/Engine apply, save, reboot, and startup paths |
 | `SetTokenEquivalence.tla` | Finite token-allocation certificate and equality-only view of the unchanged SET graph | Model-checking reduction, not application behavior |
 | `TestSwitch.tla` and the `*Scenarios.tla` modules | Focused initial states, action sequences, independent expected outcomes, and required completion | Regression fixtures, not another state owner |
 
@@ -37,7 +37,8 @@ Typed values, sparse exceptions, lexicographic successors, TimeFilter behavior,
 once-per-PDU real uptime, conditional PAE cells, and callback ordering require
 application equivalence tests; polling does not mutate the captured state.
 
-SET uses one complete candidate and the existing `Mutate` action. Raw PVID writes
+SET uses one complete candidate and the existing `Mutate` action. Its success
+commits running effects, not an implicit startup save. Raw PVID writes
 do not rewrite untagged membership; the API native-VLAN convenience is separate.
 The model covers Boolean admin status, active-only VLAN rows, independent
 admitted/untagged/forbidden sets, effective deletion, duplicates, original-position
@@ -80,14 +81,23 @@ response failure. Committed configuration is not rolled back by failed delivery.
 Pre-admission REPORT failures after stock MP consumption remain outside this
 claim.
 
-Storage uncertainty is a separate small graph. Failed rollback or an unknown
-commit outcome blocks later API/SET/background/send effects, including when the
-actual durable value still equals the publication. Reads retain the confirmed
-publication. Only successful close and validated durable loading in a new
-incarnation restore operation; failed close/load cannot install defaults or heal
-the fault. Recovery liveness assumes an external restart and available valid
-storage, not an automatic retry loop. Old queued work stays stale across repeated
-restarts.
+Storage separates one running publication, its confirmed startup marker, and an
+actual durable lab/startup image. Logical API/SET changes do not save startup;
+mixed lab edits persist physical changes without saving dirty logical policy.
+Explicit Save captures running policy without resetting runtime or queued work.
+Management reboot applies confirmed startup to current physical IDs: removed
+hardware stays absent and replacement hardware receives defaults. `Switch.Reboot`
+is the operational-reset component, not the complete restore transaction.
+
+Confirmed rollback preserves the previous state. Failed rollback or an unknown
+commit blocks later API/SET/background/send effects, even when the actual durable
+image is unchanged. Reads retain the confirmed running publication. Successful
+process close and validated loading restore the actual durable lab/startup image,
+including either unknown outcome; failed close/load cannot install defaults or
+heal the fault. Old queued work stays stale across repeated restarts. Recovery
+liveness assumes an external restart and available valid storage, not a retry
+loop. Focused traces also check inactive legacy seeding and an independent durable
+fact surviving restore; they do not compose a proof of protocol persistence.
 
 The two independent RADIUS graphs check authorization and dynamic-request safety.
 Authorization distinguishes explicit VLAN assignment from inherited PVID and
@@ -102,7 +112,7 @@ restart remain implementation-test obligations.
 ## Finite scope
 
 `configs/` is the executable source of bounds, selected actions, invariants, and
-fairness. There are 52 normal configurations and one explicit unreduced SET
+fairness. There are 53 normal configurations and one explicit unreduced SET
 diagnostic. The normal suite contains both general finite graphs and scripted
 traces; these do not collectively prove an unrestricted production-sized system.
 
@@ -115,7 +125,7 @@ traces; these do not collectively prove an unrestricted production-sized system.
 | SET graph | One port/endpoint/source/MAC, VLANs 1/10, two credentials/secrets/views, three tokens, one pending PDU, all 31 selected request forms. |
 | SET scenarios | Seven scripted cases, VLANs 1/10/20, up to four varbinds; bitmap/absent-destroy cases use two ports. |
 | Response | One ticket plus foreign replacement identities; lifecycle graph, 19 reuse/diagnostic traces, 14 transaction traces, and 240 insertion-boundary branches. |
-| Storage | Four opaque durable values, three incarnation tokens, one queued item/four work kinds; graph and 40 recovery branches. |
+| Storage | Four Boolean-pair policies, three incarnation tokens, one queued item/four work kinds; 120 recovery branches, one retained/removed/replacement identity trace, and five legacy-seeding outcomes. |
 | RADIUS authorization | One client, two VLANs, three generation tokens, two-tick leases; automatic/manual ticks and independent accounting availability. |
 | RADIUS dynamic requests | Two clients, two VLANs, two session incarnations; one immutable request and its retained decision, optional conjunctive session selector, and per-client applicability. |
 | Groups | Two credentials, three groups, two views plus no-view, two opaque key bundles, three security levels, two source classes, two targets, one pending PDU. Eight normalized ownership cases and 54 queued/current-boundary traces replace detailed schema, conversion, form, and security-input cross-products. |
