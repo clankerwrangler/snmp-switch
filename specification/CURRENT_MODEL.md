@@ -29,6 +29,14 @@ tagged source work even when the tag is not admitted. Restricted liveness
 fixtures require source refresh, aging, and notification draining under their
 stated stable-input and service-fairness assumptions.
 
+A read observes one captured published state with current request authorization.
+Request-local deferred value construction and numeric-prefix reuse represent the
+same observation, without a cross-request data or permission cache. This is a
+representation boundary, not a checked eager/lazy implementation equivalence.
+Typed values, sparse exceptions, lexicographic successors, TimeFilter behavior,
+once-per-PDU real uptime, conditional PAE cells, and callback ordering require
+application equivalence tests; polling does not mutate the captured state.
+
 SET uses one complete candidate and the existing `Mutate` action. Raw PVID writes
 do not rewrite untagged membership; the API native-VLAN convenience is separate.
 The model covers Boolean admin status, active-only VLAN rows, independent

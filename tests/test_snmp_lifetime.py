@@ -1818,3 +1818,48 @@ async def test_application_pae_actions_require_explicit_view_and_commit_whole_pd
         assert all(name[:len(PAE)]==PAE for name in names)
         assert len(names)==(8 if pdu_type is v2c.GetBulkRequestPDU else 1)
     x.empty()
+
+
+async def test_reads_use_fresh_publication_and_current_view_after_prior_read(app_exchange):
+    from switchlab.mib import oid
+    from pysnmp.proto import rfc1905
+    x = app_exchange
+    alias = oid("1.3.6.1.2.1.31.1.1.1.18.101")
+    hidden = oid("1.3.6.1.2.1.1.5.0")
+    def send_read(kind, names):
+        pdu = kind()
+        if kind is v2c.GetBulkRequestPDU:
+            v2c.apiBulkPDU.set_defaults(pdu)
+            v2c.apiBulkPDU.set_non_repeaters(pdu, 0)
+            v2c.apiBulkPDU.set_max_repetitions(pdu, 2)
+        else:
+            v2c.apiPDU.set_defaults(pdu)
+        v2c.apiPDU.set_varbinds(pdu, [(name, a.Null()) for name in names])
+        x.send(pdu)
+    send_read(v2c.GetRequestPDU, [alias])
+    assert v2c.apiPDU.get_varbinds(x.decode())[0][1].asOctets() == b""
+    prior = x.adapter.responder.projection
+    pid = next(iter(x.engine.state.cfg.ports))
+    await configure_application(x, "port-edit", {"id": pid, "patch": {"alias": "Fresh"}})
+    send_read(v2c.GetRequestPDU, [alias])
+    assert v2c.apiPDU.get_varbinds(x.decode())[0][1].asOctets() == b"Fresh"
+    assert prior.get(alias)[1].asOctets() == b""
+    view = await configure_application(x, "view-save", {"name": "Exact instance", "includes": [".".join(map(str, alias))]})
+    await configure_application(x, *access_write(x, {"polling": {"view_id": view["id"]}}))
+    send_read(v2c.GetRequestPDU, [alias, hidden])
+    values = v2c.apiPDU.get_varbinds(x.decode())
+    assert values[0][1].asOctets() == b"Fresh"
+    assert values[1][1].tagSet == rfc1905.noSuchObject.tagSet
+    for kind in (v2c.GetNextRequestPDU, v2c.GetBulkRequestPDU):
+        send_read(kind, [alias[:-1]])
+        values = v2c.apiPDU.get_varbinds(x.decode())
+        assert tuple(values[0][0]) == alias and values[0][1].asOctets() == b"Fresh"
+        if kind is v2c.GetBulkRequestPDU:
+            assert values[1][1].tagSet == rfc1905.endOfMibView.tagSet
+    # No previous Projection/view grant permits a later disabled read.
+    await configure_application(x, *access_write(x, {"polling": {"enabled": False}}))
+    before = x.engine.state
+    send_read(v2c.GetRequestPDU, [alias])
+    assert not x.sink.sent and x.engine.state is before
+    x.expire()
+    x.empty()
