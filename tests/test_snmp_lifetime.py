@@ -3,6 +3,8 @@ import asyncio
 import copy
 from contextlib import contextmanager
 import socket
+import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -331,7 +333,12 @@ def test_response_failures_cleanup_once_without_undoing_commit(exchange, stage, 
     x.empty()
 
 
-def test_rolled_back_storage_failure_can_respond_once(exchange, engine, store):
+def test_rolled_back_storage_failure_can_respond_once(exchange, engine, store, monkeypatch):
+    # Rollback preserves state, not independently advancing management uptime.
+    clock = [engine.state.boot_start + 1]
+    engine_time = SimpleNamespace(**vars(time))
+    engine_time.monotonic = lambda: clock[0]
+    monkeypatch.setattr("switchlab.engine.time", engine_time)
     x = exchange
     store.commit(engine.state, {})
     before = store.load().model_dump(), engine.snapshot(), store.events(), store.last_event
@@ -352,6 +359,8 @@ def test_rolled_back_storage_failure_can_respond_once(exchange, engine, store):
     assert int(v2c.apiPDU.get_error_status(x.decode())) == 14
     assert len(x.mp_pops) == len(x.sec_pops) == 1
     x.empty()
+    clock[0] += 1
+    assert engine.snapshot() == before[1] | {"uptime": before[1]["uptime"] + 100}
 
 
 @pytest.mark.parametrize("reason", ["cancel", "expiry", "revoke", "close"])
