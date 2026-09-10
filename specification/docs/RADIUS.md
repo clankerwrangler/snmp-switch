@@ -9,33 +9,33 @@ RADIUS for web-administrator login. Link state remains independent of access.
 
 1. Open **RADIUS**. Add an ordered authentication
    server with its IP address, UDP port (normally 1812), and shared secret.
-   Leave **Source IP address** blank for automatic source selection. An explicit
+   Leave **Local source IP address** blank for automatic source selection. An explicit
    address must exist in the application's network namespace—not just on the
    Docker host. This bind address is separate from the advertised NAS IPv4 identity.
 2. For EAP, open **Certificates → Add certificate**. Choose CA trust or a client
    identity, then select PEM files or paste PEM text. TLS needs both a CA trust
    bundle and a client certificate with its matching private key. Save the
    certificates, then create a supplicant template or edit an endpoint's
-   **Supplicants** directly.
+   **Supplicant profiles** directly.
    Set the expected server DNS name. PEAP additionally needs an inner username
    and password. Certificate and server-name validation are required.
 3. In **Switch overview**, select the port and **Configure port**. Choose
-   automatic authentication, the method, and host mode. Existing and new ports
+   **Auto (authentication required)**, the method, and host mode. Existing and new ports
    default to force-authorized; adding a server does not change their access.
 4. Attach the endpoint. Inspect the selected port's client status, effective
    VLAN, session ID, counters, and timers. FDB learning still requires accepted
    ordinary activity; a successful authentication does not invent a data frame.
 
 **Force-authorized** uses saved VLAN admission. **Force-unauthorized** blocks
-ordinary ingress without forcing the physical link down. **Auto** requires a
-current authorization. Single-host permits one client; multi-auth gives each
-MAC its own service; multi-host shares the authenticated owner's service with
+ordinary ingress without forcing the physical link down. **Auto (authentication required)** requires a
+current authorization. **Single-host** permits one authenticated MAC;
+**Multi-auth** gives each MAC its own service; **Multi-host** shares the authenticated owner's service with
 other clients on that port. Duplicate sources with the same `(port, MAC)` must
 have the same supplicant profile, or authentication is blocked as ambiguous.
 
 MAB waits for ordinary source activity. The triggering frame is discarded,
 not replayed after authorization. Optional no-supplicant fallback also waits
-for activity. Optional authenticated-Reject fallback can use the MAC already
+for activity. Optional **MAB fallback after RADIUS Access-Reject** can use the MAC already
 observed from the represented EAP peer. Invalid integrity, missing helpers,
 certificate failures, and unusable Access-Accept policy are not NAS Rejects.
 
@@ -50,18 +50,18 @@ Template application and cloning copy settings; later template edits do not
 change copies. A clone can retain the same credential identity even when its
 MAC changes. Saving a profile affects future exchanges and invalidates obsolete
 attempts without revoking an established grant. **Reauthenticate** retains valid
-access while a renewal is pending; **Restart** ends the selected client/shared
+access while a renewal is pending; **Restart authentication** ends the selected client/shared
 service and begins fresh authentication without a link bounce. Independent
 idle/session expiry, administrative changes, or failed required renewal can
 still end access. Late replies cannot restore an ended or replaced grant.
 
-Expand **Response attributes** or **Authentication history** in a client row
+Expand **Returned RADIUS attributes** or **Authentication history** in a client row
 for details. History groups repeated equivalent events within the existing
 bounded event history, showing up to 20 groups per client. Refresh preserves
 open disclosures, focus, scroll, and selected port. Accounting queue status is
 separate from whether access is authorized.
 
-Attribute detail reports the authenticated NAS code and only safely decoded
+Attribute detail reports the **RADIUS response** and only safely decoded
 Service-Type, VLAN tunnel type/medium/numeric VID, Session-Timeout, Idle-Timeout,
 Termination-Action, and accounting interval. It distinguishes absent, present,
 and invalid values and never substitutes effective defaults. An Access-Accept
@@ -77,7 +77,8 @@ uses the port name. NAS identifiers describe the simulator, not its endpoints.
 
 ## Authorization and clocks
 
-An absent VLAN assignment inherits the saved PVID. An explicit assignment must
+An absent VLAN assignment inherits the saved **Port VLAN ID (PVID)**, shown as
+**Port default (PVID)**. An explicit assignment is shown as **RADIUS-assigned**. An explicit assignment must
 be one complete VLAN tunnel triple naming an existing, non-forbidden VID.
 It permits untagged activity or a matching explicit tag for that service.
 It never overwrites saved PVID, static membership, or untagged membership.
@@ -109,7 +110,9 @@ progress; exceeding the guard ends that subject and reports failed advancement.
 A zero timeout is immediately due, not a disabled timer.
 
 Server Session-Timeout and Idle-Timeout override corresponding local defaults.
-Termination-Action selects termination or renewal at the session limit. Renewal
+Termination-Action selects termination or renewal at the session limit. The
+client row labels absolute deadlines **Session timeout at** and **Idle timeout at**,
+in simulation time, rather than promising termination at a renewal deadline. Renewal
 does not refresh true last data activity. Server reachability is separate from
 client outcome: exhausted no-response cycles use bounded real-time backoff;
 a valid Reject proves reachability without granting access. Recovery probing
@@ -117,9 +120,9 @@ requires an eligible client and does not generate synthetic MAB traffic.
 
 ## Accounting
 
-Open **Accounting** on the RADIUS page. Add independent collectors
+Open **Accounting** on the RADIUS page. Add independent accounting servers
 (normally UDP 1813), then enable accounting. Access-server configuration does not
-implicitly create a collector. Accounting failure never changes access.
+implicitly create an accounting server. Accounting failure never changes access.
 
 **Interim updates** selects a valid server interval, disabled updates, or a
 local override of at least 60 simulated seconds. Invalid server interim data
@@ -128,7 +131,7 @@ snapshots retain their generation times. Start omits duration/counters; Interim
 omits a termination cause. Only observed ingress is reported. Unchanged renewal
 retains the accounting segment; changed authorization begins a new segment.
 
-Accounting has its own **Response timeout**, **Attempts per target** (total
+Accounting has its own **RADIUS response timeout**, **Attempts per server** (total
 attempts, not additional retries), and **Retry backoff base**. Defaults are
 3 real seconds, 3 attempts, and a 1-second base. Limits are 1–60 seconds,
 1–10 attempts, and 0–30 seconds. Retry ordinal times the base is capped at
@@ -141,15 +144,17 @@ response, backoff, failover, and promotion cannot extend the original
 Only the head record of a session has active wire/retry ownership. A confirmed
 response or counted permanent drop releases the next record. The queue holds at
 most 1,024 records and 8 MiB, with 300 real seconds of retention from generation.
-Configuration changes cancel queued work using the old collector configuration.
+Configuration changes cancel queued work using the old accounting-server configuration.
 Status reports queue length, drops, and bounded record summaries. UDP delivery
 is not exactly once; accounting responses do not authorize clients.
 
 ## CoA and Disconnect
 
-Configure **Dynamic authorization settings** and separate **Trusted sender**
-records. The listener defaults disabled. Each sender has an exact source IP and
-its own secret; authentication servers and SNMP credentials grant no trust here.
+Open **Dynamic authorization clients (CoA / Disconnect)**. Configure
+**CoA / Disconnect settings** and add separate dynamic authorization clients.
+These clients send requests to Switch Lab; the listener defaults disabled.
+Each client has an exact source IP and its own secret. Authentication/accounting
+servers and SNMP credentials grant no incoming dynamic-authorization trust.
 The strict profile requires one Message-Authenticator and one Event-Timestamp
 within 300 real seconds. There is no legacy unauthenticated mode.
 

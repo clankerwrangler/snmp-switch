@@ -36,9 +36,9 @@ The UI, API, and switch simulation start with identity unset. The SNMP listener 
 In **SNMP**:
 
 1. Edit **SNMP identity** and enter the full numeric **System object ID (`sysObjectID`)**. A PEN alone is not a complete value. The field starts empty; no registration certificate or ownership lookup is required.
-2. Add a v2c community with **Access**, or add a v3 group and assign users to it. Select independent read/write views and optional source networks in the community or group form. New incoming access is denied by default. The [credential reference](../TECHNICAL_SPECIFICATION.md#71-credentials) describes profiles and shared policy.
+2. Add a v2c community with **Access**, or add a v3 group and assign users to it. Select independent read/write views and optional source networks in the community or group form. New incoming access is denied by default. The [credential reference](../TECHNICAL_SPECIFICATION.md#71-credentials) describes security levels and shared policy.
 3. Open **Configure** in **SNMP service**, verify the listener address/port, and select **Enable SNMP**. Fresh Docker configurations use `0.0.0.0:161`; native configurations use `127.0.0.1:161`. Saved settings take precedence. With Compose, the saved port must match `SWITCHLAB_SNMP_PORT`; native managers use the listener directly. The operating system must permit binding that port.
-4. Check **Listener status**. For traps, add a notification target and select or create its credential in the target form. Trap transport does not require incoming access.
+4. Check **Listener status**. For traps, add a destination in **Trap destinations** and select or create its credential in the destination form. Trap transport does not require incoming access.
 
 Managers connect to the host address, not the container wildcard address. Publishing a host port alone does not enable SNMP.
 
