@@ -1,6 +1,6 @@
 # Switch Lab
 
-An SNMP switch simulator with a web UI for ports, endpoints, VLANs, and MAC learning. It simulates switch management state without forwarding Ethernet frames.
+An SNMP switch simulator with a web UI for ports, endpoints, VLANs, MAC learning, and RADIUS access. It simulates switch management state without forwarding Ethernet frames.
 
 ![Switch overview](docs/screenshots/overview.png)
 
@@ -46,15 +46,16 @@ python scripts/init.py
 python -m uvicorn switchlab.api:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-For native LAN access, use the host's LAN address with `--host`. Native data and key paths default to `data/switch.db` and `secrets/config.key`; both are required to restore saved configuration.
+For native LAN access, use the host's LAN address with `--host`. EAP-TLS and PEAP require the managed Linux helper included in Docker; Python-only native installs support MAB. See the [RADIUS setup guide](specification/docs/RADIUS.md). Native data and key paths default to `data/switch.db` and `secrets/config.key`; both are required to restore saved configuration.
 
 ## Documentation
 
 - [Setup and identity](specification/docs/IDENTITY_SETUP.md)
+- [RADIUS access, accounting, and dynamic authorization](specification/docs/RADIUS.md)
 - [API schema](docs/openapi.json); interactive documentation is at `/docs` on the running instance.
 - [Technical specification](specification/TECHNICAL_SPECIFICATION.md) and [supported MIB objects](specification/docs/mib-coverage.csv)
 - [Executed validation](docs/VALIDATION.md) and [formal models and checks](specification/README.md)
 
 ## License
 
-Original code, documentation, models, and project assets use the [MIT License](LICENSE). Dependencies retain their upstream licenses. [Third-party notices](ui/public/assets/THIRD_PARTY_NOTICES.txt) also ship with the packaged UI at `/assets/THIRD_PARTY_NOTICES.txt`.
+Original code, documentation, models, and project assets use the [MIT License](LICENSE). Dependencies retain their upstream licenses. Native EAP inputs and notices are in `runtime/eap/` and ship in Docker at `/usr/local/share/doc/eapol_test`. [Third-party notices](ui/public/assets/THIRD_PARTY_NOTICES.txt) also ship with the packaged UI at `/assets/THIRD_PARTY_NOTICES.txt`.

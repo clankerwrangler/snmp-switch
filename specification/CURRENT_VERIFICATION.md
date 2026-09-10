@@ -1,7 +1,7 @@
 # Current finite model verification
 
-The 50-configuration normal catalog is supported by separate completed checks,
-not one combined 50-config run. All passing graphs below finished with zero
+The 52-configuration normal catalog is supported by separate completed checks,
+not one combined 52-config run. All passing graphs below finished with zero
 queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
@@ -20,6 +20,8 @@ application, wire, or operating-system correctness.
 | Storage graph and 40 recovery branches | PASS; full temporal checks | 1,105,000 / 25,313; 960 / 920 |
 | Group normalized ownership: eight cases | PASS; full temporal check; 1.952 s | 32 / 24 |
 | Group queued SET/current boundary: 54 cases | PASS; full temporal check; 2.346 s | 378 / 324 |
+| RADIUS authorization | PASS; finite safety check; 1.275 s | 16,753 / 1,356 |
+| RADIUS dynamic requests | PASS; finite safety check; 1.242 s | 8,106 / 5,826 |
 | Unreduced SET graph | **INCOMPLETE**; timeout at 1,800.158 s | 32,429,244 / 4,501,741; 1,690,258 still queued |
 
 The response checks were rechecked with insertion ownership and retained their
@@ -40,9 +42,14 @@ captured-token reuse, response leaks/foreign cleanup, stale durable overwrite,
 migration sharing, incomplete shared-member revocation, and failed conversion
 prefix publication. Actual counterexamples also drove response diagnostics,
 entry-association, error-index, no-op deletion, and selected-target corrections.
-The nine reusable controls in `tests/check_mutations.py` run against current
+The twelve reusable controls in `tests/check_mutations.py` run against current
 sources. The three grouped controls reach actual second-member stale success,
 cross-user policy modification, and rejected-save prefix publication. Other historical control definitions and exact inputs are in Git.
+The three RADIUS controls detect a stale reply installing a grant, a duplicate
+changing cached ACK to NAK, and partial CoA effects under a NAK. The duplicate
+counterexample does not demonstrate replacement-session revocation. Both RADIUS
+checks are separate safety graphs, without fairness or a composition proof;
+causal scheduling and persistent replay remain application boundaries.
 Parsing failures, construction errors, interrupted searches, and timeouts remain
 failures or incomplete results; they do not count as detected behavioral defects.
 
@@ -99,7 +106,7 @@ On Windows, use `python` and the paths to `java.exe` and the JAR. To check only
 affected fixtures, select their config stems, for example:
 
 ```sh
-python3 run_tlc.py --java /path/to/java --jar /path/to/tla2tools.jar --models GroupOwnership GroupQueuedSet --timeout 120 --batch-timeout 240 --heap 1g --max-state-mib 2048 --min-free-mib 20480 --output logs/groups-1
+python3 run_tlc.py --java /path/to/java --jar /path/to/tla2tools.jar --models RadiusAuthorization RadiusDynamicAuthorization --timeout 120 --batch-timeout 300 --heap 1g --max-state-mib 2048 --min-free-mib 20480 --output logs/radius-1
 ```
 
 The runner uses one worker, seed 20260907, fingerprint index 0, and no symmetry.
@@ -132,7 +139,7 @@ python3 run_tlc.py --prepare-only
 needs only the tracked models/configs/generators plus Java and the TLA+ JAR;
 the runners prepare generated inputs automatically.
 Use `--mutations NAME ...` to select affected negative controls; otherwise all
-nine run. Parsing errors and timeouts are not behavioral detection.
+twelve run. Parsing errors and timeouts are not behavioral detection.
 Do not add generated logs, receipts, states, or historical source overlays to
 commits. Git retains the previously committed evidence and detailed report;
 there is no separate archive or version index. For an exact historical result,

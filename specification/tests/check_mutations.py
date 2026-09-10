@@ -20,6 +20,12 @@ MUTATIONS += [
     ('failed_group_save_publishes_prefix', 'GroupOwnership', 'GroupedAccess.tla', "cfg' = IF accepted THEN x ELSE cfg", "cfg' = IF accepted THEN x ELSE [cfg EXCEPT !.groups = x.groups]"),
 ]
 
+MUTATIONS += [
+    ('radius_stale_accept', 'RadiusAuthorization', 'RadiusAuthorization.tla', 'current == pending[c] = generation[c] /\\ mode = "auto" /\\ link', 'current == TRUE /\\ mode = "auto" /\\ link'),
+    ('radius_duplicate_reexecution', 'RadiusDynamicAuthorization', 'RadiusDynamicAuthorization.tla', 'IF reply # "none"\n       THEN UNCHANGED <<session, vlan, reply>>', 'IF FALSE\n       THEN UNCHANGED <<session, vlan, reply>>'),
+    ('radius_partial_coa_on_nak', 'RadiusDynamicAuthorization', 'RadiusDynamicAuthorization.tla', 'IF Applicable /\\ c \\in Matched\n                  THEN', 'IF c \\in Matched /\\ (Applicable \\/ (operation = "coa" /\\ c \\in canApply /\\ requestedVlan \\in VLANs))\n                  THEN'),
+]
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jar', required=True, type=Path)

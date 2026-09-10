@@ -17,6 +17,7 @@ CURRENT = oid("1.3.6.1.2.1.17.7.1.4.2.1")
 
 
 ENTITY = oid("1.3.6.1.2.1.47")
+PAE = oid("1.0.8802.1.1.1.1")
 
 
 def octets(value):
@@ -47,6 +48,11 @@ def port_list(state, predicate):
         if predicate(p):
             data[(p.bridge_port-1)//8] |= 0x80 >> ((p.bridge_port-1) % 8)
     return bytes(data)
+
+
+def current_vlan_ports(state, vid):
+    return {p.id for p in state.cfg.ports.values() if vid in p.admitted} | {
+        session.port_id for session in state.radius_sessions.values() if state.session_vid(session) == vid}
 
 
 class Projection:
@@ -140,6 +146,59 @@ class Projection:
         self.table(ENTITY + (1, 3, 2, 1), (2,), aliases)
         self.table(ENTITY + (1, 3, 3, 1), (1,), contains)
         self.put(ENTITY + (1, 4, 1), (0,), T(s.entity_last_change))
+        self.put(PAE + (1, 1), (0,), I(1))
+        pae_ports, configuration, statistics, diagnostics, sessions = [], [], [], [], []
+        for pid, port in s.cfg.ports.items():
+            index = (port.if_index,)
+            facts = s.pae.get(pid)
+            port_values = {3: O(b"\x80"), 4: I(2), 5: I(2)}
+            if facts and facts["version"] is not None:port_values[2] = G(facts["version"])
+            pae_ports.append((index, port_values))
+            control = port.authentication.control
+            multiple = control == "auto" and port.authentication.host_mode == "multi-auth"
+            cfg_values = {3:I(1),4:I(1),6:I({"force-unauthorized":1,"auto":2,"force-authorized":3}[control]),14:I(2)}
+            active = next((session for session in s.radius_sessions.values() if session.port_id==pid),None)
+            if not multiple:
+                if control != "auto":
+                    cfg_values.update({1:I(8 if control=="force-authorized" else 9),2:I(6),5:I(1 if control=="force-authorized" else 2)})
+                else:
+                    cfg_values[5] = I(1 if active else 2)
+                    if not s.up(pid):cfg_values.update({1:I(2),2:I(6)})
+                    elif facts:
+                        if facts["state"] is not None:cfg_values[1]=I(facts["state"])
+                        if facts["backend"] is not None:cfg_values[2]=I(facts["backend"])
+                    elif port.authentication.method=="mab":cfg_values.update({1:I(2),2:I(6)})
+                if active and active.policy.session_timeout is not None:
+                    enabled = active.policy.termination_action == 1
+                    period = active.policy.session_timeout if enabled else 0
+                else:
+                    period = s.cfg.radius.reauthentication_seconds
+                    enabled = period > 0
+                cfg_values.update({12:G(period),13:I(1 if enabled else 2)})
+                last = s.last_auth_sessions.get(pid)
+                if active:
+                    last = dict(id=active.id,in_octets=active.in_octets,in_packets=active.in_packets,
+                        started_ms=active.started_ms,ended_ms=s.sim_ms,cause=999)
+                if last:
+                    row={1:H(last["in_octets"] % 2**64),3:C(last["in_packets"] % 2**32),5:O(last["id"]),6:I(1),
+                         7:T(((last["ended_ms"]-last["started_ms"])//10) % 2**32)}
+                    if last["cause"] is not None:row[8]=I(last["cause"])
+                    sessions.append((index,row))
+            configuration.append((index,cfg_values))
+            if facts is None or facts["precise"]:
+                counters = facts["counters"] if facts else [0]*8
+                stat = {col:C(value % 2**32) for col,value in enumerate(counters,1)}
+                diag = facts["diagnostics"] if facts else [0]*4
+                diagnostics.append((index,{col:C(value % 2**32) for col,value in enumerate(diag,3)}))
+            else:stat={}
+            if facts and facts["precise"] and facts["last_version"] is not None:
+                stat.update({11:G(facts["last_version"]),12:O(facts["last_source"])})
+            statistics.append((index,stat))
+        self.table(PAE+(1,2,1),(2,3,4,5),pae_ports)
+        self.table(PAE+(2,1,1),(1,2,3,4,5,6,12,13,14),configuration)
+        self.table(PAE+(2,2,1),(1,2,3,4,5,6,7,8,11,12),statistics)
+        self.table(PAE+(2,3,1),(3,4,5,6),diagnostics)
+        self.table(PAE+(2,4,1),(1,3,5,6,7,8),sessions)
 
 
     def current(self, cutoff):
@@ -152,7 +211,8 @@ class Projection:
             created, changed = [0,0] if self.wrapped else s.vlan_times[vid]
             if cutoff and (cutoff > self.ticks or changed < cutoff):
                 continue
-            columns = {3: a.Gauge32(v.fdb_id), 4: a.OctetString(port_list(s, lambda p: vid in p.admitted)),
+            members = current_vlan_ports(s, vid)
+            columns = {3: a.Gauge32(v.fdb_id), 4: a.OctetString(port_list(s, lambda p: p.id in members)),
                        5: a.OctetString(port_list(s, lambda p: vid in p.untagged)), 6: a.Integer32(2), 7: a.TimeTicks(created)}
             for col, value in columns.items():
                 name = CURRENT + (col, cutoff, vid)
@@ -192,6 +252,9 @@ class Projection:
 # descriptor keys are the exact column prefixes; indexes retain their MIB owner.
 WRITE_OBJECTS = {
     oid("1.3.6.1.2.1.2.2.1.7"): ("admin", a.Integer32.tagSet),
+    PAE+(1,2,1,4): ("pae-initialize", a.Integer32.tagSet),
+    PAE+(1,2,1,5): ("pae-reauthenticate", a.Integer32.tagSet),
+    PAE+(2,1,1,6): ("pae-control", a.Integer32.tagSet),
     oid("1.3.6.1.2.1.17.7.1.4.5.1.1"): ("pvid", a.Gauge32.tagSet),
     **{oid("1.3.6.1.2.1.17.7.1.4.3.1") + (column,): (kind, syntax.tagSet)
        for column, kind, syntax in ((1, "name", a.OctetString), (2, "egress", a.OctetString),
@@ -223,10 +286,11 @@ class SetPlan:
     deletes: frozenset
     affected_ports: frozenset
     first_effective: int
+    pae_actions: tuple = ()
 
     @property
     def changed(self):
-        return self.candidate != self.before
+        return self.candidate != self.before or bool(self.pae_actions)
 
 
 def _write_object(name):
@@ -280,11 +344,13 @@ def plan_set(cfg, bindings, includes):
         base, kind, tag = descriptor
         if wire.tagSet != tag:
             fail("wrongType")
-        if kind in ("admin", "pvid", "row"):
+        if kind in ("admin", "pvid", "row", "pae-control", "pae-initialize", "pae-reauthenticate"):
             value = int(wire)
             if ((kind == "admin" and value not in (1, 2)) or
                     (kind == "pvid" and not 1 <= value <= 4094) or
-                    (kind == "row" and value not in (1, 2, 4, 5, 6))):
+                    (kind == "row" and value not in (1, 2, 4, 5, 6)) or
+                    (kind == "pae-control" and value not in (1,2,3)) or
+                    (kind in ("pae-initialize","pae-reauthenticate") and value not in (1,2))):
                 fail("wrongValue")
         elif kind == "name":
             raw = wire.asOctets()
@@ -307,8 +373,8 @@ def plan_set(cfg, bindings, includes):
         if len(name) != len(base) + 1:
             fail("noCreation")
         key = name[-1]
-        if kind in ("admin", "pvid"):
-            key = (ports_by_if if kind == "admin" else ports_by_bridge).get(key)
+        if kind in ("admin", "pvid", "pae-control", "pae-initialize", "pae-reauthenticate"):
+            key = (ports_by_bridge if kind == "pvid" else ports_by_if).get(key)
             if key is None:
                 fail("noCreation")
         elif not 1 <= key <= 4094:
@@ -317,7 +383,7 @@ def plan_set(cfg, bindings, includes):
             error = _row_error(key in cfg.vlans, key, value)
             if error:
                 fail(error)
-        elif kind not in ("admin", "pvid"):
+        elif kind not in ("admin", "pvid", "pae-control", "pae-initialize", "pae-reauthenticate"):
             if key not in cfg.vlans and key not in creates:
                 fail("inconsistentName")
             if key in destroys:
@@ -348,11 +414,20 @@ def plan_set(cfg, bindings, includes):
     if candidate.switch.legacy_vlan in deletes:
         candidate.switch.legacy_vlan = 1
     effective = []
+    pae_actions = {}
     for op in seen.values():
         kind, key, value = op.kind, op.key, op.value
         if kind == "admin":
             candidate.ports[key].admin_up = value == 1
             changed = (value == 1) != cfg.ports[key].admin_up
+        elif kind == "pae-control":
+            control = {1:"force-unauthorized",2:"auto",3:"force-authorized"}[value]
+            candidate.ports[key].authentication.control = control
+            changed = control != cfg.ports[key].authentication.control
+        elif kind in ("pae-initialize", "pae-reauthenticate"):
+            changed = value == 1
+            if changed and (kind == "pae-initialize" or key not in pae_actions):
+                pae_actions[key] = "initialize" if kind == "pae-initialize" else "reauthenticate"
         elif kind == "pvid":
             candidate.ports[key].pvid = value
             changed = value != cfg.ports[key].pvid
@@ -401,8 +476,8 @@ def plan_set(cfg, bindings, includes):
                 v.vid != op.key and v.fdb_id == candidate.vlans[op.key].fdb_id for v in candidate.vlans.values()):
             raise SetError("resourceUnavailable", op.index)
     candidate = Configuration.model_validate(candidate.model_dump())
-    fields = ("admin_up", "pvid", "admitted", "untagged", "forbidden")
+    fields = ("admin_up", "pvid", "admitted", "untagged", "forbidden", "authentication")
     affected = frozenset(pid for pid, p in candidate.ports.items()
                          if any(getattr(p, f) != getattr(cfg.ports[pid], f) for f in fields))
     return SetPlan(cfg, candidate, tuple(assignments), frozenset(creates), frozenset(deletes),
-                   affected, min(effective, default=0))
+                   affected, min(effective, default=0), tuple(sorted(pae_actions.items())))

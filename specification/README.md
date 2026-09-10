@@ -8,14 +8,15 @@ This directory contains the current TLA+ contract, bounded TLC configurations, b
 - [Technical specification](TECHNICAL_SPECIFICATION.md): state, VLAN/SET/ENTITY behavior, API/UI, and storage recovery.
 - [Current model contract](CURRENT_MODEL.md): model ownership, selected profiles, finite bounds, and implementation boundaries.
 - [Current verification](CURRENT_VERIFICATION.md): checked scope, outcomes, tools, and reproduction.
-- [Object manifest](docs/mib-coverage.csv): 95 definitions, comprising 89 readable objects (seven writable) and six inaccessible indexes. Maximum MIB access and implemented access are separate.
+- [Object manifest](docs/mib-coverage.csv): 129 definitions, comprising 123 readable objects (ten writable) and six inaccessible indexes. Maximum MIB access and implemented access are separate.
+- [RADIUS setup and behavior](docs/RADIUS.md): access, accounting, dynamic requests, and the conditional PAE subset.
 - [Identity setup](docs/IDENTITY_SETUP.md): explicit identity configuration and public defaults.
 
 ## Current contract
 
 One state engine owns endpoints, stable ports, VLANs, learned addresses, generations, and notification events. Endpoints have editable MAC/tag sources and independent attachments. Direct/shared carrier behavior, selective flushing, deterministic source activity and aging, pause/manual advancement, and reboot semantics remain explicit.
 
-Ports have independent admitted, untagged, and forbidden VLAN sets. Raw SNMP PVID changes ingress classification only; the API's native-PVID convenience is modeled separately. Seven SET objects use simultaneous final-candidate validation and one transaction. Polling and writing grants are independent and default-denied, while reusable credentials can also serve trap destinations.
+Ports have independent admitted, untagged, and forbidden VLAN sets. Raw SNMP PVID changes ingress classification only; the API's native-PVID convenience is modeled separately. Ten SET objects use simultaneous final-candidate validation and one transaction, including three PAE controls/actions. Polling and writing grants are independent and default-denied, while reusable credentials can also serve trap destinations.
 
 The read-only ENTITY subset contains emulated chassis/port inventory, stable interface pointers, direct containment, and an actual-row-change timestamp. It does not invent host devices or implement logical tables, inventory SET, or ENTITY notifications.
 
@@ -39,7 +40,7 @@ For selected configurations:
 python3 ./run_tlc.py --jar /path/to/tla2tools.jar --models SetResponseEntry StorageRecovery
 ```
 
-The normal catalog contains 50 configurations. Current verification joins separate completed checks; it does not claim one combined 50-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
+The normal catalog contains 52 configurations. Current verification joins separate completed checks; it does not claim one combined 52-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
 
 ```sh
 python3 ./tests/check_mutations.py --jar /path/to/tla2tools.jar
@@ -55,6 +56,7 @@ Both entry points regenerate ignored scenario/config inputs through their existi
 | `ReadAccess.tla` | Shared credentials and independent polling/writing/target references |
 | `GroupedAccess.tla` | Community/user/group policy, normalized migration, atomic saves, and shared revocation |
 | `SetTransactions.tla` | Final-candidate SET, original-position errors, authorization, and generations |
+| `RadiusAuthorization.tla`, `RadiusDynamicAuthorization.tla` | Current grants and atomic duplicate-safe dynamic requests; separate bounded safety graphs |
 | `EntityInventory.tla` | Inventory snapshots and change-clock behavior |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original response ownership, stage-aware finalization, and pre-admission association |
 | `StorageOutcomes.tla` | Confirmed/uncertain durability, faulted mutation/send gates, and existing-startup recovery |

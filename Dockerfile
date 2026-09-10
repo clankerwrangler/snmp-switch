@@ -5,9 +5,20 @@ RUN npm install -g pnpm@11.19.0 && pnpm install --frozen-lockfile --ignore-scrip
 COPY ui/ ./
 RUN node node_modules/typescript/bin/tsc --noEmit && node node_modules/vite/bin/vite.js build --configLoader native
 
-FROM python:3.13-slim AS runtime
+FROM python:3.13-slim AS python-base
+
+FROM python-base AS eap-build
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential libssl-dev openssl patch pkg-config ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY runtime/eap /inputs/eap
+RUN python /inputs/eap/build.py /build-eap /built-eap
+
+FROM python-base AS runtime
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 SWITCHLAB_DB=/data/switch.db SWITCHLAB_KEY_FILE=/run/secrets/config_key SWITCHLAB_SNMP_DEFAULT_HOST=0.0.0.0
+COPY --from=eap-build /built-eap/runtime-packages.txt /tmp/eap-runtime-packages.txt
+RUN apt-get update && xargs -r apt-get install -y --no-install-recommends ca-certificates < /tmp/eap-runtime-packages.txt && rm -f /tmp/eap-runtime-packages.txt && rm -rf /var/lib/apt/lists/*
+COPY --from=eap-build /built-eap/eapol_test /built-eap/eapol_test.switchlab.json /usr/local/bin/
+COPY --from=eap-build /built-eap/notices /usr/local/share/doc/eapol_test
 COPY pyproject.toml LICENSE ./
 COPY switchlab ./switchlab
 COPY --from=ui /build/switchlab/static ./switchlab/static

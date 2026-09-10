@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import Field, ValidationError, create_model, model_validator
 
 from .engine import CommandError, Engine
-from .models import Configuration, Credential, CredentialAuth, AccessGroup, PollingAccess, WritingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, initial_configuration
+from .models import Configuration, Credential, CredentialAuth, AccessGroup, PollingAccess, WritingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, RadiusSettings, RadiusServer, RadiusMaterial, SupplicantProfile, SupplicantTemplate, AccountingSettings, DynamicSettings, DynamicSender, initial_configuration
 from .snmp import SnmpAdapter
 from .storage import Store, StorageFault, RollbackFailed, CommitUncertain
 
@@ -115,6 +115,35 @@ class TargetWrite(Target, Revision):
         return self
 
 
+RadiusSettingsWrite = patch_model("RadiusSettingsWrite", RadiusSettings, [name for name in RadiusSettings.model_fields if name not in ("servers", "materials", "templates", "accounting", "dynamic_authorization")])
+RadiusServerWrite = create_model("RadiusServerWrite", __base__=patch_model("RadiusServerFields", RadiusServer, list(RadiusServer.model_fields)),
+    position=(int | None, Field(default=None, ge=0, le=15)))
+AccountingSettingsWrite = patch_model("AccountingSettingsWrite", AccountingSettings, [name for name in AccountingSettings.model_fields if name != "targets"])
+DynamicSettingsWrite = patch_model("DynamicSettingsWrite", DynamicSettings, [name for name in DynamicSettings.model_fields if name != "senders"])
+DynamicSenderWrite = patch_model("DynamicSenderWrite", DynamicSender, list(DynamicSender.model_fields))
+RadiusMaterialWrite = patch_model("RadiusMaterialWrite", RadiusMaterial, list(RadiusMaterial.model_fields))
+SupplicantPatch = create_model("SupplicantPatch", __base__=Record, **{
+    name: (field.annotation | None, None) for name,field in SupplicantProfile.model_fields.items()})
+RadiusTemplateWrite = create_model("RadiusTemplateWrite", __base__=Revision,
+    id=(str | None, None), label=(str | None, None), profile=(SupplicantPatch | None, None))
+
+
+class SourceSupplicantWrite(Revision):
+    source_id: str
+    profile: SupplicantPatch | None = None
+    template_id: str | None = None
+    restart: bool = False
+
+
+class SourceAuthentication(Revision):
+    source_id: str
+    action: Literal["restart", "reauthenticate"]
+
+
+class SessionAuthentication(Revision):
+    action: Literal["restart", "reauthenticate"]
+
+
 def create_app(store=None, configuration=None):
     sessions = {}
     buckets = defaultdict(deque)
@@ -154,6 +183,7 @@ def create_app(store=None, configuration=None):
             app.state.engine = Engine(cfg, store)
             adapter = app.state.adapter = SnmpAdapter(app.state.engine, store)
             await app.state.adapter.reconcile()
+            await app.state.engine.reconcile_dynamic()
             app.state.background_error = None
 
             async def background():
@@ -164,8 +194,13 @@ def create_app(store=None, configuration=None):
                     elapsed = int((now-last)*1000)
                     last = now
                     try:
+                        await app.state.engine.reconcile_dynamic()
+                        await app.state.engine.prune_dynamic()
+                        await app.state.engine.service_authentication()
+                        await app.state.engine.service_accounting()
                         if app.state.engine.storage_fault:
                             continue
+                        await app.state.engine.continue_advance()
                         if not app.state.engine.state.cfg.paused:
                             await app.state.engine.execute("advance", {"duration_ms": max(1, min(elapsed, 60000)), "automatic": True})
                         await app.state.adapter.drain_one()
@@ -181,6 +216,10 @@ def create_app(store=None, configuration=None):
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+            if hasattr(app.state, "engine"):
+                await app.state.engine.close_dynamic()
+                await app.state.engine.close_accounting()
+                await app.state.engine.close_authentication()
             if adapter is not None:
                 adapter.close()
             if owned:
@@ -308,12 +347,32 @@ def create_app(store=None, configuration=None):
                     adapter.configured = {}
                     adapter.cold_sent = False
                 await adapter._reconcile()
+                await app.state.engine.reconcile_dynamic()
             # Reconciliation may commit coldStart; return the current write revision.
-            return {**result, "revision": app.state.engine.state.revision, "configuration_revision": app.state.engine.state.configuration_revision}
+            response = {**result, "revision": app.state.engine.state.revision, "configuration_revision": app.state.engine.state.configuration_revision}
+            if action == "advance" and response.get("advance", {}).get("status") == "waiting":
+                return JSONResponse(response, status_code=202)
+            return response
         handler.__annotations__["body"] = model
         handler.__name__ = action + "_" + method + "_" + path.replace("/", "_")
         app.add_api_route("/api/v1"+path, handler, methods=[method], tags=[path.split("/")[1]])
 
+    mutation("PATCH", "/radius/settings", RadiusSettingsWrite, "radius-settings")
+    mutation("PATCH", "/radius/dynamic", DynamicSettingsWrite, "dynamic-settings")
+    mutation("POST", "/radius/dynamic/senders", DynamicSenderWrite, "dynamic-sender-save")
+    mutation("DELETE", "/radius/dynamic/senders/{id}", Revision, "dynamic-sender-delete", lambda d,p: {"id":p["id"]})
+    mutation("PATCH", "/radius/accounting", AccountingSettingsWrite, "accounting-settings")
+    mutation("POST", "/radius/accounting/targets", RadiusServerWrite, "accounting-target-save")
+    mutation("DELETE", "/radius/accounting/targets/{id}", Revision, "accounting-target-delete", lambda d,p: {"id":p["id"]})
+    mutation("POST", "/radius/sessions/{id}", SessionAuthentication, "radius-session-action", lambda d,p: {"id":p["id"], **d})
+    mutation("POST", "/radius/servers", RadiusServerWrite, "radius-server-save")
+    mutation("DELETE", "/radius/servers/{id}", Revision, "radius-server-delete", lambda d,p: {"id":p["id"]})
+    mutation("POST", "/radius/materials", RadiusMaterialWrite, "radius-material-save")
+    mutation("DELETE", "/radius/materials/{id}", Revision, "radius-material-delete", lambda d,p: {"id":p["id"]})
+    mutation("POST", "/radius/templates", RadiusTemplateWrite, "radius-template-save")
+    mutation("DELETE", "/radius/templates/{id}", Revision, "radius-template-delete", lambda d,p: {"id":p["id"]})
+    mutation("POST", "/endpoints/{id}/supplicant", SourceSupplicantWrite, "source-supplicant-save", lambda d,p: {"id":p["id"], **d})
+    mutation("POST", "/endpoints/{id}/authentication", SourceAuthentication, "source-authentication", lambda d,p: {"id":p["id"], **d})
     mutation("PATCH", "/switch", SwitchPatch, "switch-edit")
     mutation("PATCH", "/ports/{id}", PortPatch, "port-edit", lambda d,p: {"id":p["id"], "patch":d})
     mutation("POST", "/endpoints", EndpointCreate, "endpoint-create")
@@ -330,6 +389,7 @@ def create_app(store=None, configuration=None):
     for action in ("pause", "resume"):
         mutation("POST", "/clock/"+action, Revision, action)
     mutation("POST", "/clock/advance", Advance, "advance")
+    mutation("POST", "/clock/advance/{id}/cancel", Revision, "advance-cancel", lambda d,p: {"id":p["id"]})
     mutation("POST", "/switch/reboot", Revision, "reboot")
     mutation("PATCH", "/snmp/settings", SnmpPatch, "snmp-settings")
     for route, model, prefix in (("snmp/credentials", CredentialWrite, "credential"), ("snmp/groups", GroupWrite, "group"), ("snmp/views", ViewWrite, "view"), ("notifications/targets", TargetWrite, "target")):

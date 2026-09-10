@@ -425,6 +425,8 @@ def test_schema2_groups_preserve_encrypted_policy_and_identity(store, level, rea
     import copy
     from switchlab.models import Configuration, initial_configuration
     raw = initial_configuration(4).model_dump(mode="json")
+    raw.pop("radius")
+    for port in raw["ports"].values():port.pop("authentication")
     raw.pop("groups")
     raw["schema_version"] = 2
     policy = {"polling": {"enabled": read, "view_id": "interfaces" if read else "missing-read", "networks": ["192.0.2.0/24"]},
@@ -441,7 +443,7 @@ def test_schema2_groups_preserve_encrypted_policy_and_identity(store, level, rea
         store.put("engine_identity", "40000102030405060708090a0b")
         store.put("engine_boots", 9)
     cfg = store.load()
-    assert raw == before and cfg.schema_version == 3
+    assert raw == before and cfg.schema_version == 4
     assert Configuration.model_validate(raw) == cfg
     assert len(cfg.groups) == 2
     for cid in ("one", "two"):
@@ -457,7 +459,7 @@ def test_schema2_groups_preserve_encrypted_policy_and_identity(store, level, rea
     assert community.polling.model_dump() == policy["polling"] and community.writing.model_dump() == policy["writing"]
     assert (community.username, community.auth_key, community.priv_key) == ("retained-inactive", "inactive-auth", "inactive-priv")
     e = Engine(cfg, store)
-    assert store.load() == cfg and store.get("configuration")["schema_version"] == 3
+    assert store.load() == cfg and store.get("configuration")["schema_version"] == 4
     assert store.get("engine_identity") == "40000102030405060708090a0b" and store.get("engine_boots") == 9
     assert e.export()["schema_version"] == 1 and not {"credentials", "groups"} & e.export().keys()
     assert "synthetic-auth" not in str(e.snapshot()) and "inactive-auth" not in str(e.snapshot())
@@ -603,6 +605,8 @@ def test_schema2_generated_group_ids_are_url_safe_distinct_and_repeatable():
     import copy
     from switchlab.models import Configuration, initial_configuration
     raw = initial_configuration(4).model_dump()
+    raw.pop("radius")
+    for port in raw["ports"].values():port.pop("authentication")
     raw.pop("groups"); raw["schema_version"] = 2
     ids = ["a/b", "a?b", "a#b", "管理", "a:b", "a%2Fb"]
     raw["credentials"] = {cid: {"id": cid, "label": "Saved user", "version": "3", "username": str(n),
