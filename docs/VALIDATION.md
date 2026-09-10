@@ -8,6 +8,14 @@ passed **614 tests in 64.14 s**, with one actual-listener API case excluded,
 46 upstream warnings and **zero INET attempts**. Input hashes remained unchanged
 during the run. This is not a new native, UDP, independent-client or deployment run.
 
+Automatic CI for `883dbc8f` passed 1,275 tests and 139 subtests but failed one
+rollback fixture when independently sampled uptime crossed a centisecond boundary.
+A controlled-clock reproduction changed only uptime (100 to 102 ticks). The fixture
+now retains full storage/snapshot/event equality at fixed time and separately checks
+100 ticks of clock progress. All 32 direct rollback/response-failure cases passed
+in 5.62 s with zero INET attempts. Production clocks and rollback behavior are
+unchanged; that failed CI run did not reach the runtime/LAN steps.
+
 ### Request-local reads
 
 Synthetic 24-port states had four VLANs and either 24 or zero learned MACs.
