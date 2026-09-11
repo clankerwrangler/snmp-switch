@@ -66,12 +66,12 @@ def test_secrets_redacted_encrypted_and_scenario_preserved(store):
         state=c.get('/api/v1/state').text
         assert 'fixture-secret-value' not in state
         assert 'fixture-secret-value' not in c.get('/api/v1/snmp/credentials').text
-        assert b'fixture-secret-value' not in b''.join(bytes(x[0]) for x in store.db.execute('SELECT value FROM kv'))
         assert change(c,f'/snmp/credentials/{cid}',{'enabled':False},'PUT').status_code==200
         assert c.app.state.engine.state.cfg.credentials[cid].community=='fixture-secret-value'
         assert cid not in store.load().credentials
         assert change(c,'/switch/save').status_code==200
         assert store.load().credentials[cid].community=='fixture-secret-value'
+        assert b'fixture-secret-value' not in b''.join(bytes(x[0]) for x in store.db.execute('SELECT value FROM kv'))
         scenario=c.get('/api/v1/scenarios/export').json()
         assert 'credentials' not in scenario and 'identity' not in json.dumps(scenario)
         before=revision(c)

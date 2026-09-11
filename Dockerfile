@@ -38,5 +38,22 @@ RUN pip install --no-cache-dir '.[test]'
 USER 10001:10001
 CMD ["python", "-m", "pytest", "-q", "--tb=short", "-p", "no:cacheprovider"]
 
+# Browser tooling is test-only; the public runtime does not inherit this stage.
+FROM node:22-bookworm-slim AS browser-tools
+WORKDIR /browser
+COPY tests/browser/package.json tests/browser/pnpm-lock.yaml ./
+RUN npm install -g pnpm@11.19.0 && pnpm install --frozen-lockfile --ignore-scripts
+
+FROM runtime AS browser-test
+USER root
+COPY --from=browser-tools /usr/local/bin/node /usr/local/bin/node
+COPY --from=browser-tools /browser/node_modules /app/tests/browser/node_modules
+COPY tests ./tests
+COPY scripts/browser_check.py ./scripts/browser_check.py
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 && pip install --no-cache-dir '.[test]' && node tests/browser/node_modules/playwright/cli.js install --with-deps --only-shell chromium && rm -rf /var/lib/apt/lists/*
+USER 10001:10001
+CMD ["python", "scripts/browser_check.py", "--mode", "full"]
+
 # A plain docker build produces the public application, not the test image.
 FROM runtime AS release

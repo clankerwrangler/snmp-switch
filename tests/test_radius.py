@@ -54,21 +54,36 @@ def test_ordered_repeated_values_and_padding():
     assert b"opaque" not in repr(result).encode()
 
 
-@pytest.mark.parametrize("fault", ["missing", "short", "long", "duplicate", "bad-ma", "bad-response", "identifier", "old-request", "eap-length"])
-def test_invalid_packet_cannot_become_access_result(fault):
+@pytest.mark.parametrize("fault,reason", [
+    ("missing", "missing_message_authenticator"),
+    ("short", "invalid_message_authenticator"),
+    ("long", "invalid_message_authenticator"),
+    ("duplicate", "invalid_message_authenticator"),
+    ("bad-ma", "invalid_message_authenticator"),
+    ("bad-response", "invalid_response_authenticator"),
+    ("identifier", "uncorrelated_response"),
+    ("old-request", "invalid_message_authenticator"),
+    ("eap-length", "malformed_eap"),
+])
+def test_invalid_packet_cannot_become_access_result(fault, reason):
     req = request()
     if fault == "missing":wire = reply(req, ma=False)
-    elif fault in ("short", "long", "duplicate"):
-        wire = reply(req, [(80, bytes({"short": 15, "long": 17, "duplicate": 16}[fault]))])
+    elif fault in ("short", "long"):
+        wire = reply(req, [(80, bytes(15 if fault == "short" else 17))], ma=False)
+    elif fault == "duplicate":wire = reply(req, [(80, bytes(16))])
     elif fault == "eap-length":wire = reply(req, [(79, b"\x04\x00\x00\x08")])
     else:
         wire = bytearray(reply(req))
-        if fault == "bad-ma":wire[-1] ^= 1
+        if fault == "bad-ma":
+            wire[-1] ^= 1
+            # Isolate MA rejection: the independent Response Authenticator stays valid.
+            wire[4:20] = hashlib.md5(wire[:4] + req[4:20] + wire[20:] + SECRET).digest()
         elif fault == "bad-response":wire[4] ^= 1
         elif fault == "identifier":wire[1] ^= 1
         elif fault == "old-request":req = request()
         wire = bytes(wire)
-    with pytest.raises(RadiusError):verify_access(req, wire, SECRET, PEER)
+    with pytest.raises(RadiusError, match=f"^{reason}$"):
+        verify_access(req, wire, SECRET, PEER)
 
 
 def policy(values, forbidden=()):

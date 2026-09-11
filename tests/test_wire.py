@@ -3,7 +3,7 @@ import asyncio
 import socket
 import pytest
 from puresnmp import Client, V2C, V3
-from puresnmp.exc import ErrorResponse
+from puresnmp.exc import ErrorResponse, Timeout
 from puresnmp.pdu import Trap
 from x690 import decode
 from x690.types import ObjectIdentifier as OID, Integer
@@ -69,12 +69,12 @@ async def test_independent_view_cidr_unknown_rotation_and_gate(engine):
         c=client(port)
         nxt=await c.getnext(OID('1.3.6.1.2.1.2.2.1.20.104'))
         assert str(nxt.oid).startswith('1.3.6.1.2.1.31.')
-        with pytest.raises(Exception):await client(port,V2C('wrong')).get(OID('1.3.6.1.2.1.1.1.0'))
+        with pytest.raises(Timeout):await client(port,V2C('wrong')).get(OID('1.3.6.1.2.1.1.1.0'))
         cid=next(iter(e.state.cfg.credentials))
         await e.execute('credential-save',{'id':cid,'polling':{'networks':['192.0.2.0/24']}});await a.reconcile()
-        with pytest.raises(Exception):await c.get(OID('1.3.6.1.2.1.1.1.0'))
+        with pytest.raises(Timeout):await c.get(OID('1.3.6.1.2.1.1.1.0'))
         await e.execute('credential-save',{'id':cid,'polling':{'networks':['127.0.0.0/8']},'community':'rotated-fixture'});await a.reconcile()
-        with pytest.raises(Exception):await c.get(OID('1.3.6.1.2.1.1.1.0'))
+        with pytest.raises(Timeout):await c.get(OID('1.3.6.1.2.1.1.1.0'))
         assert await client(port,V2C('rotated-fixture')).get(OID('1.3.6.1.2.1.1.1.0'))
         identity=a.engine_id;boots=a.boots
         await e.execute('switch-edit',{'identity':{'sys_object_id':None}});await a.reconcile()
@@ -161,7 +161,7 @@ async def test_shared_v2_credential_polling_and_traps_are_independent(engine):
     try:
         a, port = await start(e)
         cid = next(iter(e.state.cfg.credentials))
-        tid = (await e.execute('target-save', {'address': '127.0.0.1',
+        tid = (await e.execute('target-save', {'address': '127.0.0.1', 'source_address': '127.0.0.1',
             'port': transport.get_extra_info('sockname')[1], 'credential_id': cid}))['id']
         await a.reconcile()
         async def trap():
@@ -177,7 +177,7 @@ async def test_shared_v2_credential_polling_and_traps_are_independent(engine):
         await a.reconcile()
         assert a.listening
         assert await client(port, V2C('other-polling')).get(OID('1.3.6.1.2.1.1.2.0'))
-        with pytest.raises(Exception):
+        with pytest.raises(Timeout):
             await client(port).get(OID('1.3.6.1.2.1.1.2.0'))
         await trap()
         await e.execute('credential-save', {'id': other, 'polling': {'enabled': False}})
@@ -189,7 +189,7 @@ async def test_shared_v2_credential_polling_and_traps_are_independent(engine):
         assert a.listening and a.status()['writing_ready'] and not a.status()['ready']
         await client(port).set(OID('1.3.6.1.2.1.2.2.1.7.101'), Integer(2))
         assert not next(iter(e.state.cfg.ports.values())).admin_up
-        with pytest.raises(Exception):
+        with pytest.raises(Timeout):
             await client(port).get(OID('1.3.6.1.2.1.1.2.0'))
         await trap()
         await e.execute('credential-save', {'id': cid, 'writing': {'enabled': False}})

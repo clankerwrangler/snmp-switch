@@ -654,57 +654,6 @@ print("optional_import_failure_preserves_adapter=passed network_socket_attempts=
     assert "optional_import_failure_preserves_adapter=passed network_socket_attempts=0" in result.stdout
 
 
-@pytest.mark.parametrize("level", [0, 1, 2, 3])
-@pytest.mark.parametrize("trigger", ["expiry", "close"])
-def test_unadmitted_original_security_association(level, trigger):
-    x = Exchange(level)
-    collected = []
-    dispatcher = x.agent.message_dispatcher
-    dispatcher.unregister_context_engine_id(x.agent.snmpEngineID, (v2c.SetRequestPDU.tagSet,))
-    dispatcher.register_context_engine_id(x.agent.snmpEngineID, (v2c.SetRequestPDU.tagSet,), lambda *args: collected.append(args))
-    try:
-        # A reaches the genuine inbound MP cache but is not admitted to a ticket.
-        x.send_request()
-        a_args = collected.pop()
-        a_ref = a_args[10]
-        a_record = x.mp._cache._Cache__stateReferenceIndex[a_ref]
-        sec_ref = a_record[0]["securityStateReference"]
-        old_security = x.security._cache._Cache__cache_entries[sec_ref]
-        x.security.release_state_information(sec_ref)
-        # B is a real receive with the ordinary allocator replaced for one
-        # bounded reuse fixture. No production dictionary is seeded or cleared.
-        with patch.object(x.security._cache, "_Cache__state_reference", lambda: sec_ref):
-            x.send_request()
-        b_args = collected.pop()
-        b_record = x.mp._cache._Cache__stateReferenceIndex[b_args[10]]
-        foreign = x.security._cache._Cache__cache_entries[sec_ref]
-        assert foreign is not old_security
-        # Fault injection: B's independent MP owner has taken its response row,
-        # leaving security completion pending. Closing A must not complete B.
-        taken = x.mp._cache.pop_by_state_reference(b_args[10])
-        assert taken is b_record[0]
-        foreign_pops = []
-        original = x.security._cache.pop
-        def observe(ref):
-            if x.security._cache._Cache__cache_entries.get(ref) is foreign:
-                foreign_pops.append(ref)
-            return original(ref)
-        with patch.object(x.security._cache, "pop", observe):
-            if trigger == "expiry":
-                x.expire()
-            else:
-                x.owner.close()
-        preserved = x.security._cache._Cache__cache_entries.get(sec_ref) is foreign
-        print(f"level={level} trigger={trigger} B_security_preserved={preserved} B_security_pops={len(foreign_pops)} sends={x.sink.attempts} A_MP_present={a_ref in x.mp._cache._Cache__stateReferenceIndex}", flush=True)
-        assert preserved and not foreign_pops, "Unadmitted A cleanup released B's exact security record"
-        assert x.sink.attempts == 0
-    finally:
-        # Retire B through its public owner only if the reproduction preserved it.
-        if 'foreign' in locals() and x.security._cache._Cache__cache_entries.get(sec_ref) is foreign:
-            x.security.release_state_information(sec_ref)
-        x.close()
-
-
 @contextmanager
 def raw_admission(x):
     """Capture public callback arguments without creating application tickets."""
@@ -763,7 +712,9 @@ async def test_entry_witness_survives_delayed_admission(exchange, route, fault):
         params = x.mp._cache._Cache__stateReferenceIndex[ref][0]
         sec_ref = params["securityStateReference"]
         remaining = x.security._cache._Cache__cache_entries.get(sec_ref)
+        original_security = remaining
         if fault in ("lost", "reused"):
+            assert original_security is not None
             x.security.release_state_information(sec_ref)
             remaining = None
         if fault in ("reused", "missing-at-insert"):
@@ -771,7 +722,12 @@ async def test_entry_witness_survives_delayed_admission(exchange, route, fault):
                 x.send_request()
             b_args = collected.pop()
             remaining = x.security._cache._Cache__cache_entries[sec_ref]
-            x.mp._cache.pop_by_state_reference(b_args[10])
+            assert remaining is not original_security
+            # B's independent MP owner takes its row, leaving its distinct
+            # security completion pending. A's cleanup must not complete B.
+            b_record = x.mp._cache._Cache__stateReferenceIndex[b_args[10]]
+            taken = x.mp._cache.pop_by_state_reference(b_args[10])
+            assert taken is b_record[0]
         pops, effects = [], []
         original = x.security._cache.pop
         def pop(ref):
@@ -1084,7 +1040,8 @@ async def test_application_set_real_dispatcher_atomic_echo_and_cleanup(app_excha
     assert int(v2c.apiPDU.get_request_id(response)) == -2147483648
     assert int(v2c.apiPDU.get_error_status(response)) == 0
     assert int(v2c.apiPDU.get_error_index(response)) == 0
-    assert encoder.encode(v2c.apiPDU.get_varbinds(response)[0][1]) == encoder.encode(v2c.apiPDU.get_varbinds(pdu)[0][1])
+    assert [(tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(response)] == [
+        (tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(pdu)]
     assert x.engine.state.revision == before.revision + 1
     assert not next(iter(x.engine.state.cfg.ports.values())).admin_up
     terminal(pending.ticket)
@@ -1134,8 +1091,8 @@ async def test_application_set_denials_keep_original_echo_and_state(app_exchange
     response = x.decode()
     assert (int(v2c.apiPDU.get_error_status(response)), int(v2c.apiPDU.get_error_index(response))) == (status, index)
     assert int(v2c.apiPDU.get_request_id(response)) == 2147483647
-    for (rn, rv), (qn, qv) in zip(v2c.apiPDU.get_varbinds(response), v2c.apiPDU.get_varbinds(pdu)):
-        assert rn == qn and encoder.encode(rv) == encoder.encode(qv)
+    assert [(tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(response)] == [
+        (tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(pdu)]
     assert x.engine.state is before and x.engine.store.load() == persisted
     x.empty()
 
@@ -1819,6 +1776,8 @@ async def test_application_pae_actions_require_explicit_view_and_commit_whole_pd
     before=x.engine.state
     x.send(pdu);await x.settle();response=x.decode()
     assert (int(v2c.apiPDU.get_error_status(response)),int(v2c.apiPDU.get_error_index(response)))==(6,1)
+    assert [(tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(response)] == [
+        (tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(pdu)]
     assert x.engine.state is before
     # The historical MIB-II view does not acquire access to the IEEE subtree.
     await configure_application(x,'view-save',{'id':'pae','name':'Explicit PAE','includes':['1.0.8802.1.1.1','1.3.6.1.2.1']})
@@ -1828,11 +1787,14 @@ async def test_application_pae_actions_require_explicit_view_and_commit_whole_pd
     before=x.engine.state;persisted=x.engine.store.load()
     x.send(pdu);await x.settle();response=x.decode()
     assert (int(v2c.apiPDU.get_error_status(response)),int(v2c.apiPDU.get_error_index(response)))==(10,5)
+    assert [(tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(response)] == [
+        (tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(pdu)]
     assert x.engine.state is before and x.engine.store.load()==persisted
     v2c.apiPDU.set_varbinds(pdu,bindings)
     x.send(pdu);await x.settle();response=x.decode()
     assert int(v2c.apiPDU.get_error_status(response))==0
-    for (_,got),(_,sent) in zip(v2c.apiPDU.get_varbinds(response),bindings):assert encoder.encode(got)==encoder.encode(sent)
+    assert [(tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(response)] == [
+        (tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(pdu)]
     assert x.engine.state.cfg.ports[port.id].authentication.control=='force-unauthorized'
     actions=[e['kind'] for e in x.engine.state.events if e['kind'].startswith('pae-')]
     assert actions==['pae-initialize']
@@ -1857,7 +1819,8 @@ async def test_application_pae_actions_require_explicit_view_and_commit_whole_pd
     v2c.apiPDU.set_varbinds(action,[action_binding])
     x.send(action);await x.settle();response=x.decode()
     assert int(v2c.apiPDU.get_error_status(response))==0
-    assert encoder.encode(v2c.apiPDU.get_varbinds(response)[0][1])==encoder.encode(action_binding[1])
+    assert [(tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(response)] == [
+        (tuple(name), encoder.encode(value)) for name, value in v2c.apiPDU.get_varbinds(action)]
     rows=[row for row in x.engine.state.events if row["id"]>before.event_id]
     assert [row["kind"] for row in rows]==["snmp-set","pae-initialize"]
     assert rows[0]["assignments"]==1 and rows[1]["port_id"]==port.id
