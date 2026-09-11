@@ -62,6 +62,70 @@ packaged UI, and README image are unchanged.
 
 ## Event history checks
 
+### History capture and SNMP latency
+
+The follow-up measured against `38308d8f` preserves the tested application bytes
+on the separately published Compose base `cabd8fe`. SNMP reads capture one Runtime
+and authorization decision; they do not advance time or write history. The normal
+100 ms background ticker shares their event loop. Profiling a four-port, one-VLAN,
+no-endpoint fixture with 2,000 nested events identified repeated history deepcopy
+as the dominant automatic-advance and SET cost, not MIB lookup. Event creation now
+detaches nested details once, and candidate cloning copies only the history list.
+Other mutable fields, SET validation, durable commit, and publication stay isolated.
+
+One paired synthetic run per workload used Python 3.12, PySNMP 7.1.29, and
+SNMPv2c. Wire requests used a separate puresnmp 2.0.1 process, explicit `127.0.0.1`
+ephemeral sockets, the normal ticker, and an encrypted in-memory SQLite Store.
+
+| Workload | Before | After |
+|---|---:|---:|
+| Automatic advance, in-memory Store median | 29.867 ms | 1.632 ms |
+| sysObjectID GET median | 1.453 ms | 2.690 ms |
+| sysObjectID GET p95 / maximum | 31.449 / 83.297 ms | 4.062 / 8.222 ms |
+| Single-port ifAdminStatus SET median | 34.653 ms | 9.489 ms |
+| Single-port ifAdminStatus SET p95 / maximum | 66.017 / 81.916 ms | 10.401 / 17.877 ms |
+| SET engine transaction median | 31.714 ms | 4.119 ms |
+| SET Store.commit median | 0.655 ms | 1.185 ms |
+
+Each GET run had five warmups and 200 samples: 205 sent/received/server PDUs,
+zero retries or timeouts. Each SET run had five warmups and 40 samples, alternating
+up/down, plus a separate readback after every change: 90 PDUs, zero retries or
+timeouts. Request ID, zero error status/index, complete OID/value echo, and
+readback were checked. Notifications were disabled; SQLite used memory journaling
+and FULL synchronization, not disk-backed SET storage. Advance timing was a
+separate no-network component measurement. Each pair retained identical workload
+script bytes; the later SET-capable script was separate from the retained GET-only
+script used for both GET runs.
+
+GET median worsened; its cause is unknown. The improved tails and SET measurements
+do not establish a universal speedup. Reported live sysObjectID/ENTITY/ifTable
+167/30/900 ms and nearly two-second SET latency were not reproduced. Live build,
+configuration, client request/PDU counts, and coldness remain unknown; those
+reported timings are not comparable per-PDU measurements.
+
+Eight focused cases passed in 1.67 s with zero INET attempts. Strengthened existing
+tests cover nested caller/status capture, old Runtime/lazy reads, retention/reload,
+replay/rejection/failed publication, HTTP response detachment, and notification
+results. An ordinary-deepcopy reference passed ten existing scenarios in 1.11 s:
+63 candidate copies had equal values and isolated non-event mutable fields,
+including six existing SET configuration-copy exceptions. These counts overlap.
+The affected six-file batch retained **891 passes and one failure** in 123.18 s:
+an existing API reboot fixture opened UDP and the no-INET guard rejected it.
+That exact node separately passed in 1.08 s under an explicit-loopback guard;
+the original batch is not a clean pass. Pre-fix capture failures and scratch
+setup failures remain recorded. Children, sockets, and synthetic databases/keys
+were cleaned up; no live, native, container, or browser campaign was run.
+
+Before product edits, one unchanged `SetResponseScenarios.tla` /
+`configs/EventHistory.cfg` check passed in 3.205 s under a 10-second cap:
+161 generated/144 distinct states, all three final temporal branches complete.
+The earlier failed-commit publication control was retained, not rerun. The
+[model correspondence](../specification/CURRENT_MODEL.md) now states the capture
+and private-sequence obligations; formulas and finite bounds are unchanged.
+This value/publication check is not a Python heap-ownership or latency proof.
+
+### Recorded event emission and display checks
+
 The display-context follow-up against `6fc1a7e` passed **25 focused tests in
 2.11 s**, with two upstream warnings and **zero INET attempts**. These cover
 numeric port references, public resource labels, rename/delete and normal SQLite
@@ -217,8 +281,9 @@ checks passed; no Projection was built. File SQLite retained WAL/FULL settings.
 Running-only configuration is not zero disk I/O or itself a speed improvement.
 For SET alone, Runtime cloning no longer deep-copies the old cfg that is immediately
 replaced by a separately deep-copied plan candidate. Candidate isolation, full
-validation, all other Runtime copies, commit/fault/response ownership and non-SET
-paths remain. Five profiled memory SETs fell from 0.224 to 0.174 s, with cumulative
+validation, commit/fault/response ownership and non-SET paths remain. At that
+checkpoint, other Runtime fields still used full deepcopy. Five profiled memory
+SETs fell from 0.224 to 0.174 s, with cumulative
 deepcopy cost falling from 0.132 to 0.093 s. No-op processing is unchanged. Alias,
 old lazy-read, copy/validation/Store failure, no-op and stale-plan regressions pass.
 These small no-contention samples do not establish a universal SET latency target.

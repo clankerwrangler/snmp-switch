@@ -1099,6 +1099,11 @@ async def test_event_history_link_fact_and_exact_trap_gates(engine, notification
     if queued:
         assert e.state.outbox[0]=={"event":link,"target_id":target["id"],"destination":"192.0.2.1:162"}
         assert deliveries[0]["notification_id"]==link["id"] and deliveries[0]["status"]=="queued"
+        before=e.state;old=copy.deepcopy(before)
+        await e.execute("notification-result",{"notification_id":link["id"],"target_id":target["id"],"status":"sent"})
+        assert before==old and not e.state.outbox
+        assert next(row for row in e.state.events if row["id"]==link["id"])==link
+        assert e.state.events[-1]["destination"]=="192.0.2.1:162"
     assert e.store.events()==e.state.events
 
 
@@ -1125,19 +1130,44 @@ async def test_event_history_typed_port_effects_and_field_only_other_resources(e
     assert "private-looking" not in json.dumps(e.store.events())
 
 
-def test_event_history_retention_and_ids_across_sqlite_reload(tmp_path):
+async def test_event_history_retention_and_ids_across_sqlite_reload(tmp_path, monkeypatch):
     from cryptography.fernet import Fernet
     from switchlab.storage import Store
     from switchlab.models import initial_configuration
+    from switchlab.mib import Projection
     key=Fernet.generate_key();path=str(tmp_path/"history.db")
-    store=Store(path,key);e=Engine(initial_configuration(1),store)
-    # Exercise the existing bounded Runtime event and confirmed Store path. No
-    # wall-clock timing or network delivery is implied by these generated rows.
-    candidate=copy.deepcopy(e.state)
-    for _ in range(2005):candidate.event("pause")
-    assert len(candidate.events)==2000
-    candidate.revision+=1;store.commit(candidate,{})
-    last=candidate.event_id;retained=copy.deepcopy(candidate.events);store.close()
+    cfg=initial_configuration(1);cfg.paused=True
+    store=Store(path,key);e=Engine(cfg,store)
+    try:
+        # Seed the retention boundary without thousands of unrelated transactions.
+        candidate=copy.deepcopy(e.state)
+        details={"fields":["admitted"],"changes":{"admitted":{"before":[1],"after":[1,20]}}}
+        for _ in range(2005):candidate.event("port-edit",**details)
+        captured=copy.deepcopy(candidate.events)
+        details["fields"].clear();details["changes"]["admitted"]["after"].append(30)
+        assert candidate.events==captured
+        candidate.revision+=1;store.commit(candidate,{});e.state=candidate
+        before=e.state;old=copy.deepcopy(before);retained=copy.deepcopy(before.events)
+        projection=Projection(before,["1"])
+        with monkeypatch.context() as m:
+            await e.execute("advance",{"duration_ms":100})
+            await e.execute("pause",key="retained-pause")
+            confirmed=e.state;durable=store.events()
+            await e.execute("pause",key="retained-pause")
+            assert e.state is confirmed
+            with pytest.raises(CommandError):await e.execute("advance",{"duration_ms":0})
+            assert e.state is confirmed and store.events()==durable
+            def fail(*args,**kwargs):raise RuntimeError("synthetic commit failure")
+            m.setattr(store,"commit",fail)
+            with pytest.raises(RuntimeError,match="synthetic commit failure"):
+                await e.execute("pause")
+            assert e.state is confirmed and e.state.events==durable[-2000:]
+        assert before==old and len(before.events)==len(e.state.events)==2000
+        assert e.state.events[:-1]==retained[1:]
+        assert int(projection.get("1.3.6.1.2.1.2.2.1.1.101")[1])==101
+        assert projection.state is before
+        last=e.state.event_id;retained=copy.deepcopy(e.state.events)
+    finally:store.close()
     store=Store(path,key)
     try:
         restored=Engine(None,store)
@@ -1148,7 +1178,10 @@ def test_event_history_retention_and_ids_across_sqlite_reload(tmp_path):
         assert restored.state.events[-1]["simulation_ms"]==0
         assert restored.state.events[-1]["revision"]==restored.state.revision
         assert store.events()[-2000:]==restored.state.events
+        loaded=store.events();loaded[-2]["kind"]="caller edit"
+        assert restored.state.events[-2]["kind"]=="pause"
     finally:store.close()
+
 
 
 async def test_event_display_port_endpoint_and_source_capture(engine, store):

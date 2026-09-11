@@ -748,7 +748,8 @@ class Runtime:
             if source is not None:
                 details.setdefault("source_mac", source.mac)
         self.event_id += 1
-        event = dict(id=self.event_id, kind=kind, simulation_ms=self.sim_ms, uptime=self.uptime(), revision=self.revision + 1, **details)
+        # History owns its nested payloads; status and caller data can change.
+        event = dict(id=self.event_id, kind=kind, simulation_ms=self.sim_ms, uptime=self.uptime(), revision=self.revision + 1, **copy.deepcopy(details))
         self.events.append(event)
         self.events = self.events[-2000:]
         return event
@@ -1607,9 +1608,14 @@ class Engine:
         require(expected is None or expected == self.state.revision, "Stale state revision; reload and retry")
         require(expected_config is None or expected_config == self.state.configuration_revision, "Configuration changed while editing; reload and retry")
         old = self.state
+        # Records own immutable captured payloads; only the history sequence is
+        # appended to or trimmed. Other Runtime fields keep independent copies.
+        memo = {id(old.events): old.events.copy()}
         # SET installs its separately copied candidate before touching cfg. Keep
         # the old published cfg immutable without copying it just to discard it.
-        s = copy.deepcopy(old, {id(old.cfg): old.cfg} if action == "snmp-set" else None)
+        if action == "snmp-set":
+            memo[id(old.cfg)] = old.cfg
+        s = copy.deepcopy(old, memo)
         affected_e, affected_p = set(), set()
         result = self._apply(s, action, payload, affected_e, affected_p)
         s.cfg = Configuration.model_validate(s.cfg.model_dump(mode="json"))
