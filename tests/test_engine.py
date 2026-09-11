@@ -1020,3 +1020,132 @@ def test_startup_complete_force_unauthorized_is_preserved_and_omission_rejected(
     del broken["ports"][pid]["authentication"]["control"]
     with store.transaction():store.put("startup_configuration",broken)
     with pytest.raises(ValueError,match="configuration fragment"):store.load()
+
+
+async def test_event_history_port_effects_replay_and_attachment_context(engine, store):
+    e = engine
+    ports = list(e.state.cfg.ports)
+    eid = await endpoint(e, active=False)
+    before = e.state.event_id
+    await e.execute("attach", {"id":eid,"port_id":ports[1]}, key="event-move")
+    rows = [row for row in e.state.events if row["id"] > before]
+    move = next(row for row in rows if row["kind"] == "attach")
+    assert (move["endpoint_id"],move["before_port_id"],move["after_port_id"]) == (eid,ports[0],ports[1])
+    assert {row["revision"] for row in rows} == {e.state.revision}
+    confirmed = e.state
+    await e.execute("attach", {"id":eid,"port_id":ports[1]}, key="event-move")
+    assert e.state is confirmed
+    await e.execute("attach", {"id":eid,"port_id":ports[1]})
+    assert e.state.events == confirmed.events
+    await e.execute("detach", {"id":eid})
+    detach = next(row for row in reversed(e.state.events) if row["kind"] == "detach")
+    assert (detach["before_port_id"],detach["after_port_id"]) == (ports[1],None)
+    # Field names are public; user-controlled free-form values are not an event diff.
+    marker = "private-looking-alias-not-for-history"
+    before = e.state.event_id
+    await e.execute("port-edit", {"id":ports[0],"patch":{"alias":marker,"admin_up":False}}, key="event-port")
+    changed = [row for row in e.state.events if row["id"] > before]
+    effect = next(row for row in changed if row["kind"] == "port-edit")
+    assert effect["fields"] == ["admin_up","alias"]
+    assert effect["changes"] == {"admin_up":{"before":True,"after":False}}
+    import json
+    assert marker not in json.dumps(store.events())
+    confirmed = e.state
+    await e.execute("port-edit", {"id":ports[0],"patch":{"alias":marker,"admin_up":False}}, key="event-port")
+    assert e.state is confirmed
+    await e.execute("port-edit", {"id":ports[0],"patch":{"alias":marker,"admin_up":False}})
+    assert e.state.events == confirmed.events
+    assert store.events() == e.state.events
+
+
+async def test_event_history_retained_identity_and_simulation_reset(engine, store):
+    e = engine
+    await e.execute("advance", {"duration_ms":1234})
+    await e.execute("pause")
+    event = e.state.events[-1]
+    assert event["simulation_ms"] == 1234
+    await e.execute("save-startup")
+    saved = e.state.events[-1]
+    assert saved["kind"] == "configuration-saved"
+    await e.execute("reboot")
+    boot = e.state.events[-1]
+    assert (boot["kind"],boot["simulation_ms"]) == ("boot",0)
+    assert boot["id"] > saved["id"] > event["id"]
+    assert event in e.state.events and store.events() == e.state.events
+
+
+@pytest.mark.parametrize("notifications,gate,target_enabled,credential_enabled", [
+    (True,True,True,True), (False,True,True,True), (True,False,True,True),
+    (True,True,False,True), (True,True,True,False),
+])
+async def test_event_history_link_fact_and_exact_trap_gates(engine, notifications, gate, target_enabled, credential_enabled):
+    e=engine;pid=next(iter(e.state.cfg.ports))
+    await e.execute("switch-edit", {"identity":{"sys_object_id":"1.3.6.1.4.1.32473.1"}})
+    credential=await e.execute("credential-save", {"label":"Synthetic trap", "community":"synthetic-trap", "enabled":credential_enabled})
+    target=await e.execute("target-save", {"address":"192.0.2.1", "credential_id":credential["id"], "enabled":target_enabled})
+    await e.execute("snmp-settings", {"enabled":gate})
+    await e.execute("port-edit", {"id":pid,"patch":{"link_notifications":notifications}})
+    before=e.state.event_id
+    await endpoint(e,active=False)
+    rows=[row for row in e.state.events if row["id"]>before]
+    links=[row for row in rows if row["kind"]=="linkUp"]
+    assert len(links)==1
+    link=links[0]
+    assert (link["port_id"],link["if_index"],link["admin"],link["before"],link["after"])==(pid,101,1,2,1)
+    queued=notifications and gate and target_enabled and credential_enabled
+    assert len(e.state.outbox)==int(queued)
+    deliveries=[row for row in rows if row["kind"]=="notification"]
+    assert len(deliveries)==int(queued)
+    if queued:
+        assert e.state.outbox[0]=={"event":link,"target_id":target["id"]}
+        assert deliveries[0]["notification_id"]==link["id"] and deliveries[0]["status"]=="queued"
+    assert e.store.events()==e.state.events
+
+
+async def test_event_history_typed_port_effects_and_field_only_other_resources(engine):
+    e=engine;pid=next(iter(e.state.cfg.ports))
+    await e.execute("vlan-create", {"vid":20,"name":"private-looking-vlan"})
+    await e.execute("vlan-create", {"vid":30,"name":"private-looking-vlan"})
+    await e.execute("port-edit", {"id":pid,"patch":{"mode":"shared"}})
+    before=e.state.event_id
+    patch={"admin_up":False,"shared_partner":False,"forced_down":True,"pvid":20,
+           "admitted":[1,20],"untagged":[20],"forbidden":[30],"link_notifications":False,
+           "authentication":{"control":"auto"},"alias":"private-looking-alias"}
+    await e.execute("port-edit", {"id":pid,"patch":patch})
+    effect=next(row for row in e.state.events if row["id"]>before and row["kind"]=="port-edit")
+    assert effect["fields"]==sorted(patch)
+    old={"admin_up":True,"shared_partner":True,"forced_down":False,"pvid":1,
+         "admitted":[1],"untagged":[1],"forbidden":[],"link_notifications":True}
+    assert effect["changes"]=={key:{"before":value,"after":patch[key]} for key,value in old.items()}
+    await e.execute("switch-edit", {"name":"private-looking-switch"})
+    assert e.state.events[-1]["fields"]==["name"]
+    await e.execute("vlan-edit", {"vid":20,"name":"private-looking-renamed-vlan"})
+    assert e.state.events[-1]["fields"]==["name"]
+    import json
+    assert "private-looking" not in json.dumps(e.store.events())
+
+
+def test_event_history_retention_and_ids_across_sqlite_reload(tmp_path):
+    from cryptography.fernet import Fernet
+    from switchlab.storage import Store
+    from switchlab.models import initial_configuration
+    key=Fernet.generate_key();path=str(tmp_path/"history.db")
+    store=Store(path,key);e=Engine(initial_configuration(1),store)
+    # Exercise the existing bounded Runtime event and confirmed Store path. No
+    # wall-clock timing or network delivery is implied by these generated rows.
+    candidate=copy.deepcopy(e.state)
+    for _ in range(2005):candidate.event("pause")
+    assert len(candidate.events)==2000
+    candidate.revision+=1;store.commit(candidate,{})
+    last=candidate.event_id;retained=copy.deepcopy(candidate.events);store.close()
+    store=Store(path,key)
+    try:
+        restored=Engine(None,store)
+        assert len(restored.state.events)==2000
+        assert restored.state.events[:-1]==retained[1:]
+        assert restored.state.events[-1]["kind"]=="boot"
+        assert restored.state.events[-1]["id"]==last+1
+        assert restored.state.events[-1]["simulation_ms"]==0
+        assert restored.state.events[-1]["revision"]==restored.state.revision
+        assert store.events()[-2000:]==restored.state.events
+    finally:store.close()

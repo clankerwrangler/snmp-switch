@@ -1159,3 +1159,25 @@ def test_running_startup_api_save_revision_lab_and_idempotency(store, restore):
         assert change(c,'/switch/save',headers={'Idempotency-Key':'save-once'}).status_code == 200
         assert 'synthetic-startup-api-secret' not in json.dumps(restored)
         assert 'startup_configuration' not in restored and 'lab_configuration' not in restored
+
+
+def test_event_history_safe_configuration_effects_and_cursor(store):
+    with session(store) as c:
+        assert c.get('/api/v1/events').status_code == 401
+        sign_in(c,store)
+        state=c.get('/api/v1/state').json();pid=next(iter(state['ports']))
+        first=c.get('/api/v1/events?limit=2000').json()['latest']
+        marker='private-looking-value-not-in-event-details'
+        assert change(c,f'/ports/{pid}',{'alias':marker,'admin_up':False},'PATCH').status_code==200
+        page=c.get(f'/api/v1/events?after={first}&limit=1').json()
+        assert len(page['events'])==1
+        event=page['events'][0]
+        assert event['kind']=='port-edit' and event['port_id']==pid
+        assert event['fields']==['admin_up','alias']
+        assert event['changes']=={'admin_up':{'before':True,'after':False}}
+        assert marker not in c.get('/api/v1/events?limit=2000').text
+        assert page['oldest'] <= event['id'] <= page['latest']
+        before=c.app.state.engine.state
+        assert c.patch(f'/api/v1/ports/{pid}',json={'expected_configuration_revision':0,'admin_up':True}).status_code==409
+        assert c.app.state.engine.state is before
+        assert c.get(f'/api/v1/events?after={page["latest"]}').json()['events']==[]

@@ -732,9 +732,36 @@ class Runtime:
         self.events = self.events[-2000:]
         return event
 
-    def notify(self, kind, **details):
+    def configuration_events(self, before):
+        """Record actual resource effects, never arbitrary configuration values."""
+        public_port_fields = {"admin_up", "shared_partner", "forced_down", "pvid",
+                              "admitted", "untagged", "forbidden", "link_notifications"}
+        for pid in sorted(self.cfg.ports.keys() & before.ports.keys()):
+            old, current = before.ports[pid], self.cfg.ports[pid]
+            fields = sorted(name for name in Port.model_fields if getattr(old, name) != getattr(current, name))
+            if fields:
+                changes = {name: {"before": copy.deepcopy(getattr(old, name)),
+                                  "after": copy.deepcopy(getattr(current, name))}
+                           for name in fields if name in public_port_fields}
+                self.event("port-edit", port_id=pid, fields=fields, changes=changes)
+        fields = sorted(name for name in type(self.cfg.switch).model_fields
+                        if getattr(before.switch, name) != getattr(self.cfg.switch, name))
+        if fields:
+            self.event("switch-edit", fields=fields)
+        for vid in sorted(self.cfg.vlans.keys() | before.vlans.keys()):
+            old, current = before.vlans.get(vid), self.cfg.vlans.get(vid)
+            if old is None:
+                self.event("vlan-create", vid=vid, fields=sorted(Vlan.model_fields))
+            elif current is None:
+                self.event("vlan-delete", vid=vid)
+            else:
+                fields = sorted(name for name in Vlan.model_fields if getattr(old, name) != getattr(current, name))
+                if fields:
+                    self.event("vlan-edit", vid=vid, fields=fields)
+
+    def notify(self, kind, *, enabled=True, **details):
         event = self.event(kind, status="committed", **details)
-        if not self.gate():
+        if not enabled or not self.gate():
             return
         for target in self.cfg.targets.values():
             cred = self.cfg.credentials[target.credential_id]
@@ -1561,6 +1588,8 @@ class Engine:
         affected_e, affected_p = set(), set()
         result = self._apply(s, action, payload, affected_e, affected_p)
         s.cfg = Configuration.model_validate(s.cfg.model_dump(mode="json"))
+        if action in ("snmp-set", "port-edit", "switch-edit", "vlan-create", "vlan-edit", "vlan-delete"):
+            s.configuration_events(old.cfg)
         s.reconcile_authentication(old)
         s.reconcile_accounting(old)
         if action == "reboot":
@@ -1591,10 +1620,10 @@ class Engine:
                 if old.up(pid) != s.up(pid):
                     affected_p.add(pid)
                     s.counters[pid]["last_change"] = s.uptime()
-                    if s.cfg.ports[pid].link_notifications:
-                        p = s.cfg.ports[pid]
-                        s.notify("linkUp" if s.up(pid) else "linkDown", port_id=pid, if_index=p.if_index,
-                                 admin=1 if p.admin_up else 2, before=1 if old.up(pid) else 2, after=1 if s.up(pid) else 2)
+                    p = s.cfg.ports[pid]
+                    s.notify("linkUp" if s.up(pid) else "linkDown", enabled=p.link_notifications,
+                             port_id=pid, if_index=p.if_index, admin=1 if p.admin_up else 2,
+                             before=1 if old.up(pid) else 2, after=1 if s.up(pid) else 2)
             for fkey, row in list(s.fdb.items()):
                 if row["vid"] not in s.cfg.vlans or not s.up(row["port_id"]) or (row["vid"] not in s.cfg.ports[row["port_id"]].admitted and not any(session.port_id == row["port_id"] and s.session_vid(session) == row["vid"] for session in s.radius_sessions.values())):
                     del s.fdb[fkey]
@@ -1948,10 +1977,7 @@ class Engine:
             es.update(e.id for e in cfg.endpoints.values()
                       if any(src.tag in d.creates | d.deletes for src in e.sources))
             s.vlan_deletes += len(d.deletes)
-            for vid in sorted(d.creates):
-                s.event("vlan-create", vid=vid)
-            for vid in sorted(d.deletes):
-                s.event("vlan-delete", vid=vid)
+            s.event("snmp-set", assignments=len(d.assignments))
             for pid, action in d.pae_actions:
                 if action == "initialize":
                     for key in [key for key in s.radius_sessions if key[0]==pid]:s.end_session(key,"port-initialized",cause=21)
@@ -1975,7 +2001,6 @@ class Engine:
                     s.pae_port(pid).update(state=3 if s.up(pid) else 2,backend=6)
                 if control != "auto":s.pae_port(pid).update(state=8 if control=="force-authorized" else 9,backend=6)
                 s.event("pae-"+action,port_id=pid)
-            s.event("snmp-set", assignments=len(d.assignments))
             return
         if action == "endpoint-create":
             ep = Endpoint.model_validate(d)
@@ -1987,6 +2012,7 @@ class Engine:
         if action.startswith("endpoint-") or action in ("attach", "detach"):
             eid = d["id"]
             ep = get(cfg.endpoints, eid)
+            before_port = cfg.attachments.get(eid)
             if action == "endpoint-delete":
                 require(eid not in cfg.attachments, "Disconnect the endpoint before deleting it")
                 del cfg.endpoints[eid]
@@ -2018,7 +2044,12 @@ class Engine:
             elif action == "detach":
                 cfg.attachments.pop(eid, None)
                 es.add(eid)
-            s.event(action, endpoint_id=eid)
+            if action in ("attach", "detach"):
+                after_port = cfg.attachments.get(eid)
+                if before_port != after_port:
+                    s.event(action, endpoint_id=eid, before_port_id=before_port, after_port_id=after_port)
+            else:
+                s.event(action, endpoint_id=eid)
             return {"id": eid}
         if action == "port-edit":
             pid, patch = d["id"], d["patch"]
@@ -2034,14 +2065,12 @@ class Engine:
             changed = {name for name in patch if getattr(cfg.ports[pid], name) != getattr(p, name)}
             if changed - {"name", "alias", "link_notifications"}:
                 ps.add(pid)
-            s.event(action, port_id=pid)
         elif action == "vlan-create":
             v = Vlan.model_validate({"fdb_id": 1000+d["vid"], **d})
             require(v.vid not in cfg.vlans, "VLAN already exists")
             cfg.vlans[v.vid] = v
             # Re-creation invalidates explicit jobs that captured the absent VLAN.
             es.update(e.id for e in cfg.endpoints.values() if any(x.tag == v.vid for x in e.sources))
-            s.event(action, vid=v.vid)
             return {"vid": v.vid}
         elif action in ("vlan-edit", "vlan-delete"):
             vid = d["vid"]
@@ -2066,7 +2095,6 @@ class Engine:
                 if cfg.switch.legacy_vlan == vid:
                     cfg.switch.legacy_vlan = 1
                 es.update(e.id for e in cfg.endpoints.values() if any(x.tag == vid for x in e.sources))
-            s.event(action, vid=vid)
         elif action == "switch-edit":
             require(not set(d) - {"name", "description", "contact", "location", "identity", "base_mac", "legacy_vlan", "aging_seconds", "fdb_limit", "endpoint_limit", "source_limit", "queue_limit"}, "Unsupported switch field", 422)
             previous_age = cfg.switch.aging_seconds
@@ -2075,7 +2103,6 @@ class Engine:
                 for row in s.fdb.values():
                     row["expires_at_ms"] = row["last_seen_ms"] + cfg.switch.aging_seconds*1000
                 s.expire()
-            s.event(action)
         elif action == "clear":
             pid, vid = d.get("port_id"), d.get("vid")
             if pid is not None:

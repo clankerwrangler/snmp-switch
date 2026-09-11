@@ -17,7 +17,7 @@ const path = require('node:path');
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const state=()=>page.evaluate(async()=> (await fetch('/api/v1/state')).json());
   const screenshots=process.env.SWITCHLAB_TEST_SCREENSHOTS||path.join(__dirname,'../docs/screenshots');
-  async function screenshot(name){if(screenshots==='0')return;fs.mkdirSync(screenshots,{recursive:true});await page.screenshot({path:path.join(screenshots,name),fullPage:true});}
+  async function screenshot(name,fullPage=true){if(screenshots==='0')return;fs.mkdirSync(screenshots,{recursive:true});await page.screenshot({path:path.join(screenshots,name),fullPage});}
   assert.ok(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE,'Supply a disposable CA certificate for the RADIUS configuration flow');
   const radiusCA=fs.readFileSync(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE,'utf8');
   assert.ok(process.env.SWITCHLAB_TEST_RADIUS_KEY_FILE,'Supply the matching disposable encrypted client key');
@@ -97,6 +97,75 @@ const path = require('node:path');
   await page.locator('nav button[data-id=overview]').click();
   await openSimulation();await clockRefresh();
   sameSimulation(await state(),paused);assert.equal(mutations.length,mutationCount);
+
+  // Optional actual in-memory BER fixture persisted into this fresh app's Store.
+  // No route interception or SET replay supplies these operation/effect/link rows.
+  if(process.env.SWITCHLAB_TEST_EVENT_FIXTURE){
+    const fixture=JSON.parse(fs.readFileSync(process.env.SWITCHLAB_TEST_EVENT_FIXTURE,'utf8'));
+    assert.equal(fixture.real_supported_ber,true);assert.equal(fixture.INET_socket_attempts,0);
+    const actual=(await (await page.request.get(new URL('/api/v1/events?limit=2000',fixtureURL).href)).json()).events;
+    for(const row of fixture.rows)assert.deepEqual(actual.find(e=>e.id===row.id),row);
+    const operation=fixture.rows.find(e=>e.kind==='snmp-set'),effect=fixture.rows.find(e=>e.kind==='port-edit'),link=fixture.rows.find(e=>e.kind==='linkDown');
+    assert.equal(operation.revision,effect.revision);assert.equal(effect.revision,link.revision);
+    const startWrites=mutations.length,historyState=await state(),previousPort=await page.locator('.port.selected').getAttribute('data-id');
+    await page.locator('nav button[data-id=events]').click();
+    assert.deepEqual(await page.locator('#event-category option').allTextContents(),['All categories','System','Connectivity','Access','Switching','SNMP']);
+    await page.locator('#event-category').selectOption('SNMP');
+    const opRow=page.locator(`#event-history [data-event-id="${operation.id}"]`);
+    await opRow.getByText('SNMP SET applied',{exact:true}).waitFor();await opRow.getByText('00:00:01.234',{exact:true}).waitFor();await opRow.locator('summary').click();
+    await opRow.getByText('Transaction revision',{exact:true}).waitFor();
+    assert.equal(await opRow.locator('.facts').evaluate(el=>getComputedStyle(el).display),'grid');
+    await page.waitForFunction(()=>!document.querySelector('#toast').classList.contains('show'));await screenshot('event-operation.png',false);
+    assert.equal(await opRow.locator('dt').filter({hasText:'Transaction revision'}).locator('..').locator('dd').textContent(),String(operation.revision));
+    await page.locator('#event-category').selectOption('System');await page.locator('#event-subject').fill(fixture.port_id);await page.locator('#event-next').click();
+    const effectRow=page.locator(`#event-history [data-event-id="${effect.id}"]`);
+    await effectRow.locator('summary').click();await effectRow.getByText('true → false',{exact:true}).waitFor();
+    await effectRow.getByText('admin_up',{exact:true}).waitFor();await screenshot('event-effect.png',false);
+    await effectRow.getByRole('button',{name:'View port',exact:true}).click();
+    assert.equal(await page.locator('.port.selected').getAttribute('data-id'),fixture.port_id);
+    await page.locator('nav button[data-id=events]').click();await page.locator('#event-category').selectOption('Connectivity');
+    await page.locator(`#event-history [data-event-id="${link.id}"]`).getByText('Link down',{exact:true}).waitFor();
+    await page.locator('#event-category').selectOption('');await page.locator('#event-subject').fill('');
+    await page.locator('#event-outcome').selectOption('applied');
+    assert.equal(await page.locator('#event-history .event-row').count(),1);
+    await page.locator('#event-outcome').selectOption('');await page.locator('#event-text').fill('SNMP SET applied');
+    assert.equal(await page.locator('#event-history .event-row').count(),1);
+    await page.locator('#event-text').fill('');
+    assert.equal(await page.locator('#event-history > .event-list > .event-row').count(),50);
+    await page.locator('#event-next').click();assert.equal(await page.locator('#event-follow').isChecked(),false);
+    const ids=await page.locator('#event-history > .event-list > .event-row').evaluateAll(rows=>rows.map(r=>r.dataset.eventId));
+    const first=page.locator('#event-history > .event-list > .event-row').first();await first.locator(':scope > .event-main > details > summary').click();
+    const firstId=await first.getAttribute('data-event-id');await first.locator(':scope > .event-main > details > summary').focus();
+    const beforeBox=await first.boundingBox();
+    await page.evaluate(()=>document.querySelector('#event-history').dataset.waiting='1');
+    await page.waitForFunction(()=>!document.querySelector('#event-history').dataset.waiting);
+    assert.deepEqual(await page.locator('#event-history > .event-list > .event-row').evaluateAll(rows=>rows.map(r=>r.dataset.eventId)),ids);
+    assert.equal(await page.locator(`#event-history [data-event-id="${firstId}"] > .event-main > details`).evaluate(el=>el.open),true);
+    assert.ok(Math.abs((await first.boundingBox()).y-beforeBox.y)<2);
+    sameSimulation(await state(),historyState);assert.equal(mutations.length,startWrites);
+    // One intentional lab operation arrives while Follow is paused. Browsing
+    // must not repeat it or pause/resume simulation; the next refresh announces it.
+    const added=await page.evaluate(async()=>{const auth=await (await fetch('/api/v1/auth/status')).json(),s=await (await fetch('/api/v1/state')).json();const r=await fetch('/api/v1/endpoints',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':auth.csrf_token},body:JSON.stringify({name:'History-only endpoint',sources:[],expected_configuration_revision:s.configuration_revision})});if(!r.ok)throw Error('Synthetic endpoint creation failed');return await r.json();});
+    await page.getByRole('button',{name:'1 new event',exact:true}).waitFor();
+    assert.deepEqual(await page.locator('#event-history > .event-list > .event-row').evaluateAll(rows=>rows.map(r=>r.dataset.eventId)),ids);
+    assert.equal((await state()).paused,historyState.paused);
+    await page.getByRole('button',{name:'1 new event',exact:true}).click();
+    assert.equal(await page.locator('#event-follow').isChecked(),true);
+    await page.locator('#event-text').fill('Endpoint created');await page.locator('#event-subject').fill(added.id);
+    const newRow=page.locator('#event-history .event-row');await newRow.getByText('History-only endpoint (current)',{exact:true}).waitFor();
+    await newRow.locator('summary').click();await newRow.getByRole('button',{name:'View endpoint',exact:true}).click();
+    assert.equal(await page.locator('nav button[data-id=endpoints]').getAttribute('aria-current'),'page');
+    // Remove only this synthetic empty endpoint through the existing UI owner.
+    await page.locator(`button[data-action=delete-endpoint][data-id="${added.id}"]`).click();await page.getByRole('button',{name:'Delete record',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});
+    await page.locator('nav button[data-id=events]').click();await page.locator('#event-text').fill('');await page.locator('#event-subject').fill('');
+    await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    for(const el of await page.locator('#event-history button,#event-history input,#event-history select').all()){if(await el.isVisible()){const box=await el.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=390);}}
+    await screenshot('event-history-mobile.png');await page.setViewportSize({width:1440,height:1100});await screenshot('event-history-desktop.png');
+    await page.locator('nav button[data-id=overview]').click();
+    if(previousPort)await page.locator(`button[data-action=select-port][data-id="${previousPort}"]`).click();
+    console.log('Event history actual BER/API browser passed: linked SNMP/System/Connectivity, filters/details/navigation,50-row pages, stable Follow-independent reading, new-event announcement and narrow viewport; no SET replay.');
+  }
+
   await simulationSummary.click();
   // Classic scrollbar allocation must not move the shared frame between routes.
   // Keep native scrollbars visible: headless Chromium otherwise masks this case.
@@ -928,7 +997,17 @@ const path = require('node:path');
   const safeResponse={nas_code:2,attributes:[{name:'Service-Type',status:'present',value:2},{name:'Tunnel-Private-Group-ID',status:'present',value:30},{name:'Session-Timeout',status:'absent'}],omitted:[{name:'Class',count:2},{name:'State',count:1}]};
   const badResponse={nas_code:2,attributes:[{name:'Service-Type',status:'present',value:8},{name:'Idle-Timeout',status:'invalid'}],omitted:[{name:'Attribute 11',count:1}]};
   const displayRadius=async route=>{const actual=await route.fetch(),body=await actual.json();body.authentication_sessions=[{id:'browser-display-session',port_id:sharedPort,mac:macA,method:'peap',vid:20,source:'radius',started_ms:0,in_octets:128,in_packets:2,lease_deadline_ms:60000,idle_deadline_ms:30000,reauthentication_deadline_ms:60000}];body.authentication_clients=[{port_id:sharedPort,mac:macA,status:'authorized',method:'peap',response:safeResponse},{port_id:sharedPort,mac:macB,status:'pending',method:'peap'},{port_id:sharedPort,mac:macC,status:'failed',reason:'local-policy <b>not applied</b>',response:badResponse}];await route.fulfill({response:actual,json:body});};
-  const displayHistory=async route=>{const actual=await route.fetch(),body=await actual.json();body.events.push(...[900000,900001].map(id=>({id,kind:'authentication-failed',port_id:sharedPort,mac:macC,simulation_ms:1000,reason:'local-policy <b>not applied</b>',response:badResponse})));await route.fulfill({response:actual,json:body});};
+  let historyRollover=false;
+  const displayHistory=async route=>{const actual=await route.fetch(),body=await actual.json();body.events.push(
+    ...[900000,900001].map(id=>({id,kind:'authentication-failed',port_id:sharedPort,mac:macC,simulation_ms:1000,reason:'local-policy <b>not applied</b>',response:badResponse})),
+    ...[900002,900003].map(id=>({id,kind:'accounting',simulation_ms:1500,revision:700,status:'sent',session_id:'display-session',record_id:'record-'+id})),
+    ...[900004,900005,900006].map(id=>({id,kind:'mac-age',simulation_ms:2000+(id-900004)*100,revision:id===900006?702:701,port_id:sharedPort,mac:macC,vid:20})),
+    {id:900007,kind:'dynamic-settings',simulation_ms:2500,revision:703,raw_packet:'private-marker-not-for-history'},
+    {id:900008,kind:'boot',simulation_ms:0,revision:704},
+    {id:900009,kind:'attach',simulation_ms:123,revision:705,endpoint_id:'deleted-history-endpoint',after_port_id:sharedPort});
+    if(historyRollover)body.events=body.events.filter(e=>e.id>=900000);
+    body.oldest_id=body.events[0]?.id??0;body.latest_id=body.events.at(-1)?.id??0;
+    await route.fulfill({response:actual,json:body});};
   const eventsURL=new URL('/api/v1/events?limit=2000',fixtureURL).href;
   await page.route(statusURL,displayRadius);await page.route(eventsURL,displayHistory);
   try{
@@ -941,7 +1020,7 @@ const path = require('node:path');
     assert.ok((await detail.locator('.port-meta').textContent()).includes('ifIndex '+(await state()).ports[sharedPort].if_index));
 
     const clientRows=detail.locator('.authentication-clients tbody tr');
-    await clientRows.filter({hasText:macA}).getByText('Authorized',{exact:true}).waitFor();await clientRows.filter({hasText:macB}).getByText('pending',{exact:true}).waitFor();await clientRows.filter({hasText:macC}).getByText('failed',{exact:true}).waitFor();
+    await clientRows.filter({hasText:macA}).locator('[data-label="Access"]').getByText('Authorized',{exact:true}).waitFor();await clientRows.filter({hasText:macB}).locator('[data-label="Access"]').getByText('pending',{exact:true}).waitFor();await clientRows.filter({hasText:macC}).locator('[data-label="Access"]').getByText('failed',{exact:true}).waitFor();
     assert.equal(await clientRows.locator('td b').filter({hasText:'not applied'}).count(),0);
     const currentDetails=page.locator(`[id="current-response-${sharedPort}-${macA}"]`);await currentDetails.locator(':scope > summary').click();
     await currentDetails.getByText('Present × 2; value omitted',{exact:true}).waitFor();await currentDetails.getByText('absent',{exact:true}).waitFor();
@@ -953,18 +1032,49 @@ const path = require('node:path');
     await authorizedRow.getByText('Session timeout at 00:01:00 (simulation time) · Idle timeout at 00:00:30 (simulation time)',{exact:true}).waitFor();
     await detail.locator('.access-policy').getByText('Multi-auth',{exact:true}).waitFor();
     await detail.locator('.access-policy').getByText('Auto (authentication required)',{exact:true}).waitFor();
-    const history=page.locator(`[id="auth-history-${sharedPort}-${macC}"]`);await history.locator(':scope > summary').click();await history.getByText('authentication-failed × 2',{exact:true}).waitFor();
-    const historical=history.locator('details');await historical.locator('summary').click();await historical.getByText('invalid',{exact:true}).waitFor();
-    await historical.locator('summary').focus();const scroll=await page.evaluate(()=>scrollY);
+    const history=page.locator(`[id="auth-history-${sharedPort}-${macC}"]`);await history.locator(':scope > summary').click();assert.equal(await history.getByText('Authentication failed',{exact:true}).count(),2);
+    const historical=history.locator('.event-disclosure').first();await historical.locator(':scope > summary').click();const returned=historical.locator('details').filter({has:page.getByText('Returned RADIUS attributes',{exact:true})});await returned.locator('summary').click();await historical.getByText('invalid',{exact:true}).waitFor();
+    await historical.locator(':scope > summary').focus();const scroll=await page.evaluate(()=>scrollY);
     await history.evaluate(el=>el.dataset.refreshProbe='waiting');
     await page.waitForFunction(id=>!document.getElementById(id).dataset.refreshProbe,`auth-history-${sharedPort}-${macC}`);
     assert.equal(await history.evaluate(el=>el.open),true);assert.equal(await historical.evaluate(el=>el.open),true);
-    assert.equal(await historical.locator('summary').evaluate(el=>el===document.activeElement),true);
+    assert.equal(await historical.locator(':scope > summary').evaluate(el=>el===document.activeElement),true);
     assert.equal(await page.locator('.port.selected').getAttribute('data-id'),sharedPort);assert.equal(await page.evaluate(()=>scrollY),scroll);
     await screenshot('port-detail-desktop.png');
     await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     for(const node of await detail.locator('button,summary').all()){if(await node.isVisible()){const box=await node.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=390);}}
     await screenshot('port-detail-mobile.png');await page.setViewportSize({width:1440,height:1100});
+    const historyWrites=mutations.length;
+    await page.locator('nav button[data-id=events]').click();await page.locator('#event-category').selectOption('Access');
+    await page.locator('#event-text').fill('Authentication failed');
+    for(const id of [900000,900001])await page.locator(`#event-history [data-event-id="${id}"]`).getByText('Authentication failed',{exact:true}).waitFor();
+    assert.equal(await page.locator('#event-history b').filter({hasText:'not applied'}).count(),0);
+    const failed=page.locator('#event-history [data-event-id="900001"]');await failed.locator(':scope > .event-main > details > summary').click();
+    assert.equal(await failed.getByText('Attempt ID',{exact:true}).count(),0);
+    await failed.getByRole('button',{name:'View client on port',exact:true}).click();
+    assert.equal(await page.locator('.port.selected').getAttribute('data-id'),sharedPort);
+    await page.locator('nav button[data-id=events]').click();await page.locator('#event-text').fill('RADIUS accounting');
+    for(const id of [900002,900003])await page.locator(`#event-history [data-event-id="${id}"]`).getByText('RADIUS accounting',{exact:true}).waitFor();
+    assert.equal(await page.locator('#event-history .event-row').count(),2,'Distinct accounting records must not group');
+    await page.locator('#event-category').selectOption('Switching');await page.locator('#event-text').fill('MAC address aged out');await page.locator('#event-subject').fill(macC);
+    const group=page.locator('#event-history > .event-list > [data-event-id="900005"]');await group.getByText('MAC address aged out × 2',{exact:true}).waitFor();
+    await page.locator('#event-history [data-event-id="900006"]').getByText('MAC address aged out',{exact:true}).waitFor();
+    await group.locator(':scope > .event-main > details > summary').click();await group.getByText('2 original events · 00:00:02.000–00:00:02.100',{exact:true}).click();
+    assert.deepEqual(await group.locator('.event-row').evaluateAll(rows=>rows.map(r=>+r.dataset.eventId)),[900005,900004]);
+    await page.locator('#event-group').uncheck();assert.equal(await page.locator('#event-history .event-row').count(),3);
+    await page.locator('#event-group').check();await page.locator('#event-category').selectOption('System');await page.locator('#event-text').fill('dynamic settings');await page.locator('#event-subject').fill('');
+    const settingsRow=page.locator('#event-history [data-event-id="900007"]');await settingsRow.locator('summary').click();
+    assert.equal(await settingsRow.getAttribute('data-category'),'System');assert.equal((await settingsRow.textContent()).includes('private-marker-not-for-history'),false);
+    await page.locator('#event-text').fill('Switch booted');await page.locator('#event-history [data-event-id="900008"]').getByText('Timeline reset',{exact:true}).waitFor();
+    await page.locator('#event-category').selectOption('Connectivity');await page.locator('#event-text').fill('');await page.locator('#event-subject').fill('deleted-history-endpoint');
+    const deleted=page.locator('#event-history [data-event-id="900009"]');await deleted.locator('summary').click();
+    assert.ok((await deleted.textContent()).includes('Not recorded →'));assert.ok((await deleted.textContent()).includes('deleted-history-endpoint'));
+    assert.equal(await deleted.getByRole('button',{name:'View endpoint',exact:true}).count(),0);
+    assert.equal(await deleted.getByText('Previous port ID',{exact:true}).count(),0);
+    historyRollover=true;await page.locator('#event-history .event-retention').waitFor();
+    assert.equal(await page.locator('#event-follow').isChecked(),false);assert.equal(await deleted.locator('.event-disclosure').evaluate(el=>el.open),true);
+    assert.equal(mutations.length,historyWrites,'History controls must not mutate simulation or configuration');
+    console.log('Event presentation passed: five categories, accounting in Access/configuration in System, separate unknown attempts/distinct records, reversible adjacent repeats, safe details, recorded-ID navigation, reset markers and retained-window loss without writes.');
   }finally{await page.unroute(statusURL,displayRadius);await page.unroute(eventsURL,displayHistory);}
   await page.reload();await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).click();
   await openPort();await page.locator('dialog [name=auth_control]').selectOption('force-authorized');await savePort();
@@ -973,7 +1083,7 @@ const path = require('node:path');
   assert.equal(radiusState.radius.servers.length,1);assert.equal(radiusState.radius.servers[0].enabled,false);
   const radiusText=JSON.stringify(radiusState);for(const privateValue of ['synthetic-browser-radius-secret','synthetic-browser-peap-password','synthetic-browser-accounting-secret','synthetic-browser-das-secret','BEGIN CERTIFICATE'])assert.equal(radiusText.includes(privateValue),false);
   await page.locator('nav button[data-id=radius]').click();
-  console.log('RADIUS browser passed: independent disabled destinations, captured retry policy, sparse secrets, copied profiles/templates, unchanged carrier/colors, selected-port successful/pending/failed presentation, grouped escaped history, safe on-demand attributes, focus/disclosure/scroll refresh and mobile. Presentation samples do not authorize backend sessions.');
+  console.log('RADIUS browser passed: independent disabled destinations, captured retry policy, sparse secrets, copied profiles/templates, unchanged carrier/colors, selected-port successful/pending/failed presentation, escaped unmerged authentication history, safe on-demand attributes, focus/disclosure/scroll refresh and mobile. Presentation samples do not authorize backend sessions.');
   // Explicit startup save is global; lab saves never save dirty switch policy.
   assert.equal(await page.getByRole('button',{name:'Save configuration',exact:true}).count(),1);
   const saveConfiguration=async()=>{
