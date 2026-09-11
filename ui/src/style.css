@@ -10,7 +10,7 @@
 
 .advance-progress{margin-top:12px;border-top:1px solid var(--line);font-size:11px}.advance-progress small{display:block;color:var(--muted);margin-top:5px}
 
-.radius-config>.card{min-width:0}.radius-config>details.card{align-self:start}.radius-config>.card>summary.card-head{cursor:pointer;list-style:none;flex-wrap:wrap}.radius-config>.card>summary.card-head h2{flex:1;min-width:120px}.radius-config>.card>summary.card-head .actions{margin:0;gap:6px}.radius-config>.card>summary.card-head::-webkit-details-marker{display:none}.radius-config>.card>summary.card-head:after{content:"▸";margin-left:auto;color:var(--muted)}.radius-config>details[open]>summary.card-head:after{content:"▾"}.radius-config .detail-body>details{border-top:1px solid var(--line);padding:14px 0}.radius-config .detail-body>details>summary{cursor:pointer;font-weight:600;margin-bottom:12px}.radius-config .actions{flex-wrap:wrap}.port-attachments .attached>div:last-child{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
+.radius-config>.card{min-width:0;align-self:start}.radius-config>.card>.card-head{flex-wrap:wrap}.radius-config>.card>.card-head h2{flex:1;min-width:120px}.radius-config>.card>.card-head .actions{margin:0;gap:6px}.radius-config .actions{flex-wrap:wrap}.port-attachments .attached>div:last-child{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
 
 .configuration-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.configuration-actions button{white-space:nowrap}.configuration-actions #configuration-status{white-space:nowrap}@media(max-width:680px){.configuration-actions{justify-content:flex-start;margin-top:14px}}
 

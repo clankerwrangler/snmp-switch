@@ -165,17 +165,21 @@ These small no-contention samples do not establish a universal SET latency targe
 
 ### Packaged interface
 
-TypeScript 5.9.3 and Vite 7.1.12 built the packaged assets. The full maintained
-synthetic browser passed in **53.820 s**: root-prefix views and preserved references,
-RADIUS five-card layout/compact header actions and keyboard disclosures, one global
-Save/dirty marker, Apply versus durable-lab Save, actual stale Save rejection,
-reboot discard with lab/login retention, and existing source/port actions.
-PEM file/paste, pre-read size checks, sparse replacement, reference errors,
-click-time certificate/key snapshots and cancellation remain covered. Selected-port
-returned attributes/history, escaped labels, focus/open/scroll, and mobile frame
-geometry pass without changing carrier colors or hiding information. The first
-run found an ambiguous Add Server test locator; scoping it to authentication servers
-preserved all assertions. No application behavior was changed for that fixture fix.
+TypeScript 5.9.3 and Vite 7.1.12 built the packaged assets. The maintained
+synthetic browser for the RADIUS presentation follow-up based on `b07e8fe` passed in
+**57.404 s**. The five cards and authentication-server list stay visible after
+navigation and refresh; header actions work with the keyboard, and cancellation
+preserves configuration. The earlier packaged interface failed the same revised
+check because it still had four section-folding controls.
+
+The full flow retains root-prefix views and references, the global Save/dirty
+marker, Apply versus durable-lab Save, stale Save rejection, reboot discard with
+lab/login retention, and source/port actions. PEM file/paste, size limits, sparse
+replacement, reference errors, click-time certificate/key snapshots and
+cancellation pass. Client attribute/history disclosures remain independent;
+escaped labels, focus, scroll, and desktop/mobile geometry are preserved.
+The optional in-memory BER event seed was not repeated for this presentation-only
+change; its earlier event-specific results remain separately recorded.
 
 The browser kept SNMP disabled/identity unset, prohibited UDP/external RADIUS,
 and used only disposable certificates and state. Children, socket, database and
