@@ -264,15 +264,6 @@ class CodecTests(unittest.TestCase):
         response = codec.dynamic_response(parsed, 45, SECRET, error_cause=404)
         self.assertEqual(independent_attributes(response)[:4], values[:4])
 
-    def test_dynamic_response_mismatch_negatives(self):
-        parsed = codec.verify_dynamic_request(self.dynamic(), SECRET)
-        actual = codec.dynamic_response(parsed, 44, SECRET)
-        other_request = self.dynamic(identifier=8)
-        attrs = independent_attributes(actual)[:-1]
-        self.assertNotEqual(actual, signed_response(other_request, 44, attrs, ma=True))
-        self.assertNotEqual(actual, signed_response(parsed.packet, 45, attrs, ma=True))
-        self.assertNotEqual(actual, signed_response(parsed.packet, 44, attrs, ma=True, secret=SECRET+b"x"))
-
     def test_dynamic_response_invalid_request_type(self):
         self.reason("invalid_dynamic_response", codec.dynamic_response, self.dynamic(), 44, SECRET)
 

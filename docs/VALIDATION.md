@@ -1,5 +1,65 @@
 # Implementation validation
 
+## Test execution and assertion maintenance
+
+The follow-up based on `94812b53` strengthens existing assertions without changing
+application or model behavior. Post-Save raw-storage confidentiality, complete
+ordered SET echoes, precise independent-client timeout failures, isolated RADIUS
+Message-Authenticator/length rejection, and an observed replacement-trust exchange
+now protect their intended failures. Two weaker same-boundary overlaps were
+removed after preserving their distinct preconditions and complete vector oracle.
+Disposable controls demonstrate rejection of truncated/reordered echoes, plaintext
+storage copies, decoder errors, omitted HMAC checks, and bypassed exchanges.
+
+Focused results are separate: 125 API/lifetime cases passed in 22.78 s, followed
+by four overlapping final PAE echo cases in 1.33 s; both used zero INET attempts.
+Two independent-client cases passed on synthetic loopback UDP. The second needed
+an explicit loopback trap source after the task guard rejected its default wildcard
+bind; that failure remains recorded. RADIUS checks passed 16 tests and four
+subtests in 0.15 s, with zero INET attempts. No full-suite, native, or model rerun
+was performed for these test-only changes.
+
+Run the existing browser flow from the repository root:
+
+```sh
+python scripts/browser_check.py --mode full
+```
+
+It requires Linux, installed project/test Python dependencies, Node 20 or newer,
+`pnpm --dir tests/browser install --frozen-lockfile --ignore-scripts` using pnpm
+11.19.0, and the matching Playwright 1.62.0 Chromium. The test-only image provides
+those dependencies:
+
+```sh
+docker build --target browser-test -t switchlab-browser-test .
+docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges switchlab-browser-test
+```
+
+The launcher creates its own synthetic app and has no live-target option. Full
+mode includes the existing supported in-memory BER SET and reads its committed
+history through the same database/API/browser. `--mode ui` explicitly reports
+that block as not run. `--artifacts NEW_DIRECTORY` retains only synthetic images
+and the result; DB/key/PEM files remain temporary. Work is bounded to 165 seconds
+plus at most ten seconds for descendant cleanup. Inherited app/proxy configuration
+is stripped; the listener is prebound loopback, SNMP/identity remain disabled/unset,
+and UDP/external RADIUS are prohibited.
+
+The maintained full invocation passed in **66.254 s**, including all existing
+form/privacy/revision/keyboard checks and visible fact/value assertions in place
+of CSS-grid/exact-whitespace checks. Normal completion and separate error,
+timeout, and cancellation probes removed descendants, socket, and temporary state.
+A subsequent one-line result fix clears success when an exception arrives just
+after browser completion. Controlled late timeout/cancellation injections
+reproduced the old false success and verified nonzero failure after correction.
+A tool-cache follow-up also preserves the caller's default Linux Playwright cache
+(or explicit override) while keeping Chromium's HOME synthetic. Three bounded
+controls verified HOME/XDG/explicit resolution. The full browser log precedes
+these two launcher-only corrections; probes used disposable child payloads,
+not another browser suite. Push/PR CI
+now selects this full flow in a separate `browser-test` stage; its Docker execution
+has not been run locally for this follow-up. The public runtime/release ancestry,
+packaged UI, and README image are unchanged.
+
 ## Event history checks
 
 The display-context follow-up against `6fc1a7e` passed **25 focused tests in
@@ -252,20 +312,19 @@ combined host-mode regression covers raced single-host ownership, per-client
 VLAN/tag admission, membership references, API/SNMP baseline changes, selective
 VLAN deletion, and shared-service accounting.
 
-The maintained browser takes a disposable CA/client certificate through
-`SWITCHLAB_TEST_RADIUS_CA_FILE` and its matching encrypted key through
-`SWITCHLAB_TEST_RADIUS_KEY_FILE`, alongside its existing URL/password/browser
-inputs. The synthetic key password is fixed in the test, never an operator key. The bounded local runner generated that certificate/key pair using the existing
-test fixture and removed both afterward. It kept all RADIUS destinations/listeners
-disabled, prohibited external authentication/UDP, and used synthetic response
-presentation only for simultaneous successful/pending/failed client rows.
+The maintained `scripts/browser_check.py` launcher generates the disposable
+CA/client certificate and encrypted key used by the existing browser flow, then
+removes both. It keeps RADIUS destinations/listeners disabled, prohibits external
+authentication/UDP, and uses synthetic response presentation for simultaneous
+successful/pending/failed client rows.
 The actual authenticated API test separately verifies returned-versus-effective
 attributes, absent/present/invalid values, private-value omission, and bounded
 event history. The browser checks actual refresh completion before asserting
 open disclosure, focus, selected port, and unchanged scroll.
 
-The existing Docker CI runs Python tests, clean-runtime checks, and its isolated
-ordinary LAN/SNMP flow; it does not run an external RADIUS server or the browser.
+The Docker CI for the following historical checkpoints ran Python tests,
+clean-runtime checks, and its isolated ordinary LAN/SNMP flow, not the browser or
+an external RADIUS server. The current full-browser entry is described above.
 Automatic CI for `345c522` passed 1,148 tests and 139 subtests, both image builds,
 and the existing runtime/LAN checks. The independent PAE UDP test was included
 there, not run through a new local listener.
@@ -422,7 +481,7 @@ The clean-image check uses the actual public runtime image, temporary data, and 
 
 ### Measured load case
 
-One run in Docker Desktop's Linux/WSL2 environment:
+Historical eager-projection run in Docker Desktop's Linux/WSL2 environment:
 
 | Measurement | Result |
 |---|---|
@@ -436,7 +495,20 @@ One run in Docker Desktop's Linux/WSL2 environment:
 | Full MIB projection | 91.23 ms; 20,816 ordinary instances, plus filtered VLAN instances |
 | Process maximum resident memory | 69,720 KiB |
 
-This measures the in-memory engine and projection, excluding SQLite, HTTP, UI, and network latency. It is not a full-deployment throughput or latency guarantee. Reproduce with `docker run --rm switchlab-test python scripts/load_case.py`.
+The historical numbers measure the earlier eager implementation, not the current
+lazy constructor. `scripts/load_case.py` now times setup, ordinary row enumeration,
+and actual materialization/reads separately. One local Python 3.12 follow-up used
+the same 24-port/1,000-endpoint/4,000-source scenario: 44,000 observations, 4,000 FDB
+entries, and 21,315 ordinary instances read. Setup took 0.186 ms, enumeration
+52.658 ms, and materialization/reads 369.436 ms (422.279 ms combined). Advance
+batches had a 410.922 ms median and 461.502 ms maximum; maximum RSS was 75,672 KiB.
+The run attempted no INET sockets. Current-VLAN cutoff rows are separate from this
+ordinary enumeration. Different environment, inventory, and work boundaries make
+this unsuitable for a historical speedup comparison.
+
+Run the current workload with
+`docker run --rm switchlab-test python scripts/load_case.py`. It excludes SQLite,
+HTTP, UI, and network latency and imposes no machine-specific timing threshold.
 
 ### Boundaries
 

@@ -1,6 +1,5 @@
-// Run against a fresh local instance. Requires Playwright, Chromium, and a disposable
-// CA/client certificate at SWITCHLAB_TEST_RADIUS_CA_FILE and matching encrypted
-// key at SWITCHLAB_TEST_RADIUS_KEY_FILE (synthetic-certificate-password; configuration only).
+// Run with: python scripts/browser_check.py --mode full
+// The launcher owns the fresh synthetic app, PEM fixtures, and bounded cleanup.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,12 +15,15 @@ const path = require('node:path');
   page.setDefaultTimeout(10000);
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const state=()=>page.evaluate(async()=> (await fetch('/api/v1/state')).json());
-  const screenshots=process.env.SWITCHLAB_TEST_SCREENSHOTS||path.join(__dirname,'../docs/screenshots');
+  const screenshots=process.env.SWITCHLAB_TEST_SCREENSHOTS||'0';
   async function screenshot(name,fullPage=true){if(screenshots==='0')return;fs.mkdirSync(screenshots,{recursive:true});await page.screenshot({path:path.join(screenshots,name),fullPage});}
   assert.ok(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE,'Supply a disposable CA certificate for the RADIUS configuration flow');
   const radiusCA=fs.readFileSync(process.env.SWITCHLAB_TEST_RADIUS_CA_FILE,'utf8');
   assert.ok(process.env.SWITCHLAB_TEST_RADIUS_KEY_FILE,'Supply the matching disposable encrypted client key');
-  const fixtureURL=process.env.SWITCHLAB_TEST_URL||'http://127.0.0.1:8765';
+  assert.ok(['full','ui'].includes(process.env.SWITCHLAB_TEST_COVERAGE),'Use the synthetic browser launcher');
+  assert.ok(process.env.SWITCHLAB_TEST_URL,'Synthetic fixture URL is required');
+  assert.ok(process.env.SWITCHLAB_TEST_COVERAGE==='ui'||process.env.SWITCHLAB_TEST_EVENT_FIXTURE,'Full coverage requires the BER history fixture');
+  const fixtureURL=process.env.SWITCHLAB_TEST_URL;
   const fixtureOrigin=new URL(fixtureURL).origin;
   await page.route('**/*',route=>new URL(route.request().url()).origin===fixtureOrigin?route.continue():route.abort());
   await page.goto(fixtureURL);
@@ -100,7 +102,7 @@ const path = require('node:path');
 
   // Optional actual in-memory BER fixture persisted into this fresh app's Store.
   // No route interception or SET replay supplies these operation/effect/link rows.
-  if(process.env.SWITCHLAB_TEST_EVENT_FIXTURE){
+  if(process.env.SWITCHLAB_TEST_COVERAGE==='full'){
     const fixture=JSON.parse(fs.readFileSync(process.env.SWITCHLAB_TEST_EVENT_FIXTURE,'utf8'));
     assert.equal(fixture.real_supported_ber,true);assert.equal(fixture.INET_socket_attempts,0);
     const actual=(await (await page.request.get(new URL('/api/v1/events?limit=2000',fixtureURL).href)).json()).events;
@@ -128,7 +130,8 @@ const path = require('node:path');
     const opRow=page.locator(`#event-history [data-event-id="${operation.id}"]`);
     await opRow.getByText('SNMP SET applied',{exact:true}).waitFor();await opRow.getByText('00:00:01.234',{exact:true}).waitFor();await opRow.locator('summary').click();
     await opRow.getByText('Transaction revision',{exact:true}).waitFor();
-    assert.equal(await opRow.locator('.facts').evaluate(el=>getComputedStyle(el).display),'grid');
+    assert.equal(await opRow.locator('dt').filter({hasText:/^Transaction revision$/}).isVisible(),true);
+    assert.equal(await opRow.locator('dt').filter({hasText:/^Transaction revision$/}).locator('..').locator('dd').isVisible(),true);
     await page.waitForFunction(()=>!document.querySelector('#toast').classList.contains('show'));await screenshot('event-operation.png',false);
     assert.equal(await opRow.locator('dt').filter({hasText:'Transaction revision'}).locator('..').locator('dd').textContent(),String(operation.revision));
     await page.locator('#event-category').selectOption('System');await page.locator('#event-subject').fill(fixture.port_id);await page.locator('#event-next').click();
@@ -1048,7 +1051,9 @@ const path = require('node:path');
     await currentDetails.getByText('RADIUS response: Access-Accept',{exact:true}).waitFor();
     assert.equal(await currentDetails.locator('.facts > div').filter({has:page.getByText('Tunnel-Private-Group-ID',{exact:true})}).locator('dd').textContent(),'30');
     const authorizedRow=clientRows.filter({hasText:macA});
-    assert.equal(await authorizedRow.locator('[data-label="Effective VLAN"]').textContent(),'20RADIUS-assigned');
+    const effectiveVlan=authorizedRow.locator('[data-label="Effective VLAN"]');
+    assert.equal(await effectiveVlan.isVisible(),true);
+    assert.match((await effectiveVlan.innerText()).trim(),/^20\s*RADIUS-assigned$/);
     await authorizedRow.getByText('Session timeout at 00:01:00 (simulation time) · Idle timeout at 00:00:30 (simulation time)',{exact:true}).waitFor();
     await detail.locator('.access-policy').getByText('Multi-auth',{exact:true}).waitFor();
     await detail.locator('.access-policy').getByText('Auto (authentication required)',{exact:true}).waitFor();

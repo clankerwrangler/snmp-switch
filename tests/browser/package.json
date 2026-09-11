@@ -1,0 +1,8 @@
+{
+  "name": "switchlab-browser-tests",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "dependencies": {
+    "playwright": "1.62.0"
+  }
+}
