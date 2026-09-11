@@ -60,7 +60,9 @@ Expand **Returned RADIUS attributes** or **Authentication history** in a client 
 for details. Client history shows the latest 20 matching retained events without
 combining separate authentication attempts. The full Event history includes
 accounting and supports category, subject, outcome, and text filters. Refresh preserves
-open disclosures, focus, scroll, and selected port. Accounting queue status is
+open disclosures, focus, scroll, and selected port. **Port ID** shows the numeric
+ifIndex; subjects use recorded public names/labels when available. Legacy lookups
+are marked current, and removed subjects do not display internal keys. Accounting queue status is
 separate from whether access is authorized.
 
 Attribute detail reports the **RADIUS response** and only safely decoded

@@ -1173,6 +1173,7 @@ def test_event_history_safe_configuration_effects_and_cursor(store):
         assert len(page['events'])==1
         event=page['events'][0]
         assert event['kind']=='port-edit' and event['port_id']==pid
+        assert event['if_index']==state['ports'][pid]['if_index']
         assert event['fields']==['admin_up','alias']
         assert event['changes']=={'admin_up':{'before':True,'after':False}}
         assert marker not in c.get('/api/v1/events?limit=2000').text
@@ -1181,3 +1182,19 @@ def test_event_history_safe_configuration_effects_and_cursor(store):
         assert c.patch(f'/api/v1/ports/{pid}',json={'expected_configuration_revision':0,'admin_up':True}).status_code==409
         assert c.app.state.engine.state is before
         assert c.get(f'/api/v1/events?after={page["latest"]}').json()['events']==[]
+
+
+def test_event_display_names_are_public_context_not_secret_values(store):
+    with session(store) as c:
+        assert c.get('/api/v1/events').status_code==401
+        sign_in(c,store)
+        created=change(c,'/endpoints',{'name':'Public <endpoint>','sources':[]})
+        assert created.status_code==200
+        eid=created.json()['id']
+        assert change(c,f'/endpoints/{eid}',{'name':'Renamed endpoint'},'PATCH').status_code==200
+        assert change(c,f'/endpoints/{eid}',method='DELETE').status_code==200
+        events=c.get('/api/v1/events?limit=2000').json()['events']
+        rows=[row for row in events if row.get('endpoint_id')==eid]
+        assert [row['endpoint_name'] for row in rows]==['Public <endpoint>','Renamed endpoint','Renamed endpoint']
+        assert eid not in c.get('/api/v1/state').json()['endpoints']
+        assert all(not {'metadata','sources','supplicant','password','secret','certificate','private_key'} & row.keys() for row in rows)
