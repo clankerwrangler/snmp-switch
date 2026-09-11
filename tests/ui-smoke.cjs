@@ -195,6 +195,9 @@ const path = require('node:path');
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       if(destination==='radius'){
         assert.equal(await page.locator('#radius-config.settings-grid > .card').count(),5);
+        assert.equal(await page.locator('#radius-config summary').count(),0);
+        for(const body of await page.locator('#radius-config > .card > .detail-body').all())assert.equal(await body.isVisible(),true);
+        assert.equal(await page.locator('#radius-servers button[data-action=radius-server]').isVisible(),true);
         const layout=await page.locator('#radius-config').evaluate(el=>{
           const box=e=>{const r=e.getBoundingClientRect();return {x:r.x,width:r.width};};
           return {container:box(el),access:box(el.querySelector('#radius-access')),templates:box(el.querySelector('#radius-templates')),certificates:box(el.querySelector('#radius-materials'))};
@@ -739,19 +742,15 @@ const path = require('node:path');
   console.log('Unified access browser passed: four modes, sparse/hidden drafts, explicit conversions, shared users/groups, mismatch/defaults, missing views, literal labels, real atomic errors, one listener status and exact title.');
 
   await page.locator('nav button[data-id=radius]').click();
-  for(const [section,action] of [['radius-templates','radius-template'],['radius-accounting','accounting-settings'],['radius-dynamic','dynamic-settings']]){
-    const disclosure=page.locator('#'+section),summary=disclosure.locator(':scope > summary');
-    for(const opened of [false,true]){
-      if(await disclosure.evaluate(el=>el.open)!==opened)await summary.click({position:{x:8,y:8}});
-      const control=summary.locator(`button[data-action=${action}]`);
-      await control.focus();await page.keyboard.press('Enter');await page.locator('dialog[open]').waitFor();
-      assert.equal(await disclosure.evaluate(el=>el.open),opened);
-      await page.getByRole('button',{name:'Cancel',exact:true}).click();
-      assert.equal(await disclosure.evaluate(el=>el.open),opened);
-    }
-    await summary.focus();await page.keyboard.press('Space');
-    assert.equal(await disclosure.evaluate(el=>el.open),false);
+  const radiusBeforeCancel=await state();
+  for(const [section,action] of [['radius-access','radius-settings'],['radius-templates','radius-template'],['radius-materials','radius-material'],['radius-accounting','accounting-settings'],['radius-dynamic','dynamic-settings']]){
+    const card=page.locator('#'+section),control=card.locator(`:scope > .card-head button[data-action=${action}]`);
+    assert.equal(await card.locator(':scope > .detail-body').isVisible(),true);
+    await control.focus();await page.keyboard.press('Enter');await page.locator('dialog[open]').waitFor();
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    assert.equal(await card.locator(':scope > .detail-body').isVisible(),true);
   }
+  assert.deepEqual((await state()).radius,radiusBeforeCancel.radius);
   await page.locator('nav button[data-id=snmp]').click();
 
 
@@ -835,12 +834,14 @@ const path = require('node:path');
   // listener is enabled here; protocol interoperability is tested separately.
   const radiusCard=page.locator('#radius-config');
   const saveRadius=async()=>{await page.locator('dialog button[type=submit]').click();await page.locator('dialog[open]').waitFor({state:'hidden'});};
-  await radiusCard.locator('#radius-servers > summary').click();
-  await radiusCard.locator('#radius-servers > summary').focus();
+  const addServer=radiusCard.locator('#radius-servers button[data-action=radius-server]');
+  await addServer.focus();
+  const radiusScroll=await page.evaluate(()=>scrollY);
   await radiusCard.evaluate(el=>el.dataset.refreshProbe='waiting');
   await page.waitForFunction(()=>!document.getElementById('radius-config').dataset.refreshProbe);
-  assert.equal(await radiusCard.locator('#radius-servers').evaluate(el=>el.open),true);
-  assert.equal(await radiusCard.locator('#radius-servers > summary').evaluate(el=>el===document.activeElement),true);
+  assert.equal(await addServer.isVisible(),true);
+  assert.equal(await addServer.evaluate(el=>el===document.activeElement),true);
+  assert.ok(Math.abs((await page.evaluate(()=>scrollY))-radiusScroll)<2);
   await radiusCard.locator('#radius-servers button[data-action=radius-server]').click();
   await page.getByText(/In Docker bridge mode, the local source IP must exist inside the container/).waitFor();
   await page.getByLabel('Label',{exact:true}).fill('Browser RADIUS');await page.getByLabel('Server IP address',{exact:true}).fill('192.0.2.10');
@@ -956,7 +957,7 @@ const path = require('node:path');
   assert.equal((await page.request.post(new URL('/api/v1/clock/pause',fixtureURL).href,{headers:{'X-CSRF-Token':auth.csrf_token},data:{expected_configuration_revision:staleMaterialBefore.configuration_revision}})).status(),200);
   await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog .form-error').filter({hasText:'Configuration changed while editing'}).waitFor();
   assert.deepEqual((await state()).radius.materials,staleMaterialBefore.radius.materials);await page.getByRole('button',{name:'Cancel',exact:true}).click();
-  await radiusCard.locator('#radius-templates > summary').click();await radiusCard.getByRole('button',{name:'+ Template',exact:true}).click();
+  await radiusCard.getByRole('button',{name:'+ Template',exact:true}).click();
   assert.equal(await page.locator('dialog [name=client_identity_id]').inputValue(),'');assert.ok((await page.locator('dialog [name=client_identity_id]').textContent()).includes('Browser client renamed'));assert.equal(await page.getByLabel('Expected server DNS name',{exact:true}).getAttribute('required'),'');
   await page.getByLabel('Template label',{exact:true}).fill('Browser supplicant');await page.locator('dialog [name=method]').selectOption('peap');
   await page.getByLabel('Outer identity',{exact:true}).fill('outer-browser');await page.locator('dialog [name=trust_id]').selectOption(trust.id);
@@ -980,25 +981,24 @@ const path = require('node:path');
   await page.locator('dialog').getByRole('button',{name:'Delete',exact:true}).click();
   await page.waitForFunction(()=>!!document.querySelector('dialog .form-error')?.textContent);
   assert.deepEqual((await state()).radius.materials,beforeReferencedDelete);await page.getByRole('button',{name:'Cancel',exact:true}).click();
-  if(!await radiusCard.locator('#radius-templates').evaluate(el=>el.open))await radiusCard.locator('#radius-templates > summary').click();
   await radiusCard.locator('.setting-row').filter({hasText:'Browser supplicant'}).getByRole('button',{name:'Edit',exact:true}).click();
   await page.getByLabel('Inner username',{exact:true}).fill('changed-template-only');await saveRadius();
   radiusState=await state();assert.equal(radiusState.endpoints[endpoint.id].sources[0].supplicant.username,'custom-browser-inner');assert.equal(radiusState.endpoints[second.id].sources[0].supplicant.username,'inner-'+ 'x'.repeat(64));
-  await radiusCard.locator('#radius-accounting > summary').click();await radiusCard.locator('#radius-accounting > summary button[data-action=accounting-target]').click();
+  await radiusCard.locator('#radius-accounting > .card-head button[data-action=accounting-target]').click();
   assert.equal(await page.getByLabel('UDP port',{exact:true}).inputValue(),'1813');await page.getByLabel('Label',{exact:true}).fill('Browser collector');
   await page.getByLabel('Server IP address',{exact:true}).fill('192.0.2.11');await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-accounting-secret');await saveRadius();
   await radiusCard.locator('.setting-row').filter({hasText:'Browser collector'}).getByRole('button',{name:'Edit',exact:true}).click();assert.equal(await page.getByLabel('Shared secret (blank = unchanged)',{exact:true}).inputValue(),'');await saveRadius();
   for(const [mode,interval] of [['local',120],['off',0],['server',null]]){
-    await radiusCard.locator('#radius-accounting > summary button[data-action=accounting-settings]').click();await page.locator('dialog [name=interim_mode]').selectOption(mode);
+    await radiusCard.locator('#radius-accounting > .card-head button[data-action=accounting-settings]').click();await page.locator('dialog [name=interim_mode]').selectOption(mode);
     await page.getByLabel('Local interim interval (simulation seconds)',{exact:true}).fill('120');
     await page.getByLabel('RADIUS response timeout (real seconds)',{exact:true}).fill('4');await page.getByLabel('Attempts per server',{exact:true}).fill('2');await page.getByLabel('Retry backoff base (real seconds)',{exact:true}).fill('0');await saveRadius();
     radiusState=await state();assert.equal(radiusState.radius.accounting.interim_seconds,interval);assert.equal(radiusState.radius.accounting.response_timeout_seconds,4);assert.equal(radiusState.radius.accounting.attempts,2);assert.equal(radiusState.radius.accounting.retry_backoff_seconds,0);
     assert.equal(radiusState.radius.accounting.enabled,false);assert.equal(radiusState.radius.response_timeout_seconds,3);assert.equal(radiusState.radius.attempts,3);
   }
-  await radiusCard.locator('#radius-dynamic > summary').click();await radiusCard.locator('#radius-dynamic > summary button[data-action=dynamic-sender]').click();
+  await radiusCard.locator('#radius-dynamic > .card-head button[data-action=dynamic-sender]').click();
   await page.getByLabel('Label',{exact:true}).fill('Browser sender');await page.getByLabel('Client IP address',{exact:true}).fill('192.0.2.12');await page.getByLabel('Shared secret',{exact:true}).fill('synthetic-browser-das-secret');await saveRadius();
   await radiusCard.locator('.setting-row').filter({hasText:'Browser sender'}).getByRole('button',{name:'Edit',exact:true}).click();assert.equal(await page.getByLabel('Shared secret (blank = unchanged)',{exact:true}).inputValue(),'');await saveRadius();
-  await radiusCard.locator('#radius-dynamic > summary button[data-action=dynamic-settings]').click();await page.getByLabel('Bind IP address',{exact:true}).fill('127.0.0.1');await page.getByLabel('UDP port',{exact:true}).fill('3799');await saveRadius();
+  await radiusCard.locator('#radius-dynamic > .card-head button[data-action=dynamic-settings]').click();await page.getByLabel('Bind IP address',{exact:true}).fill('127.0.0.1');await page.getByLabel('UDP port',{exact:true}).fill('3799');await saveRadius();
   radiusState=await state();assert.equal(radiusState.radius.dynamic_authorization.enabled,false);assert.equal(radiusState.radius.dynamic_status.ready,false);assert.ok(radiusState.radius.dynamic_authorization.senders[0].has_secret);
   for(const label of ['Browser collector','Browser sender']){await radiusCard.locator('.setting-row').filter({hasText:label}).getByRole('button',{name:'Delete',exact:true}).click();await page.locator('dialog').getByRole('button',{name:'Delete',exact:true}).click();await page.locator('dialog[open]').waitFor({state:'hidden'});}
   await page.locator('nav button[data-id=overview]').click();await page.locator(`button[data-action=select-port][data-id="${sharedPort}"]`).click();
@@ -1178,9 +1178,21 @@ const path = require('node:path');
   await page.locator('nav button[data-id=radius]').click();
   console.log('Running/startup browser passed: one global revision-checked Save, Apply versus durable lab Save, dirty/focus refresh, real stale rejection, saved restore with physical edits retained and manager login preserved.');
   const final=await state();assert.equal(final.snmp.enabled,false);assert.equal(final.switch.identity.sys_object_id,null);
+  await page.waitForFunction(()=>!document.querySelector('#toast').classList.contains('show'));
   await screenshot('settings.png');
   await page.setViewportSize({width:390,height:844});
-  for(const destination of ['snmp','radius','settings']){await page.locator(`nav button[data-id=${destination}]`).click();assert.equal(await page.locator(`nav button[data-id=${destination}]`).getAttribute('aria-current'),'page');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
+  for(const destination of ['snmp','radius','settings']){
+    await page.locator(`nav button[data-id=${destination}]`).click();
+    assert.equal(await page.locator(`nav button[data-id=${destination}]`).getAttribute('aria-current'),'page');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    if(destination==='radius'){
+      for(const body of await radiusCard.locator(':scope > .card > .detail-body').all())assert.equal(await body.isVisible(),true);
+      for(const control of await radiusCard.locator('.card-head button,#radius-servers button').all()){
+        const box=await control.boundingBox();assert.ok(box&&box.x>=0&&box.x+box.width<=390);
+      }
+      await screenshot('radius-mobile.png');
+    }
+  }
   await page.locator('nav button[data-id=overview]').click();
   assert.equal(await isOpen(),false);
   await simulationSummary.focus();await page.keyboard.press('Space');
