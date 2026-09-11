@@ -185,12 +185,17 @@ protected decisions, but never restores live grants. A real clock below the
 durable safety watermark gates DAS only until it catches up; other healthy
 application services remain available.
 
-Compose does not publish the optional DAS listener. To receive requests from
-outside the container network, deliberately add a UDP mapping for the selected
-port (normally 3799), set the container bind address, and allow it through the
-host firewall. Verify the source IP actually seen after NAT before configuring
-sender trust. Outgoing Access and accounting require routing to their servers,
-not a published ingress port. IPv6 deployment/NAT fidelity is not a tested claim.
+Compose publishes UDP 3799 on the host's `127.0.0.1` by default; publication does
+not enable or configure the listener. In **Configure**, select **Enable CoA and
+Disconnect listener**, set **Bind IP address** to `0.0.0.0` inside the container,
+and set **UDP port** to match `SWITCHLAB_COA_PORT` in `.env` (default 3799).
+Add the trusted clients, then choose **Save configuration** before restarting.
+For LAN access, set `SWITCHLAB_BIND_ADDRESS` to the host's LAN IPv4 address; it
+applies to HTTP, SNMP, and CoA/Disconnect. After changing `.env`, recreate the
+container with `docker compose up -d`. Host firewall and routing must permit
+requests. Verify the source IP actually seen after NAT before configuring sender
+trust. Outgoing Access and accounting require routing to their servers, not a
+published ingress port. IPv6 deployment/NAT fidelity is not a tested claim.
 
 ## PAE SNMP subset
 

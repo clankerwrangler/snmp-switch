@@ -433,7 +433,7 @@ Optional SNMP request tracing shows manager, operation, OIDs, view/result, snaps
 
 ## 11. Deployment and security boundaries
 
-Ship one container and a Compose example with a persistent data volume. Run without privileged mode, host Docker socket access, or raw-packet capabilities. Default the SNMP query listener and host publication to UDP 161, with configurable alternatives using the same port on both sides. Container-scoped port permissions allow the nonroot process to bind 161 without additional capabilities. Serve the UI on a configurable HTTP port; bind local-only by default and document deliberate LAN exposure. [R12]
+Ship one container and a Compose example with a persistent data volume. Run without privileged mode, host Docker socket access, or raw-packet capabilities. Default the SNMP query listener and host publication to UDP 161, with configurable alternatives using the same port on both sides. Container-scoped port permissions allow the nonroot process to bind 161 without additional capabilities. Serve the UI on a configurable HTTP port; bind local-only by default and document deliberate LAN exposure. Publish CoA/Disconnect on UDP 3799 at the same host bind address, with `SWITCHLAB_COA_PORT` selecting the same port on both sides; publication does not enable or configure the separately saved listener. [R12]
 
 Require administrator setup, authenticated API mutations, protected sessions, CSRF protection for cookie-authenticated writes, and rate/size limits. HTTP traffic is unencrypted; HTTPS can be provided by a reverse proxy. The Secure session-cookie option requires HTTPS. SNMPv2c and unprotected v3 modes are identified as unencrypted.
 
