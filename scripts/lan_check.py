@@ -197,22 +197,27 @@ def check_compose():
                 "--project-directory", str(fixture), "--env-file", str(fixture / "empty.env"),
                 "-f", str(source / "compose.yaml"), "-f", str(override)]
 
-            def compose(*args, bind=None, snmp_port=None, http_port=None, secure="0", check=True):
+            def compose(*args, bind=None, snmp_port=None, http_port=None, coa_port=None, secure="0", check=True):
                 env = {**os.environ, "SWITCHLAB_SECURE_COOKIES": secure}
                 env.pop("SWITCHLAB_BIND_ADDRESS", None)
                 env.pop("SWITCHLAB_SNMP_PORT", None)
                 env.pop("SWITCHLAB_HTTP_PORT", None)
+                env.pop("SWITCHLAB_COA_PORT", None)
                 if http_port is not None:
                     env["SWITCHLAB_HTTP_PORT"] = str(http_port)
                 if snmp_port is not None:
                     env["SWITCHLAB_SNMP_PORT"] = str(snmp_port)
+                if coa_port is not None:
+                    env["SWITCHLAB_COA_PORT"] = str(coa_port)
                 if bind is not None:
                     env["SWITCHLAB_BIND_ADDRESS"] = bind
                 return run(*compose_args, *args, env=env, timeout=90, check=check)
 
-            def assert_ports(ports, bind, snmp_port="161", http_port="8000"):
+            def assert_ports(ports, bind, snmp_port="161", http_port="8000", coa_port="3799"):
                 assert {(p["target"], str(p["published"]), p["protocol"], p["host_ip"])
-                        for p in ports} == {(8000, str(http_port), "tcp", bind), (int(snmp_port), str(snmp_port), "udp", bind)}
+                        for p in ports} == {(8000, str(http_port), "tcp", bind),
+                                           (int(snmp_port), str(snmp_port), "udp", bind),
+                                           (int(coa_port), str(coa_port), "udp", bind)}
 
             def remote_probe(closed=False, snmp_port=161, next_port=None, http_port=8000):
                 args = ["docker", "run", "--rm", "--name", probe_name, "--network", network_name,
@@ -235,9 +240,9 @@ def check_compose():
                     assert_ports(service["ports"], selected or "127.0.0.1")
                     assert service["environment"]["SWITCHLAB_SECURE_COOKIES"] == "0"
                     assert str(service["sysctls"]["net.ipv4.ip_unprivileged_port_start"]) == "161"
-                for selected_port in (None, "", "1161", "2161"):
-                    service = json.loads(compose("config", "--format", "json", snmp_port=selected_port).stdout)["services"]["switchlab"]
-                    assert_ports(service["ports"], "127.0.0.1", selected_port or "161")
+                for selected_port, selected_coa in ((None, None), ("", ""), ("1161", "4799"), ("2161", "5799")):
+                    service = json.loads(compose("config", "--format", "json", snmp_port=selected_port, coa_port=selected_coa).stdout)["services"]["switchlab"]
+                    assert_ports(service["ports"], "127.0.0.1", selected_port or "161", coa_port=selected_coa or "3799")
                 for selected_http in (None, "", "8080"):
                     service = json.loads(compose("config", "--format", "json", http_port=selected_http).stdout)["services"]["switchlab"]
                     assert_ports(service["ports"], "127.0.0.1", http_port=selected_http or "8000")
@@ -263,7 +268,7 @@ assert Path('/proc/sys/net/ipv4/ip_unprivileged_port_start').read_text().strip()
 """
                     run("docker", "exec", container, "python", "-c", check_process)
                     ports = info["NetworkSettings"]["Ports"]
-                    for port, published in (("8000/tcp", http_port), (f"{host_port}/udp", host_port)):
+                    for port, published in (("8000/tcp", http_port), (f"{host_port}/udp", host_port), ("3799/udp", "3799")):
                         assert ports[port] == [{"HostIp": bind or "127.0.0.1", "HostPort": published}]
                     if bind is None:
                         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
