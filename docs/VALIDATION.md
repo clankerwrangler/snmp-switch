@@ -1,6 +1,50 @@
 # Implementation validation
 
-## Current read, configuration, and UI checks
+## Event history checks
+
+Checked on 2026-09-11 against `19a4e79d`, using Python 3.12 and PySNMP 7.1.29.
+The affected Engine/API and supported in-memory BER SET/lifetime selection passed
+**313 tests in 38.57 s**, with 38 upstream warnings and **zero INET attempts**.
+Sixteen new BER cases first reproduced the missing configuration effect; they now
+check distinct operation, resource, and conditional link records under all four
+existing security profiles. Records share the confirmed transaction revision;
+unchanged SETs, API replay, failed validation, rollback, unknown publication, and
+response delivery retain their existing boundaries. Typed port facts, field-only
+other changes, five trap-gate combinations, attachment context, and retained IDs
+across normal SQLite reload are covered. No UDP, native authentication, or
+deployment performance claim follows from these tests. Two later v2c checks
+passed in 0.63 s with zero INET attempts: the existing mixed IF/VLAN fixture
+asserts every resource fact and common revision, and action-only Initialize
+asserts operation/Access records without configuration or link effects.
+
+The added finite EventHistory witness completed 15 prescribed cases with 161
+generated/144 distinct states and all three temporal branches. Its negative
+control published false operation/configuration/link records after a failed
+commit and violated the event publication property. It does not replace actual
+API replay, retention, field privacy, or trap-queue tests. Exact model inputs and
+limits are in [current formal verification](../specification/CURRENT_VERIFICATION.md).
+
+The packaged TypeScript/Vite build and full maintained synthetic browser passed;
+the final browser completed in **63.835 s** with no page errors. A supported
+in-memory BER SET first committed three actual operation/configuration/link
+records into the fixture's encrypted database. The fresh app displayed those
+same records without reapplying the SET. Filters, expanded typed details, recorded
+subject navigation, 50-row paging, stable Follow/new-event behavior, and mobile
+layout passed. Separate presentation samples cover accounting classification,
+adjacent reversible groups, distinct unknown attempts/record identities, missing
+historical fields, retention-window loss, and escaped/private-value omission.
+These samples do not create backend authentication sessions.
+
+The existing source/port, SNMP/RADIUS settings, sparse secrets, PEM click-time
+snapshot/cancel, running/startup, and keyboard/focus/open/scroll checks remained
+in the full flow. Earlier selector ambiguities and the first missing-effect
+failures remain local evidence. The shared details grid was verified after its
+visual correction. The browser used only synthetic state/certificates, prebound
+loopback HTTP, disabled SNMP/unset identity, and prohibited UDP/external RADIUS.
+Processes, socket, database, and synthetic key/material files were removed.
+Private review images are not packaged; the README overview is unchanged.
+
+## Recorded read, configuration, and UI checks
 
 Checked on 2026-09-10 against `079aa9eb`, with Python 3.12 and PySNMP 7.1.29.
 The final affected Engine, Store, API, MIB/PAE and named response-lifetime suite

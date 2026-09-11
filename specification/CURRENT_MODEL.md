@@ -81,6 +81,18 @@ response failure. Committed configuration is not rolled back by failed delivery.
 Pre-admission REPORT failures after stock MP consumption remain outside this
 claim.
 
+`EventHistory` adds distinct revision-linked operation, configuration, and link
+records to a focused response fixture. It uses actual `Candidate`, `HandleSet`,
+`Move`, `Oper`, and `LinkEvents`, plus the original pure `CommitState` operator on
+published/durable images augmented with history. It checks atomic record batches,
+confirmed-state correspondence, no-op/failure preservation, unknown unpublished
+outcomes, genuine links even with the port trap flag off, and captured connection
+context across a move and return. Committed events mean applied state, not manager
+receipt. These are typed admin/context witnesses, not a full field-schema or
+storage-recovery composition proof. Action-only PAE work is an opaque accepted
+runtime effect; actual PAE behavior, API replay deduplication, trap recipient/queue
+gates, privacy, and the 2000-entry history budget remain application checks.
+
 Storage separates one running publication, its confirmed startup marker, and an
 actual durable lab/startup image. Logical API/SET changes do not save startup;
 mixed lab edits persist physical changes without saving dirty logical policy.
@@ -112,7 +124,7 @@ restart remain implementation-test obligations.
 ## Finite scope
 
 `configs/` is the executable source of bounds, selected actions, invariants, and
-fairness. There are 53 normal configurations and one explicit unreduced SET
+fairness. There are 54 normal configurations and one explicit unreduced SET
 diagnostic. The normal suite contains both general finite graphs and scripted
 traces; these do not collectively prove an unrestricted production-sized system.
 
@@ -124,7 +136,7 @@ traces; these do not collectively prove an unrestricted production-sized system.
 | ENTITY | Two fixed ports, two labels, four-value clock; sparse port/index fixture and independent physical/alias/IF selections. |
 | SET graph | One port/endpoint/source/MAC, VLANs 1/10, two credentials/secrets/views, three tokens, one pending PDU, all 31 selected request forms. |
 | SET scenarios | Seven scripted cases, VLANs 1/10/20, up to four varbinds; bitmap/absent-destroy cases use two ports. |
-| Response | One ticket plus foreign replacement identities; lifecycle graph, 19 reuse/diagnostic traces, 14 transaction traces, and 240 insertion-boundary branches. |
+| Response | One ticket plus foreign replacement identities; lifecycle graph, 19 reuse/diagnostic traces, 14 transaction traces, and 240 insertion-boundary branches. EventHistory adds 15 prescribed cases: two ports, one endpoint, VLANs 1/10, three tokens, one pending SET, at most three revisions and nine relevant records. |
 | Storage | Four Boolean-pair policies, three incarnation tokens, one queued item/four work kinds; 120 recovery branches, one retained/removed/replacement identity trace, and five legacy-seeding outcomes. |
 | RADIUS authorization | One client, two VLANs, three generation tokens, two-tick leases; automatic/manual ticks and independent accounting availability. |
 | RADIUS dynamic requests | Two clients, two VLANs, two session incarnations; one immutable request and its retained decision, optional conjunctive session selector, and per-client applicability. |
@@ -134,8 +146,10 @@ Generation tokens are not reused while captured by outstanding work. Abstract
 ticks/countdowns replace wall-clock time. Disclosure open/close, settings navigation,
 and local draft/file selection or cancellation project to stuttering of switch
 state. Save invokes the existing atomic, revision-checked command; local selection
-alone does not import material or change trust. Independently running time can
-still advance through `AutoTick`; pause/resume and manual advance retain
+alone does not import material or change trust. Event filters, readable summaries,
+paging, reversible grouping, and following or freezing the visible event window
+are also observations; they do not pause simulation. Independently running time
+can still advance through `AutoTick`; pause/resume and manual advance retain
 `SetPaused` and `ManualTick`. Browser tests check these controls and command
 handlers, not TLA+. The certified SET view normalizes only
 registration/activation token names; it retains current-versus-stale equality,

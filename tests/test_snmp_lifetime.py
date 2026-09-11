@@ -1406,10 +1406,22 @@ async def test_application_set_original_request_id_widths_and_max_varbinds(app_e
 
 async def test_application_set_then_get_retains_projection_and_read_grant(app_exchange):
     x = app_exchange
+    original = x.engine.state
     x.send(three_bindings())
     await x.settle()
     assert int(v2c.apiPDU.get_error_status(x.decode())) == 0
     before = x.engine.state
+    rows = [row for row in before.events if row["id"] > original.event_id]
+    assert [row["kind"] for row in rows] == ["snmp-set", "port-edit", "vlan-edit"]
+    assert rows[0]["assignments"] == 3
+    changed_port = next(p.id for p in before.cfg.ports.values() if p.if_index == 101)
+    assert rows[1]["port_id"] == changed_port
+    assert rows[1]["fields"] == ["admin_up"]
+    assert rows[1]["changes"] == {"admin_up":{"before":True,"after":False}}
+    assert (rows[2]["vid"], rows[2]["fields"]) == (1, ["name"])
+    assert "Committed" not in repr(rows)
+    assert {row["revision"] for row in rows} == {before.revision}
+    assert len({row["id"] for row in rows}) == 3 and x.engine.store.events() == before.events
     pdu = v2c.GetRequestPDU()
     v2c.apiPDU.set_defaults(pdu)
     v2c.apiPDU.set_varbinds(pdu, [((1, 3, 6, 1, 2, 1, 2, 2, 1, 7, 101), a.Null()),
@@ -1838,6 +1850,20 @@ async def test_application_pae_actions_require_explicit_view_and_commit_whole_pd
         assert names[0]==PAE+(1,1,0) and names==sorted(set(names))
         assert all(name[:len(PAE)]==PAE for name in names)
         assert len(names)==(8 if pdu_type is v2c.GetBulkRequestPDU else 1)
+    # A true action on unchanged unauthorized policy is not a configuration or
+    # carrier change. Its operation and Access action remain separate facts.
+    before=x.engine.state;startup=x.engine.store.get("startup_configuration")
+    action=request(74);action_binding=(PAE+(1,2,1,4,index),a.Integer32(1))
+    v2c.apiPDU.set_varbinds(action,[action_binding])
+    x.send(action);await x.settle();response=x.decode()
+    assert int(v2c.apiPDU.get_error_status(response))==0
+    assert encoder.encode(v2c.apiPDU.get_varbinds(response)[0][1])==encoder.encode(action_binding[1])
+    rows=[row for row in x.engine.state.events if row["id"]>before.event_id]
+    assert [row["kind"] for row in rows]==["snmp-set","pae-initialize"]
+    assert rows[0]["assignments"]==1 and rows[1]["port_id"]==port.id
+    assert {row["revision"] for row in rows}=={before.revision+1}
+    assert x.engine.state.cfg==before.cfg and x.engine.store.get("startup_configuration")==startup
+    assert x.engine.store.events()==x.engine.state.events
     x.empty()
 
 
@@ -1917,4 +1943,40 @@ async def test_root_and_internet_views_use_current_ber_read_policy(app_exchange)
         assert read(v2c.GetRequestPDU, name)[0][1].tagSet == rfc1905.noSuchObject.tagSet
         for kind in (v2c.GetNextRequestPDU, v2c.GetBulkRequestPDU):
             assert all(value.tagSet == rfc1905.endOfMibView.tagSet for _,value in read(kind, PAE + (2, 1)))
+    x.empty()
+
+
+@pytest.mark.parametrize("connected,notifications", [(False, False), (False, True), (True, False), (True, True)])
+async def test_event_history_set_atomic_batch(app_exchange, connected, notifications):
+    x = app_exchange
+    pid = next(iter(x.engine.state.cfg.ports))
+    await configure_application(x, "port-edit", {"id":pid, "patch":{
+        "mode":"shared" if connected else "direct", "link_notifications":notifications}})
+    before = x.engine.state
+    startup = x.engine.store.get("startup_configuration")
+    x.send(request(2101))
+    await x.settle()
+    assert int(v2c.apiPDU.get_error_status(x.decode())) == 0
+    rows = [e for e in x.engine.state.events if e["id"] > before.event_id]
+    operation = [e for e in rows if e["kind"] == "snmp-set"]
+    effects = [e for e in rows if e["kind"] == "port-edit"]
+    links = [e for e in rows if e["kind"] in ("linkUp", "linkDown")]
+    assert len(operation) == len(effects) == 1
+    assert operation[0]["assignments"] == 1
+    assert effects[0]["port_id"] == pid
+    assert effects[0]["fields"] == ["admin_up"]
+    assert effects[0]["changes"] == {"admin_up":{"before":True,"after":False}}
+    assert len(links) == int(connected)
+    if links:
+        assert (links[0]["kind"],links[0]["port_id"],links[0]["before"],links[0]["after"]) == ("linkDown",pid,1,2)
+    assert {e["revision"] for e in rows} == {before.revision + 1}
+    assert len({e["id"] for e in rows}) == len(rows)
+    assert x.engine.store.events() == x.engine.state.events
+    assert x.engine.store.get("startup_configuration") == startup
+    assert before.cfg.ports[pid].admin_up and not x.engine.state.cfg.ports[pid].admin_up
+    # Retrying an already-applied value is a genuine no-op, not another effect.
+    confirmed = x.engine.state
+    x.send(request(2102));await x.settle()
+    assert int(v2c.apiPDU.get_error_status(x.decode())) == 0
+    assert x.engine.state is confirmed and x.engine.store.events() == confirmed.events
     x.empty()

@@ -57,8 +57,9 @@ idle/session expiry, administrative changes, or failed required renewal can
 still end access. Late replies cannot restore an ended or replaced grant.
 
 Expand **Returned RADIUS attributes** or **Authentication history** in a client row
-for details. History groups repeated equivalent events within the existing
-bounded event history, showing up to 20 groups per client. Refresh preserves
+for details. Client history shows the latest 20 matching retained events without
+combining separate authentication attempts. The full Event history includes
+accounting and supports category, subject, outcome, and text filters. Refresh preserves
 open disclosures, focus, scroll, and selected port. Accounting queue status is
 separate from whether access is authorized.
 

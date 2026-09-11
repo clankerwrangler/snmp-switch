@@ -1,7 +1,7 @@
 # Current finite model verification
 
-The 53-configuration normal catalog is supported by separate completed checks,
-not one combined 53-config run. All passing graphs below finished with zero
+The 54-configuration normal catalog is supported by separate completed checks,
+not one combined 54-config run. All passing graphs below finished with zero
 queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
@@ -16,6 +16,7 @@ application, wire, or operating-system correctness.
 | VIEW/fair-handle compatibility fixture | PASS; full temporal check | 524 / 11 |
 | Response lifecycle graph | PASS; full temporal check | 210,495 / 23,175 |
 | Response reuse and transaction-integration traces | PASS | 109 / 90; 115 / 101 |
+| EventHistory: 15 prescribed cases | PASS; full temporal check; 2.800 s | 161 / 144 |
 | Entry-association trace | PASS; all 240 branches complete | 2,640 / 2,400 |
 | Running/startup storage graph | PASS; full temporal check; 113.542 s | 2,070,496 / 172,689 |
 | Storage recovery: 120 branches | PASS; full temporal check; 2.198 s | 3,000 / 2,880 |
@@ -42,6 +43,14 @@ The general graph preserves the same successors and weak fairness. Earlier
 storage timeouts remain incomplete, including one with an empty BFS queue but
 unfinished final temporal checking; they are not the completed result above.
 
+The EventHistory check completed all three temporal branches. Its separate
+record-batch properties extend unchanged SET/core/response actions and the pure
+storage outcome relation; prior checks are not relabeled as event-history proof.
+Earlier response receipts retain their unchanged action/config slices rather
+than claiming a rerun at the extended module hash. The initial fixture precedence
+error failed before any initial state; its original source and failure remain
+local alongside the completed corrected check.
+
 SANY, generator byte-for-byte round-trip, and five small runner-routing/guard
 cases passed at their recorded checkpoints. These are supporting checks, not
 additional application-model graphs.
@@ -52,7 +61,7 @@ captured-token reuse, response leaks/foreign cleanup, stale durable overwrite,
 migration sharing, incomplete shared-member revocation, and failed conversion
 prefix publication. Actual counterexamples also drove response diagnostics,
 entry-association, error-index, no-op deletion, and selected-target corrections.
-The sixteen reusable controls in `tests/check_mutations.py` run against current
+The seventeen reusable controls in `tests/check_mutations.py` run against current
 sources. The three grouped controls reach actual second-member stale success,
 cross-user policy modification, and rejected-save prefix publication. Other historical control definitions and exact inputs are in Git.
 The three RADIUS controls detect a stale reply installing a grant, a duplicate
@@ -65,6 +74,10 @@ resurrection, and overwrite after an unconfirmed Save. The last counterexample
 uses a local focused config checking `UnconfirmedDurableSurvives` so it can reach
 the overwrite after the earlier forbidden edit; the maintained fault-gate control
 uses the full recovery config. Correct configs retain every assertion.
+The event control produced a TLC13 `EventFailedPublication` counterexample in
+2.597 s: `commitFailed` retained the entire core state and empty durable history,
+but published false operation/configuration/link records for an unchanged port.
+It uses the same full EventHistory config, not a weakened control-only assertion.
 Parsing failures, construction errors, interrupted searches, and timeouts remain
 failures or incomplete results; they do not count as detected behavioral defects.
 
@@ -154,7 +167,7 @@ python3 run_tlc.py --prepare-only
 needs only the tracked models/configs/generators plus Java and the TLA+ JAR;
 the runners prepare generated inputs automatically.
 Use `--mutations NAME ...` to select affected negative controls; otherwise all
-sixteen run. Parsing errors and timeouts are not behavioral detection.
+seventeen run. Parsing errors and timeouts are not behavioral detection.
 Do not add generated logs, receipts, states, or historical source overlays to
 commits. Git retains the previously committed evidence and detailed report;
 there is no separate archive or version index. For an exact historical result,

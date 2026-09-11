@@ -28,6 +28,8 @@ MUTATIONS += [
 
 MUTATIONS += [('running_apply_autosaves', 'StartupLifecycle', 'StorageOutcomes.tla', '[] OTHER -> store.durable\n    IN [published', '[] operation \\in {"api","set"} -> [store.durable EXCEPT !.startup = published.policy]\n          [] OTHER -> store.durable\n    IN [published'), ('mixed_lab_autosaves_policy', 'StartupLifecycle', 'StorageOutcomes.tla', 'operation = "lab" -> [store.durable EXCEPT !.lab = ReplacementLab]', 'operation = "lab" -> [store.durable EXCEPT !.lab = ReplacementLab, !.startup = published.policy]'), ('startup_resurrects_hardware', 'StartupLifecycle', 'StorageOutcomes.tla', 'RebootLab == store.durable.lab', 'RebootLab == [store.durable.lab EXCEPT !.ports = @ \\cup DOMAIN store.saved]'), ('storage_fault_gate_removed', 'StorageRecovery', 'StorageOutcomes.tla', 'CommitAllowed == Gate', 'CommitAllowed == store.open /\\ store.active')]
 
+MUTATIONS += [('failed_commit_publishes_event', 'EventHistory', 'SetResponseScenarios.tla', 'EventPublishedStore(committed,candidate) == committed', 'EventPublishedStore(committed,candidate) ==\n    IF scenario = "rolledBack" THEN [committed EXCEPT\n        !.published = EventWithHistory(@,candidate.published.history)] ELSE committed')]
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jar', required=True, type=Path)
