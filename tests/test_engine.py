@@ -1097,7 +1097,7 @@ async def test_event_history_link_fact_and_exact_trap_gates(engine, notification
     deliveries=[row for row in rows if row["kind"]=="notification"]
     assert len(deliveries)==int(queued)
     if queued:
-        assert e.state.outbox[0]=={"event":link,"target_id":target["id"]}
+        assert e.state.outbox[0]=={"event":link,"target_id":target["id"],"destination":"192.0.2.1:162"}
         assert deliveries[0]["notification_id"]==link["id"] and deliveries[0]["status"]=="queued"
     assert e.store.events()==e.state.events
 
@@ -1148,4 +1148,144 @@ def test_event_history_retention_and_ids_across_sqlite_reload(tmp_path):
         assert restored.state.events[-1]["simulation_ms"]==0
         assert restored.state.events[-1]["revision"]==restored.state.revision
         assert store.events()[-2000:]==restored.state.events
+    finally:store.close()
+
+
+async def test_event_display_port_endpoint_and_source_capture(engine, store):
+    e = engine
+    ports = list(e.state.cfg.ports)
+    eid = await endpoint(e, name="Lab <client>", active=False)
+    created = next(row for row in e.state.events if row["kind"] == "endpoint-created")
+    assert created["endpoint_name"] == "Lab <client>"
+    await e.execute("attach", {"id":eid, "port_id":ports[1]})
+    move = next(row for row in reversed(e.state.events) if row["kind"] == "attach")
+    assert (move["before_if_index"], move["after_if_index"]) == (101, 102)
+    sid = e.state.cfg.endpoints[eid].sources[0].id
+    await e.execute("source-supplicant-save", {"id":eid, "source_id":sid, "profile":None})
+    profile = e.state.events[-1]
+    assert profile["source_mac"] == "02:00:00:00:00:10"
+    assert profile["endpoint_name"] == "Lab <client>"
+    await e.execute("endpoint-edit", {"id":eid, "patch":{"name":"Renamed client"}})
+    await e.execute("port-edit", {"id":ports[1], "patch":{"alias":"not-public-alias", "admin_up":False}})
+    changed = next(row for row in reversed(e.state.events) if row["kind"] == "port-edit")
+    assert changed["if_index"] == 102
+    await e.execute("detach", {"id":eid})
+    await e.execute("endpoint-delete", {"id":eid})
+    deleted = e.state.events[-1]
+    assert deleted["endpoint_name"] == "Renamed client"
+    assert created["endpoint_name"] == move["endpoint_name"] == "Lab <client>"
+    assert store.events() == e.state.events
+    import json
+    assert "not-public-alias" not in json.dumps(store.events())
+    # Explicit captured facts are authoritative, even if a current row differs.
+    captured = e.state.event("linkDown", port_id=ports[1], if_index=999)
+    assert captured["if_index"] == 999
+
+
+@pytest.mark.parametrize("kind,fields", [
+    ("credential", {"label":"Public community", "community":"private-community"}),
+    ("group", {"label":"Public group"}),
+    ("view", {"name":"Public view", "includes":["1"]}),
+    ("radius-server", {"label":"Public server", "address":"192.0.2.20", "secret":"private-radius"}),
+    ("accounting-target", {"label":"Public collector", "address":"192.0.2.21", "secret":"private-accounting"}),
+    ("dynamic-sender", {"label":"Public sender", "address":"192.0.2.22", "secret":"private-dynamic"}),
+])
+async def test_event_display_saved_and_deleted_resource_labels(engine, kind, fields):
+    e = engine
+    result = await e.execute(kind+"-save", fields)
+    first = e.state.events[-1]
+    label = fields.get("label", fields.get("name"))
+    assert first["resource_label"] == label
+    key = "name" if kind == "view" else "label"
+    await e.execute(kind+"-save", {"id":result["id"], key:"Renamed <public>"})
+    await e.execute(kind+"-delete", {"id":result["id"]})
+    assert e.state.events[-1]["resource_label"] == "Renamed <public>"
+    assert first["resource_label"] == label
+    import json
+    text = json.dumps(e.store.events())
+    assert "private-" not in text
+    assert fields.get("address", "never-present") not in text
+
+
+@pytest.mark.parametrize("address,display", [("192.0.2.1","192.0.2.1:162"), ("2001:db8::1","[2001:db8::1]:162")])
+async def test_event_display_notification_original_destination(engine, address, display):
+    e=engine
+    credential=await e.execute("credential-save", {"label":"Not a destination", "community":"private-community"})
+    source_address="2001:db8::200" if ":" in address else "192.0.2.200"
+    target=await e.execute("target-save", {"address":address, "credential_id":credential["id"], "source_address":source_address})
+    assert e.state.events[-1]["resource_label"] == display
+    await e.execute("snmp-settings", {"enabled":True})
+    await e.execute("switch-edit", {"identity":{"sys_object_id":"1.3.6.1.4.1.32473.1"}})
+    await e.execute("test-notification", {"target_id":target["id"]})
+    queued=e.state.outbox[0]
+    assert queued["destination"] == display
+    assert e.state.events[-1]["destination"] == display
+    await e.execute("notification-result", {"notification_id":queued["event"]["id"], "target_id":target["id"], "status":"sent", "attempted":True})
+    assert e.state.events[-1]["destination"] == display
+    await e.execute("test-notification", {"target_id":target["id"]})
+    queued=e.state.outbox[0]
+    await e.execute("target-save", {"id":target["id"], "address":"192.0.2.2", "port":1162, "credential_id":credential["id"], "source_address":None})
+    canceled=e.state.events[-1]
+    assert (canceled["status"],canceled["destination"]) == ("canceled-on-configuration",display)
+    await e.execute("test-notification", {"target_id":target["id"]})
+    await e.execute("target-delete", {"id":target["id"]})
+    assert e.state.events[-1]["destination"] == "192.0.2.2:1162"
+    assert next(row for row in reversed(e.state.events) if row["kind"]=="target-delete")["resource_label"] == "192.0.2.2:1162"
+    import json
+    assert source_address not in json.dumps(e.store.events())
+    # Legacy queue records do not acquire a fictitious capture during cancellation.
+    e.state.outbox=[{"event":queued["event"],"target_id":target["id"]}]
+    e.state.cancel_outbox("canceled-on-configuration")
+    assert "destination" not in e.state.events[-1]
+
+
+async def test_event_display_accounting_uses_captured_server_label(engine, monkeypatch):
+    e=engine
+    target=await e.execute("accounting-target-save", {"label":"Original collector", "address":"192.0.2.30", "secret":"private-accounting"})
+    await e.execute("accounting-settings", {"enabled":True})
+    await e.execute("radius-shutdown")
+    record=e.state.accounting_outbox[0]
+    async def delivery(captured, targets, **kwargs):
+        assert targets[target["id"]].label == "Original collector"
+        await e.execute("accounting-target-save", {"id":target["id"], "label":"Current collector"})
+        assert e.accounting_current(record["id"]) is not None
+        await kwargs["on_event"]("attempting",target["id"])
+        return True,target["id"]
+    monkeypatch.setattr("switchlab.radius.accounting_delivery",delivery)
+    await e.deliver_accounting(record["id"])
+    rows=[row for row in e.state.events if row["kind"]=="accounting" and row.get("target_id")==target["id"]]
+    assert [row["status"] for row in rows] == ["attempting","delivered"]
+    assert all(row["server_label"]=="Original collector" for row in rows)
+    assert not e.state.accounting_outbox
+
+
+async def test_event_display_failed_publication_and_reload(tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+    from switchlab.storage import Store
+    from switchlab.models import initial_configuration
+    key=Fernet.generate_key();path=str(tmp_path/"display.db")
+    store=Store(path,key);e=Engine(initial_configuration(2),store)
+    try:
+        eid=await endpoint(e,name="Original label",port=None,active=False)
+        captured=copy.deepcopy(e.state.events[-1])
+        before=e.state;durable=store.events()
+        def fail(*args,**kwargs):raise RuntimeError("synthetic commit failure")
+        with monkeypatch.context() as m:
+            m.setattr(store,"commit",fail)
+            with pytest.raises(RuntimeError,match="synthetic commit failure"):
+                await e.execute("endpoint-edit",{"id":eid,"patch":{"name":"Unpublished label"}})
+        assert e.state is before and store.events()==durable
+        await e.execute("endpoint-edit",{"id":eid,"patch":{"name":"Changed label"}},key="display-edit")
+        before=e.state
+        await e.execute("endpoint-edit",{"id":eid,"patch":{"name":"Changed label"}},key="display-edit")
+        assert e.state is before
+        await e.execute("endpoint-delete",{"id":eid})
+    finally:store.close()
+    store=Store(path,key)
+    try:
+        restored=Engine(None,store)
+        assert eid not in restored.state.cfg.endpoints
+        assert captured in restored.state.events
+        assert next(row for row in restored.state.events if row["kind"]=="endpoint-delete")["endpoint_name"]=="Changed label"
+        assert not any(row.get("endpoint_name")=="Unpublished label" for row in restored.state.events)
     finally:store.close()

@@ -1964,6 +1964,7 @@ async def test_event_history_set_atomic_batch(app_exchange, connected, notificat
     assert len(operation) == len(effects) == 1
     assert operation[0]["assignments"] == 1
     assert effects[0]["port_id"] == pid
+    assert effects[0]["if_index"] == before.cfg.ports[pid].if_index
     assert effects[0]["fields"] == ["admin_up"]
     assert effects[0]["changes"] == {"admin_up":{"before":True,"after":False}}
     assert len(links) == int(connected)

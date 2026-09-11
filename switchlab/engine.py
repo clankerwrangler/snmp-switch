@@ -43,6 +43,14 @@ def require(condition, message, status=409):
         raise CommandError(status, message)
 
 
+def event_resource_label(record):
+    """Select the existing public display, never credential or profile contents."""
+    if isinstance(record, Target):
+        address = f"[{record.address}]" if ":" in record.address else record.address
+        return f"{address}:{record.port}"
+    return record.name if isinstance(record, View) else record.label
+
+
 def merge_policy(saved, fields):
     fields = dict(fields)
     for use in ("polling", "writing"):
@@ -726,6 +734,19 @@ class Runtime:
                 self.end_session(key, reason, effective_vid=old_vid)
 
     def event(self, kind, **details):
+        # Capture public subject facts on this candidate, not on later display.
+        # Explicit context (including old objects) always takes precedence.
+        for id_field, index_field in (("port_id", "if_index"),
+                ("before_port_id", "before_if_index"), ("after_port_id", "after_if_index")):
+            port = self.cfg.ports.get(details.get(id_field))
+            if port is not None:
+                details.setdefault(index_field, port.if_index)
+        endpoint = self.cfg.endpoints.get(details.get("endpoint_id"))
+        if endpoint is not None:
+            details.setdefault("endpoint_name", endpoint.name)
+            source = next((source for source in endpoint.sources if source.id == details.get("source_id")), None)
+            if source is not None:
+                details.setdefault("source_mac", source.mac)
         self.event_id += 1
         event = dict(id=self.event_id, kind=kind, simulation_ms=self.sim_ms, uptime=self.uptime(), revision=self.revision + 1, **details)
         self.events.append(event)
@@ -769,14 +790,15 @@ class Runtime:
                 continue
             if len(self.outbox) >= self.cfg.switch.queue_limit:
                 self.notification_drops += 1
-                self.event("notification", status="dropped-on-overflow", target_id=target.id, notification_id=event["id"])
+                self.event("notification", status="dropped-on-overflow", target_id=target.id, notification_id=event["id"], destination=event_resource_label(target))
             else:
-                self.outbox.append(dict(event=copy.deepcopy(event), target_id=target.id))
-                self.event("notification", status="queued", target_id=target.id, notification_id=event["id"])
+                self.outbox.append(dict(event=copy.deepcopy(event), target_id=target.id, destination=event_resource_label(target)))
+                self.event("notification", status="queued", target_id=target.id, notification_id=event["id"], destination=event_resource_label(target))
 
     def cancel_outbox(self, reason):
         for item in self.outbox:
-            self.event("notification", status=reason, target_id=item["target_id"], notification_id=item["event"]["id"])
+            self.event("notification", status=reason, target_id=item["target_id"], notification_id=item["event"]["id"],
+                **({"destination":item["destination"]} if "destination" in item else {}))
         self.outbox.clear()
 
     def schedule(self, eid, delay=True):
@@ -1446,14 +1468,17 @@ class Engine:
         if record is None:return
         captured = copy.deepcopy(record)
         targets = {target.id: target.model_copy(deep=True) for target in self.state.cfg.radius.accounting.targets}
+        def server_context(target_id):
+            target = targets.get(target_id)
+            return {"server_label":target.label} if target is not None else {}
         async def event(phase, target_id):
-            await self.execute("accounting-event", {"id":record_id, "phase":phase, "target_id":target_id})
+            await self.execute("accounting-event", {"id":record_id, "phase":phase, "target_id":target_id, **server_context(target_id)})
         outcome = await accounting_delivery(captured, targets, ready=lambda:self.accounting_current(record_id) is not None,
             elapsed=lambda:max(0, self._account_clock()-captured["generated_elapsed"]),
             remaining=lambda:self.accounting_remaining(captured), on_event=event)
         if outcome is not None and self.accounting_current(record_id) is not None:
             delivered, target_id = outcome
-            await self.execute("accounting-result", {"id":record_id, "delivered":delivered, "target_id":target_id, "reason":"exhausted"})
+            await self.execute("accounting-result", {"id":record_id, "delivered":delivered, "target_id":target_id, "reason":"exhausted", **server_context(target_id)})
 
     async def close_accounting(self, deadline_seconds=5):
         if not self.storage_fault and not self._closed:
@@ -1743,11 +1768,12 @@ class Engine:
             if previous is not None and fields.get("secret")=="":fields.pop("secret")
             sender = DynamicSender.model_validate({**(previous.model_dump() if previous else {}),**fields})
             cfg.radius.dynamic_authorization.senders = [value for value in cfg.radius.dynamic_authorization.senders if value.id!=sender.id] + [sender]
-            s.event(action,resource_id=sender.id);return {"id":sender.id}
+            s.event(action,resource_id=sender.id,resource_label=event_resource_label(sender));return {"id":sender.id}
         if action == "dynamic-sender-delete":
-            require(any(sender.id==d["id"] for sender in cfg.radius.dynamic_authorization.senders),"Sender not found",404)
+            sender = next((sender for sender in cfg.radius.dynamic_authorization.senders if sender.id==d["id"]),None)
+            require(sender is not None,"Sender not found",404)
             cfg.radius.dynamic_authorization.senders = [sender for sender in cfg.radius.dynamic_authorization.senders if sender.id!=d["id"]]
-            s.event(action,resource_id=d["id"]);return
+            s.event(action,resource_id=d["id"],resource_label=event_resource_label(sender));return
         if action == "accounting-settings":
             require("targets" not in d, "Use accounting target operations", 422)
             cfg.radius.accounting = type(cfg.radius.accounting).model_validate({**cfg.radius.accounting.model_dump(), **d})
@@ -1761,12 +1787,13 @@ class Engine:
             old_position = next((i for i,value in enumerate(cfg.radius.accounting.targets) if value.id == target.id), len(cfg.radius.accounting.targets))
             cfg.radius.accounting.targets = [value for value in cfg.radius.accounting.targets if value.id != target.id]
             cfg.radius.accounting.targets.insert(min(len(cfg.radius.accounting.targets), old_position if position is None else position), target)
-            s.event(action, resource_id=target.id)
+            s.event(action, resource_id=target.id, resource_label=event_resource_label(target))
             return {"id": target.id}
         if action == "accounting-target-delete":
-            require(any(target.id == d["id"] for target in cfg.radius.accounting.targets), "Accounting target not found", 404)
-            cfg.radius.accounting.targets = [target for target in cfg.radius.accounting.targets if target.id != d["id"]]
-            s.event(action, resource_id=d["id"])
+            target = next((target for target in cfg.radius.accounting.targets if target.id == d["id"]), None)
+            require(target is not None, "Accounting target not found", 404)
+            cfg.radius.accounting.targets = [value for value in cfg.radius.accounting.targets if value.id != d["id"]]
+            s.event(action, resource_id=d["id"], resource_label=event_resource_label(target))
             return
         if action == "accounting-prune":
             remaining = []
@@ -1781,14 +1808,14 @@ class Engine:
             if record is None:return {"current": False}
             if d["phase"] == "attempting":
                 record["status"] = "sending";record["attempts"] += 1
-            s.event("accounting", status=d["phase"], record_id=record["id"], session_id=record["session_id"], target_id=d.get("target_id"))
+            s.event("accounting", status=d["phase"], record_id=record["id"], session_id=record["session_id"], target_id=d.get("target_id"), **({"server_label":d["server_label"]} if "server_label" in d else {}))
             return {"current": True}
         if action == "accounting-result":
             record = next((item for item in s.accounting_outbox if item["id"] == d["id"]), None)
             if record is None:return {"current": False}
             s.accounting_outbox = [item for item in s.accounting_outbox if item["id"] != record["id"]]
             if d["delivered"]:
-                s.event("accounting", status="delivered", record_id=record["id"], session_id=record["session_id"], target_id=d["target_id"])
+                s.event("accounting", status="delivered", record_id=record["id"], session_id=record["session_id"], target_id=d["target_id"], **({"server_label":d["server_label"]} if "server_label" in d else {}))
             else:s.accounting_drop(d["reason"], record_id=record["id"], session_id=record["session_id"])
             return {"current": True}
         if action == "radius-shutdown":
@@ -1810,12 +1837,13 @@ class Engine:
             old_position = next((i for i,value in enumerate(cfg.radius.servers) if value.id == server.id), len(cfg.radius.servers))
             cfg.radius.servers = [value for value in cfg.radius.servers if value.id != server.id]
             cfg.radius.servers.insert(min(len(cfg.radius.servers), old_position if position is None else position), server)
-            s.event(action, resource_id=server.id)
+            s.event(action, resource_id=server.id, resource_label=event_resource_label(server))
             return {"id": server.id}
         if action == "radius-server-delete":
-            require(any(server.id == d["id"] for server in cfg.radius.servers), "Server not found", 404)
-            cfg.radius.servers = [server for server in cfg.radius.servers if server.id != d["id"]]
-            s.event(action, resource_id=d["id"])
+            server = next((server for server in cfg.radius.servers if server.id == d["id"]), None)
+            require(server is not None, "Server not found", 404)
+            cfg.radius.servers = [value for value in cfg.radius.servers if value.id != d["id"]]
+            s.event(action, resource_id=d["id"], resource_label=event_resource_label(server))
             return
         if action in ("radius-material-save", "radius-template-save"):
             fields = dict(d)
@@ -1833,13 +1861,13 @@ class Engine:
                 fields["revision"] = previous.revision + 1 if previous else 0
                 record = SupplicantTemplate.model_validate({**(previous.model_dump() if previous else {}), **fields})
             collection[record.id] = record
-            s.event(action, resource_id=record.id)
+            s.event(action, resource_id=record.id, resource_label=event_resource_label(record))
             return {"id": record.id}
         if action in ("radius-material-delete", "radius-template-delete"):
             collection = cfg.radius.materials if action == "radius-material-delete" else cfg.radius.templates
-            get(collection, d["id"])
+            previous = get(collection, d["id"])
             del collection[d["id"]]
-            s.event(action, resource_id=d["id"])
+            s.event(action, resource_id=d["id"], resource_label=event_resource_label(previous))
             return
         if action in ("source-supplicant-save", "source-authentication"):
             endpoint = get(cfg.endpoints, d["id"])
@@ -2049,7 +2077,7 @@ class Engine:
                 if before_port != after_port:
                     s.event(action, endpoint_id=eid, before_port_id=before_port, after_port_id=after_port)
             else:
-                s.event(action, endpoint_id=eid)
+                s.event(action, endpoint_id=eid, endpoint_name=cfg.endpoints[eid].name if eid in cfg.endpoints else ep.name)
             return {"id": eid}
         if action == "port-edit":
             pid, patch = d["id"], d["patch"]
@@ -2198,7 +2226,7 @@ class Engine:
                     credential = merge_credential(cfg, None, auth.model_dump())
                     cfg.credentials[credential.id] = credential
                     fields["credential_id"] = credential.id
-                    s.event("credential-save", resource_id=credential.id)
+                    s.event("credential-save", resource_id=credential.id, resource_label=event_resource_label(credential))
             if action == "credential-save":
                 obj = merge_credential(cfg, previous, fields)
                 if obj.version == "3" and obj.group_id not in s.cfg.groups:
@@ -2208,13 +2236,13 @@ class Engine:
             else:
                 obj = cls.model_validate({**(previous.model_dump() if previous else {}), **fields})
             collection[obj.id] = obj
-            s.event(action, resource_id=obj.id)
+            s.event(action, resource_id=obj.id, resource_label=event_resource_label(obj))
             return {"id": obj.id, **({"credential_id": obj.credential_id} if action == "target-save" else {})}
         elif action in ("credential-delete", "group-delete", "view-delete", "target-delete"):
             collection = {"credential-delete": cfg.credentials, "group-delete": cfg.groups, "view-delete": cfg.views, "target-delete": cfg.targets}[action]
-            get(collection, d["id"])
+            previous = get(collection, d["id"])
             del collection[d["id"]]
-            s.event(action, resource_id=d["id"])
+            s.event(action, resource_id=d["id"], resource_label=event_resource_label(previous))
         elif action == "coldStart":
             s.notify("coldStart")
         elif action == "test-notification":
@@ -2223,11 +2251,13 @@ class Engine:
             require(target.enabled and cfg.credentials[target.credential_id].enabled, "Notification target is disabled")
             event = s.event("coldStart", status="committed", test=True)
             require(len(s.outbox) < cfg.switch.queue_limit, "Notification queue is full", 429)
-            s.outbox.append(dict(event=event, target_id=target.id))
-            s.event("notification", status="queued", target_id=target.id, notification_id=event["id"])
+            s.outbox.append(dict(event=event, target_id=target.id, destination=event_resource_label(target)))
+            s.event("notification", status="queued", target_id=target.id, notification_id=event["id"], destination=event_resource_label(target))
         elif action == "notification-result":
             if s.outbox and s.outbox[0]["event"]["id"] == d["notification_id"] and s.outbox[0]["target_id"] == d["target_id"]:
-                s.outbox.pop(0)
+                item = s.outbox.pop(0)
+                if "destination" in item:
+                    d = {**d, "destination":item["destination"]}
             s.event("notification", **d)
         else:
             raise CommandError(404, "Unknown command")

@@ -2,8 +2,16 @@
 
 ## Event history checks
 
-Checked on 2026-09-11 against `19a4e79d`, using Python 3.12 and PySNMP 7.1.29.
-The affected Engine/API and supported in-memory BER SET/lifetime selection passed
+The display-context follow-up against `6fc1a7e` passed **25 focused tests in
+2.11 s**, with two upstream warnings and **zero INET attempts**. These cover
+numeric port references, public resource labels, rename/delete and normal SQLite
+reload, failed publication/replay, original queued trap destinations (IPv4/IPv6),
+and a captured accounting-server label across a label-only edit. Existing IDs,
+queue behavior, authorization, and transaction boundaries remain unchanged.
+Missing-field reproductions and fixture setup corrections are retained locally.
+
+Earlier emission checks against `19a4e79d`, using Python 3.12 and PySNMP 7.1.29,
+passed
 **313 tests in 38.57 s**, with 38 upstream warnings and **zero INET attempts**.
 Sixteen new BER cases first reproduced the missing configuration effect; they now
 check distinct operation, resource, and conditional link records under all four
@@ -17,18 +25,25 @@ passed in 0.63 s with zero INET attempts: the existing mixed IF/VLAN fixture
 asserts every resource fact and common revision, and action-only Initialize
 asserts operation/Access records without configuration or link effects.
 
-The added finite EventHistory witness completed 15 prescribed cases with 161
+The existing finite EventHistory witness completed 15 prescribed cases with 161
 generated/144 distinct states and all three temporal branches. Its negative
 control published false operation/configuration/link records after a failed
 commit and violated the event publication property. It does not replace actual
 API replay, retention, field privacy, or trap-queue tests. Exact model inputs and
 limits are in [current formal verification](../specification/CURRENT_VERIFICATION.md).
+The display-only fields preserve that relation; no model or protocol rerun was
+needed for this follow-up.
 
 The packaged TypeScript/Vite build and full maintained synthetic browser passed;
-the final browser completed in **63.835 s** with no page errors. A supported
+the final browser completed in **65.299 s** with no page errors. A supported
 in-memory BER SET first committed three actual operation/configuration/link
 records into the fixture's encrypted database. The fresh app displayed those
-same records without reapplying the SET. Filters, expanded typed details, recorded
+same records without reapplying the SET. It also displayed actual queued/canceled
+trap and renamed/deleted endpoint records from that database. **Port ID** retains
+its label and shows the numeric ifIndex; **Destination ID** shows the recorded
+address and UDP port. Captured, explicitly current, and unavailable subject values
+were checked across history, Recent activity, and client history. Filters,
+expanded typed details, recorded
 subject navigation, 50-row paging, stable Follow/new-event behavior, and mobile
 layout passed. Separate presentation samples cover accounting classification,
 adjacent reversible groups, distinct unknown attempts/record identities, missing
@@ -37,7 +52,9 @@ These samples do not create backend authentication sessions.
 
 The existing source/port, SNMP/RADIUS settings, sparse secrets, PEM click-time
 snapshot/cancel, running/startup, and keyboard/focus/open/scroll checks remained
-in the full flow. Earlier selector ambiguities and the first missing-effect
+in the full flow. Two new exact-text selector ambiguities (summary versus detail,
+and outer versus returned-attribute summary) were corrected without changing
+application behavior. Earlier selector ambiguities and the first missing-effect
 failures remain local evidence. The shared details grid was verified after its
 visual correction. The browser used only synthetic state/certificates, prebound
 loopback HTTP, disabled SNMP/unset identity, and prohibited UDP/external RADIUS.
