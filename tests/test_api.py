@@ -1178,6 +1178,11 @@ def test_event_history_safe_configuration_effects_and_cursor(store):
         assert event['changes']=={'admin_up':{'before':True,'after':False}}
         assert marker not in c.get('/api/v1/events?limit=2000').text
         assert page['oldest'] <= event['id'] <= page['latest']
+        event['fields'].clear();event['changes']['admin_up']['after']=True
+        unchanged=c.get(f'/api/v1/events?after={first}&limit=1').json()['events'][0]
+        assert unchanged['fields']==['admin_up','alias']
+        assert unchanged['changes']=={'admin_up':{'before':True,'after':False}}
+        assert unchanged in store.events()
         before=c.app.state.engine.state
         assert c.patch(f'/api/v1/ports/{pid}',json={'expected_configuration_revision':0,'admin_up':True}).status_code==409
         assert c.app.state.engine.state is before

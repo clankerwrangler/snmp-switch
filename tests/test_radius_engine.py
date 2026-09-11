@@ -80,6 +80,17 @@ async def test_unusable_accept_is_local_failure_not_reject(configured):
     assert not result["accepted"] and not engine.state.radius_sessions
     status=engine.snapshot()["authentication_clients"][0]
     assert status["nas_code"]==2 and status["reason"]=="unsupported_access_control"
+    captured=next(row for row in reversed(engine.state.events) if row["kind"]=="authentication-failed")
+    saved=copy.deepcopy(captured)
+    # The public status summary must not share nested payloads with history.
+    status["response"]["attributes"][0]["status"]="caller edit"
+    status["response"]["omitted"].clear()
+    assert captured==saved
+    before=engine.state;old=copy.deepcopy(before)
+    await engine.execute("pause")
+    engine.snapshot()["authentication_clients"][0]["response"]["attributes"].clear()
+    assert captured==saved and before==old
+    assert next(row for row in engine.state.events if row["id"]==captured["id"])==saved
 
 
 def test_redaction_export_and_nonmutating_v3_migration(configured):

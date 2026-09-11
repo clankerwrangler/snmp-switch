@@ -93,6 +93,18 @@ storage-recovery composition proof. Action-only PAE work is an opaque accepted
 runtime effect; actual PAE behavior, API replay deduplication, trap recipient/queue
 gates, privacy, and the 2000-entry history budget remain application checks.
 
+`EventAppendOnly` preserves the complete old history by value in these unpruned
+traces. A private event sequence with shared immutable records represents the
+same relation if event creation deep-copies captured details and no later path
+mutates a record or its nested values. Append and eviction must affect only the
+private sequence; confirmed storage publication remains the state-replacement
+boundary. Other mutable runtime fields retain independent copies. Implementation
+tests must establish capture-time detachment from caller and status data,
+external alias barriers, old Runtime/lazy Projection preservation, failed and
+no-op publication behavior, outbox context, and retention/reload equivalence.
+These are Python ownership obligations, not a TLA+ heap-alias or 2000-entry
+eviction proof; the existing formulas and bounds are unchanged.
+
 Storage separates one running publication, its confirmed startup marker, and an
 actual durable lab/startup image. Logical API/SET changes do not save startup;
 mixed lab edits persist physical changes without saving dirty logical policy.
