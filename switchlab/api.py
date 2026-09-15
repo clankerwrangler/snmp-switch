@@ -451,12 +451,12 @@ def create_app(store=None, configuration=None):
                         ("snmp/settings","snmp"), ("snmp/credentials","credentials"), ("snmp/groups","groups"), ("snmp/views","views"), ("notifications/targets","targets")):
         def register_read(family, key):
             async def collection():
-                snapshot = app.state.engine.snapshot()
+                snapshot = app.state.engine.snapshot(diagnostics=False)
                 return {"revision": snapshot["revision"], "data": snapshot[key]}
             app.add_api_route("/api/v1/"+family, collection, methods=["GET"], name="read_"+key)
             if key in ("ports", "endpoints", "vlans"):
                 async def item(id: str):
-                    snapshot = app.state.engine.snapshot()
+                    snapshot = app.state.engine.snapshot(diagnostics=False)
                     if id not in snapshot[key]:
                         raise HTTPException(404, "Resource not found")
                     return {"revision": snapshot["revision"], "data": snapshot[key][id]}

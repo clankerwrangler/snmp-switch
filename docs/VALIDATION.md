@@ -1,5 +1,78 @@
 # Implementation validation
 
+## Operation-scoped validation
+
+The follow-up from `dd534db` validates supplied configuration at intake and keeps
+broad Store load, scenario import, reboot composition, and changed-material checks.
+Ordinary commands validate their typed changes and dependency closure; neither
+runtime/scalar operations nor SET recursively revalidate unrelated material.
+Resource GETs share full-state redaction without its discarded EAP-helper audit.
+Full state and native pre-use verification stay fresh and independent.
+
+The final Python suite passed **1,314 tests and 139 subtests in 132.71 s** with
+156 upstream warnings. Fourteen Net-SNMP cases explicitly skipped because this
+host lacks the required binaries; they remain the Docker test-stage prerequisite,
+not demonstrated interoperability. Independent puresnmp loopback UDP cases ran.
+Python 3.12.12, Pydantic 2.13.5, cryptography 50.0.1, PySNMP 7.1.29, pytest 9.1.1,
+and puresnmp 2.0.1 were used. No new browser, production image, real EAP exchange,
+container, or deployment campaign was run.
+
+Maintained tests assert zero Configuration/certificate/key validation across
+unrelated runtime, scalar, record-edit, and empty/no-op/changed SET operations,
+while malformed affected material and scalar fields still reject atomically.
+They cover every RADIUS collection bound, all four SNMP collection bounds,
+inline/conversion multi-record rejection, endpoint/source capacities and limit
+changes, owned intake, and inactive/template/copied-source optional PEAP identity
+references on deletion or kind conversion. Existing SET error positions, complete
+PDU behavior, generations, old Runtime/lazy reads, candidate isolation, and durable
+publication/fault tests remain. A former commit-time validator injection now
+exercises an actual scoped planner rejection before publication.
+
+Independent read-only acceptance passed 123 focused existing cases and separate
+no-network probes. Ten resource collections, three valid items, and four missing
+items (including `/vlans/01`) match full captured fragments and exact secret
+redaction. Narrow API and SNMP reads perform no helper audit; full-state reads
+audit each time. The unchanged native gate twice rejected a synthetic helper
+modified without changing size or mtime, before private files or process launch.
+This is a pre-use integrity check, not an actual native authentication exchange.
+The OpenAPI schema and regenerated 129-object MIB manifest are unchanged.
+
+### Focused cost measurements
+
+The same synthetic four-port/one-VLAN/no-endpoint workload used unused valid
+RSA-2048 client materials, disabled SNMP/accounting/DAS, one warmup and five
+samples. Certificates and keys stayed in memory; INET sockets were prohibited.
+The table reports complete automatic 100 ms advance medians, not just validators.
+
+| Unused materials | Before, no Store / memory Store | After, no Store / memory Store |
+| ---: | ---: | ---: |
+| 0 | 1.069 / 1.386 ms | 0.600 / 0.956 ms |
+| 1 | 39.342 / 39.595 ms | 0.622 / 0.946 ms |
+| 4 | 153.412 / 157.032 ms | 0.646 / 1.001 ms |
+| 16 | 605.187 / 609.800 ms | 0.758 / 1.118 ms |
+
+At 16 materials, key loads fell from 16 to zero. The corrected memory-Store
+operation still deep-copied Runtime (0.654 ms median) and committed bookkeeping
+(0.328 ms); these are not validation. With four materials, pause changed from
+156.304 to 1.332 ms, notification-result from 160.920 to 1.018 ms, and RADIUS
+scalar settings from 307.846 to 1.400 ms. The notification fixture had no queued
+delivery, so this measures accepted bookkeeping, not transport success.
+
+The retained resource-route probe used a synthetic 8,550,000-byte helper with a
+matching receipt, never executed. Narrow reads including a missing-port 404 fell
+from about 21–22 ms to 0.043–0.050 ms, reading zero helper bytes. Full state still
+read all helper bytes once per call (21.806 ms median). These are direct route
+function timings, not HTTP/network latency. Empty/same-value SETs fell from one
+whole Configuration validation to zero; changed one/two-binding SETs from two
+to zero. Typed and final dependency checks remain.
+
+These small synthetic comparisons do not explain reported live latency or promise
+universal speedups. Copying, reconciliation, serialization, and persistence still
+scale with relevant retained state. The [formal follow-up](../specification/CURRENT_VERIFICATION.md#operation-scoped-validation-follow-up-2026-09-15)
+records separate finite validity/observation checks and their negative controls.
+Temporary key/helper/database fixtures were removed; task environments and
+secret-free evidence remain private for follow-up. Publication and CI are separate.
+
 ## Test execution and assertion maintenance
 
 The follow-up based on `94812b53` strengthens existing assertions without changing

@@ -6,7 +6,40 @@ queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
 
-## Recorded outcomes
+## Operation-scoped validation follow-up (2026-09-15)
+
+The scoped SET legality predicate retains the valid-prestate equivalence invariant.
+Six focused configurations passed before product changes: `SetAtomicMixed` (29/28),
+`SetVlanFallback` (23/22), `SetBitmapPorts` (15/14), `SetRowStatus` (47/46),
+`SetAbsentDestroy` (10/9), and the extended `AccessLifecycle` (72/70).
+Numbers are generated/distinct states; all queues and temporal checks completed.
+
+The integrated rerun then passed `SetTransactionsEquality` (6,708,324/526,688),
+`ReadAccess` (3,435,528/95,744), `WriteAccess` (87,553/3,420),
+`SharedAccessRelationships` (1,677,391/36,465), `SetIndependentViews` (26/25),
+and `SetAuthorization` (58/57). The SET graph retains its previous reachable-state
+counts and complete temporal check with the new equivalence invariant. Model
+inputs remained unchanged during both batches. This is not a new whole-catalog
+run or a Python refinement proof.
+
+Five selected behavioral controls produced actual counterexamples: omitted
+scoped port relationships, disabled target references ignored on deletion,
+capability auditing on a resource projection, unauthorized SET, and failed-SET
+prefix publication. The three new controls belong to the maintained twenty-control
+catalog; the other fifteen were not rerun for this follow-up. Opaque capability
+values establish observation ownership only, not executable-integrity correctness.
+See [implementation validation](../docs/VALIDATION.md#operation-scoped-validation)
+for typed-input, cryptographic, alias, persistence, and API evidence.
+
+Reproduce the affected checks with the existing runner and tools below:
+
+```sh
+python3 run_tlc.py --jar /path/to/tla2tools.jar --models SetAtomicMixed SetVlanFallback SetBitmapPorts SetRowStatus SetAbsentDestroy AccessLifecycle --output logs/validation-focused
+python3 run_tlc.py --jar /path/to/tla2tools.jar --models SetTransactionsEquality ReadAccess WriteAccess SharedAccessRelationships SetIndependentViews SetAuthorization --output logs/validation-integrated
+python3 tests/check_mutations.py --jar /path/to/tla2tools.jar --mutations skip_affected_port_relations ignore_disabled_target_reference audit_resource_projection allow_unauthorized_set publish_failed_set_prefix --output logs/validation-controls
+```
+
+## Earlier recorded outcomes
 
 | Check | Actual result | Generated / distinct states |
 | --- | --- | ---: |
@@ -61,7 +94,7 @@ captured-token reuse, response leaks/foreign cleanup, stale durable overwrite,
 migration sharing, incomplete shared-member revocation, and failed conversion
 prefix publication. Actual counterexamples also drove response diagnostics,
 entry-association, error-index, no-op deletion, and selected-target corrections.
-The seventeen reusable controls in `tests/check_mutations.py` run against current
+The twenty reusable controls in `tests/check_mutations.py` run against current
 sources. The three grouped controls reach actual second-member stale success,
 cross-user policy modification, and rejected-save prefix publication. Other historical control definitions and exact inputs are in Git.
 The three RADIUS controls detect a stale reply installing a grant, a duplicate
@@ -167,7 +200,7 @@ python3 run_tlc.py --prepare-only
 needs only the tracked models/configs/generators plus Java and the TLA+ JAR;
 the runners prepare generated inputs automatically.
 Use `--mutations NAME ...` to select affected negative controls; otherwise all
-seventeen run. Parsing errors and timeouts are not behavioral detection.
+twenty run. Parsing errors and timeouts are not behavioral detection.
 Do not add generated logs, receipts, states, or historical source overlays to
 commits. Git retains the previously committed evidence and detailed report;
 there is no separate archive or version index. For an exact historical result,

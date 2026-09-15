@@ -4,6 +4,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = '-------------------------- MODULE AccessScenarios --------------------------\nEXTENDS ReadAccess\nVARIABLE pc\nallvars == <<vars, pc>>\nC1 == CHOOSE c \\in Credentials : TRUE\nC2 == CHOOSE c \\in Credentials \\ {C1} : TRUE\nT1 == CHOOSE t \\in Targets : TRUE\nT2 == CHOOSE t \\in Targets \\ {T1} : TRUE\nK1 == Secret0\nK2 == CHOOSE k \\in Secrets \\ {K1} : TRUE\nV1 == View0\nScenarioInit == SharedInit /\\ pc = 0\n'
 STEPS = [('InlineTarget(T1,C1,K1,FALSE)', 'existing = {} /\\ targetCredential[T1] = NoCredential'), ('InlineTarget(T1,C1,K1,TRUE)', 'existing = {C1} /\\ polling = {} /\\ NotificationAllowed(T1)'), ('Submit(C1,K1,Views)', None), ('Handle', '~response.authorized /\\ response.returnedViews = {}'), ('SaveCredential(C1,FALSE,TRUE,V1,K1)', 'enabled = {C1} /\\ polling = {}'), ('SaveView(V1,Views)', None), ('SaveCredential(C1,TRUE,TRUE,V1,K1)', 'polling = {C1} /\\ NotificationAllowed(T1)'), ('SaveTarget(T2,C1,FALSE)', None), ('Submit(C1,K1,Views)', None), ('SaveCredential(C1,TRUE,FALSE,V1,K1)', 'NotificationAllowed(T1)'), ('Handle', '~response.authorized /\\ response.returnedViews = {}'), ('SaveCredential(C1,TRUE,TRUE,V1,K1)', None), ('Submit(C1,K1,Views)', None), ('SaveCredential(C1,TRUE,TRUE,V1,K2)', None), ('Handle', '~response.authorized /\\ response.returnedViews = {}'), ('Submit(C1,K2,Views)', None), ('Handle', 'response.authorized /\\ response.returnedViews = Views'), ('SaveCredential(C1,FALSE,TRUE,V1,K2)', '~NotificationAllowed(T1) /\\ polling = {C1}'), ('DeleteView(V1)', 'V1 \\in presentViews'), ('SaveCredential(C1,FALSE,FALSE,V1,K2)', None), ('DeleteView(V1)', 'presentViews = {} /\\ viewOf[C1] = V1'), ('DeleteTarget(T1)', 'C1 \\in existing'), ('DeleteCredential(C1)', 'C1 \\in existing /\\ targetCredential[T2] = C1'), ('DeleteTarget(T2)', None), ('DeleteCredential(C1)', 'existing = {}'), ('InlineTarget(T1,C2,K1,TRUE)', 'existing = {C2} /\\ NotificationAllowed(T1) /\\ polling = {}'), ('SaveTarget(T1,C1,TRUE)', 'targetCredential[T1] = C2'), ('InlineTarget(T2,C1,K1,TRUE)', 'existing = Credentials /\\ polling = {}'), ('InlineTarget(T1,C1,K1,TRUE)', 'targetCredential[T1] = C2'), ('DeleteTarget(T2)', 'existing = Credentials')]
+
+# Diagnostic values are opaque here. Application tests own executable hashes
+# and the independent native pre-use gate; these steps check read ownership.
+HEADER = HEADER.replace('VARIABLE pc\n', 'VARIABLES pc, audits, projection\n').replace(
+    'allvars == <<vars, pc>>', 'allvars == <<vars, pc, audits, projection>>').replace(
+    'ScenarioInit == SharedInit /\\ pc = 0',
+    'ScenarioInit == SharedInit /\\ pc = 0 /\\ audits = 0 /\\ projection = NoResponse')
+HEADER += r"""
+ProjectRead(full, helper) ==
+    /\ projection' = [dataSnapshot |-> snapshot,
+                       capability |-> IF full THEN helper ELSE NoResponse]
+    /\ audits' = IF full THEN audits + 1 ELSE audits
+    /\ UNCHANGED vars
+"""
+STEPS = [(f'({action}) /\\ UNCHANGED <<audits, projection>>', check) for action, check in STEPS]
+STEPS += [
+    ('ProjectRead(FALSE, TRUE)', 'audits = 0 /\\ projection.dataSnapshot = snapshot /\\ projection.capability = NoResponse'),
+    ('ProjectRead(TRUE, TRUE)', 'audits = 1 /\\ projection.capability = TRUE'),
+    ('ProjectRead(FALSE, FALSE)', 'audits = 1 /\\ projection.dataSnapshot = snapshot /\\ projection.capability = NoResponse'),
+    ('ProjectRead(TRUE, FALSE)', 'audits = 2 /\\ projection.capability = FALSE'),
+]
+
 parts = [HEADER, f'ScenarioLength == {len(STEPS)}\nScenarioNext ==\n    \\/ (pc = ScenarioLength /\\ UNCHANGED allvars)\n']
 parts.extend(f"    \\/ (pc = {i} /\\ {action} /\\ pc' = pc + 1)\n" for i, (action, _) in enumerate(STEPS))
 parts.append('ScenarioAssertions ==\n    /\\ pc \\in 0..ScenarioLength\n')

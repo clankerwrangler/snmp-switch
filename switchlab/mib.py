@@ -539,8 +539,14 @@ def plan_set(cfg, bindings, includes):
         if changed:
             effective.append(op.index)
 
+    # Per-varbind checks own types and row intent. From a valid prestate, only
+    # changed ports (including deletion fallback) need final relationship checks.
+    fields = ("admin_up", "pvid", "admitted", "untagged", "forbidden", "authentication")
+    affected = frozenset(pid for pid, p in candidate.ports.items()
+                         if any(getattr(p, f) != getattr(cfg.ports[pid], f) for f in fields))
     conflicts = set()
-    for pid, port in candidate.ports.items():
+    for pid in affected:
+        port = candidate.ports[pid]
         admitted = set(port.admitted)
         overlap = admitted & set(port.forbidden)
         missing_tags = set(port.untagged) - admitted
@@ -565,9 +571,5 @@ def plan_set(cfg, bindings, includes):
         if op.kind == "row" and op.value == 4 and any(
                 v.vid != op.key and v.fdb_id == candidate.vlans[op.key].fdb_id for v in candidate.vlans.values()):
             raise SetError("resourceUnavailable", op.index)
-    candidate = Configuration.model_validate(candidate.model_dump())
-    fields = ("admin_up", "pvid", "admitted", "untagged", "forbidden", "authentication")
-    affected = frozenset(pid for pid, p in candidate.ports.items()
-                         if any(getattr(p, f) != getattr(cfg.ports[pid], f) for f in fields))
     return SetPlan(cfg, candidate, tuple(assignments), frozenset(creates), frozenset(deletes),
                    affected, min(effective, default=0), tuple(sorted(pae_actions.items())))

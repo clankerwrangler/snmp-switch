@@ -30,6 +30,16 @@ MUTATIONS += [('running_apply_autosaves', 'StartupLifecycle', 'StorageOutcomes.t
 
 MUTATIONS += [('failed_commit_publishes_event', 'EventHistory', 'SetResponseScenarios.tla', 'EventPublishedStore(committed,candidate) == committed', 'EventPublishedStore(committed,candidate) ==\n    IF scenario = "rolledBack" THEN [committed EXCEPT\n        !.published = EventWithHistory(@,candidate.published.history)] ELSE committed')]
 
+MUTATIONS += [
+    ('skip_affected_port_relations', 'SetVlanFallback', 'SetTransactions.tla',
+     r'p \in AffectedPorts(x) : IllegalVlans(p,x) = {}', r'p \in {} : IllegalVlans(p,x) = {}'),
+    ('ignore_disabled_target_reference', 'AccessLifecycle', 'ReadAccess.tla',
+     r'TargetsUsing(c) == {t \in Targets : targetCredential[t] = c}',
+     r'TargetsUsing(c) == {t \in targetEnabled : targetCredential[t] = c}'),
+    ('audit_resource_projection', 'AccessLifecycle', 'AccessScenarios.tla',
+     "audits' = IF full THEN audits + 1 ELSE audits", "audits' = audits + 1"),
+]
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jar', required=True, type=Path)

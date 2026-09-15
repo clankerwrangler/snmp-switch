@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field, replace
 from .mib import entity_inventory, plan_set, current_vlan_ports
 from .storage import split_configuration, compose_configuration, reconciled_startup
 from .radius import AccessResult, Authorization, NasIdentity, RadiusError, authorization, resolve_nas_identity, access_attributes, mab_username, encode_attributes
-from .models import Configuration, Credential, CredentialAuth, Community, UsmUser, AccessGroup, PollingAccess, WritingAccess, incoming_policy, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, RadiusSettings, RadiusServer, RadiusMaterial, SupplicantProfile, SupplicantTemplate, DynamicSettings, DynamicSender, uid
+from .models import Configuration, Credential, CredentialAuth, Community, UsmUser, AccessGroup, PollingAccess, WritingAccess, incoming_policy, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, RadiusServer, RadiusMaterial, SupplicantProfile, SupplicantTemplate, DynamicSender, RadiusOptions, AccountingOptions, DynamicOptions, update_options, check_collection_limit, configuration_error, uid
 
 
 def _clock_origin():
@@ -90,6 +90,8 @@ def merge_credential(cfg, previous, fields):
                 group = AccessGroup(label=fields.get("label", previous.label),
                     minimum_security_level=fields.get("security_level", "authPriv"), **kept)
                 cfg.groups[group.id] = group
+                cfg.check_snmp_limit("groups")
+                cfg.check_policy(group)
                 fields["group_id"] = group.id
             elif transfer == "none":
                 fields["group_id"] = None
@@ -979,11 +981,18 @@ class Runtime:
 class Engine:
     def __init__(self, cfg, store=None):
         self.store = store
+        saved = None
         if store:
             store.require_healthy()
             saved = store.load()
             if saved is not None:
                 cfg = saved
+        # Intake owns broad validation and detaches caller-owned input. Loaded
+        # storage has already crossed its complete shape/reference boundary.
+        if saved is None:
+            cfg = Configuration.model_validate(cfg.model_dump(mode="json"))
+        require(len(cfg.endpoints) <= cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
+        require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
         self.lock = asyncio.Lock()
         self._authentication_tasks = {}
         self._accounting_tasks = {}
@@ -1084,11 +1093,15 @@ class Engine:
                         raise
                     return self._execute("advance-fail", {"id": operation["id"]})
 
-    def snapshot(self):
+    def snapshot(self, *, diagnostics=True):
         s = self.state
         data = s.cfg.model_dump(mode="json")
-        from .radius import eap_capability
-        data["radius"]["eap_capability"] = eap_capability()
+        # Resource projections share serialization/redaction, but do not own a
+        # native-helper integrity audit whose result they discard. Full state
+        # remains fresh; native execution retains its independent pre-use gate.
+        if diagnostics:
+            from .radius import eap_capability
+            data["radius"]["eap_capability"] = eap_capability()
         now = self._auth_clock()
         data["radius"]["server_status"] = {sid: dict(status="unknown" if h.available is None else "available" if h.available else "probing" if h.probe_owner else "unavailable",
             retry_after_seconds=max(0, h.probe_after - now)) for sid,h in self._server_health.items()}
@@ -1618,7 +1631,8 @@ class Engine:
         s = copy.deepcopy(old, memo)
         affected_e, affected_p = set(), set()
         result = self._apply(s, action, payload, affected_e, affected_p)
-        s.cfg = Configuration.model_validate(s.cfg.model_dump(mode="json"))
+        # Published cfg is known-valid. _apply validates changed inputs and
+        # their dependency closure before reconciliation or durable publication.
         if action in ("snmp-set", "port-edit", "switch-edit", "vlan-create", "vlan-edit", "vlan-delete"):
             s.configuration_events(old.cfg)
         s.reconcile_authentication(old)
@@ -1644,8 +1658,6 @@ class Engine:
                     else old.credential_generations[cid])
         if entity_inventory(s.cfg) != entity_inventory(old.cfg):
             s.entity_last_change = s.uptime()
-        require(len(s.cfg.endpoints) <= s.cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
-        require(sum(len(e.sources) for e in s.cfg.endpoints.values()) <= s.cfg.switch.source_limit, "Source capacity reached", 429)
         if action not in ("advance", "job", "reboot", "notification-result", "coldStart", "test-notification"):
             for pid in s.cfg.ports:
                 if old.up(pid) != s.up(pid):
@@ -1766,7 +1778,7 @@ class Engine:
             return
         if action == "dynamic-settings":
             require("senders" not in d,"Use dynamic sender operations",422)
-            cfg.radius.dynamic_authorization = DynamicSettings.model_validate({**cfg.radius.dynamic_authorization.model_dump(),**d})
+            cfg.radius.dynamic_authorization = update_options(cfg.radius.dynamic_authorization, DynamicOptions, d)
             s.event(action);return
         if action == "dynamic-sender-save":
             previous = next((sender for sender in cfg.radius.dynamic_authorization.senders if sender.id==d.get("id")),None)
@@ -1774,6 +1786,9 @@ class Engine:
             if previous is not None and fields.get("secret")=="":fields.pop("secret")
             sender = DynamicSender.model_validate({**(previous.model_dump() if previous else {}),**fields})
             cfg.radius.dynamic_authorization.senders = [value for value in cfg.radius.dynamic_authorization.senders if value.id!=sender.id] + [sender]
+            check_collection_limit(cfg.radius.dynamic_authorization, "senders", ("radius", "dynamic_authorization", "senders"))
+            if sender.enabled and any(value.id != sender.id and value.enabled and value.address == sender.address for value in cfg.radius.dynamic_authorization.senders):
+                configuration_error("Enabled dynamic sender IPs must be distinct")
             s.event(action,resource_id=sender.id,resource_label=event_resource_label(sender));return {"id":sender.id}
         if action == "dynamic-sender-delete":
             sender = next((sender for sender in cfg.radius.dynamic_authorization.senders if sender.id==d["id"]),None)
@@ -1782,7 +1797,7 @@ class Engine:
             s.event(action,resource_id=d["id"],resource_label=event_resource_label(sender));return
         if action == "accounting-settings":
             require("targets" not in d, "Use accounting target operations", 422)
-            cfg.radius.accounting = type(cfg.radius.accounting).model_validate({**cfg.radius.accounting.model_dump(), **d})
+            cfg.radius.accounting = update_options(cfg.radius.accounting, AccountingOptions, d)
             s.event(action)
             return
         if action == "accounting-target-save":
@@ -1793,6 +1808,7 @@ class Engine:
             old_position = next((i for i,value in enumerate(cfg.radius.accounting.targets) if value.id == target.id), len(cfg.radius.accounting.targets))
             cfg.radius.accounting.targets = [value for value in cfg.radius.accounting.targets if value.id != target.id]
             cfg.radius.accounting.targets.insert(min(len(cfg.radius.accounting.targets), old_position if position is None else position), target)
+            check_collection_limit(cfg.radius.accounting, "targets", ("radius", "accounting", "targets"))
             s.event(action, resource_id=target.id, resource_label=event_resource_label(target))
             return {"id": target.id}
         if action == "accounting-target-delete":
@@ -1830,7 +1846,7 @@ class Engine:
             return
         if action == "radius-settings":
             require(not {"servers", "materials", "templates", "accounting", "dynamic_authorization"} & d.keys(), "Use the RADIUS record operations", 422)
-            cfg.radius = RadiusSettings.model_validate({**cfg.radius.model_dump(), **d})
+            cfg.radius = update_options(cfg.radius, RadiusOptions, d)
             s.event("radius-settings")
             return
         if action == "radius-server-save":
@@ -1843,6 +1859,7 @@ class Engine:
             old_position = next((i for i,value in enumerate(cfg.radius.servers) if value.id == server.id), len(cfg.radius.servers))
             cfg.radius.servers = [value for value in cfg.radius.servers if value.id != server.id]
             cfg.radius.servers.insert(min(len(cfg.radius.servers), old_position if position is None else position), server)
+            check_collection_limit(cfg.radius, "servers", ("radius", "servers"))
             s.event(action, resource_id=server.id, resource_label=event_resource_label(server))
             return {"id": server.id}
         if action == "radius-server-delete":
@@ -1867,12 +1884,20 @@ class Engine:
                 fields["revision"] = previous.revision + 1 if previous else 0
                 record = SupplicantTemplate.model_validate({**(previous.model_dump() if previous else {}), **fields})
             collection[record.id] = record
+            family = "materials" if action == "radius-material-save" else "templates"
+            check_collection_limit(cfg.radius, family, ("radius", family))
+            if family == "templates":
+                cfg.check_profile(record.profile)
+            elif previous is not None and previous.kind != record.kind:
+                cfg.check_material_dependents(record.id)
             s.event(action, resource_id=record.id, resource_label=event_resource_label(record))
             return {"id": record.id}
         if action in ("radius-material-delete", "radius-template-delete"):
             collection = cfg.radius.materials if action == "radius-material-delete" else cfg.radius.templates
             previous = get(collection, d["id"])
             del collection[d["id"]]
+            if action == "radius-material-delete":
+                cfg.check_material_dependents(d["id"])
             s.event(action, resource_id=d["id"], resource_label=event_resource_label(previous))
             return
         if action in ("source-supplicant-save", "source-authentication"):
@@ -1888,6 +1913,7 @@ class Engine:
                 else:
                     require("profile" in d, "Supply a profile or a template", 422)
                 source.supplicant = merge_supplicant(previous, d.get("profile", {}))
+                cfg.check_profile(source.supplicant)
                 endpoint.revision += 1
                 s.event(action, endpoint_id=endpoint.id, source_id=source.id)
                 restart = d.get("restart", False)
@@ -2040,6 +2066,10 @@ class Engine:
             ep = Endpoint.model_validate(d)
             require(ep.id not in cfg.endpoints, "Endpoint ID already exists")
             cfg.endpoints[ep.id] = ep
+            for source in ep.sources:
+                cfg.check_profile(source.supplicant)
+            require(len(cfg.endpoints) <= cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
+            require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
             es.add(ep.id)
             s.event("endpoint-created", endpoint_id=ep.id)
             return {"id": ep.id}
@@ -2059,6 +2089,10 @@ class Engine:
                     patch["sources"] = [{**source, **({"supplicant": saved[source["id"]].supplicant.model_dump() if saved[source["id"]].supplicant else None}
                         if source.get("id") in saved and "supplicant" not in source else {})} for source in patch["sources"]]
                 cfg.endpoints[eid] = Endpoint.model_validate({**ep.model_dump(), **patch, "revision": ep.revision+1})
+                if "sources" in patch:
+                    for source in cfg.endpoints[eid].sources:
+                        cfg.check_profile(source.supplicant)
+                    require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
                 if {"sources", "active"} & patch.keys():
                     es.add(eid)
             elif action == "endpoint-clone":
@@ -2096,12 +2130,16 @@ class Engine:
             if "pvid" in patch and patch["pvid"] != p.pvid and "untagged" not in patch:
                 patch = {**patch, "untagged": sorted((set(p.untagged) - {p.pvid}) | {patch["pvid"]})}
             cfg.ports[pid] = Port.model_validate({**p.model_dump(), **patch})
+            if {"pvid", "admitted", "untagged", "forbidden"} & patch.keys():
+                cfg.check_port(pid, cfg.ports[pid])
             changed = {name for name in patch if getattr(cfg.ports[pid], name) != getattr(p, name)}
             if changed - {"name", "alias", "link_notifications"}:
                 ps.add(pid)
         elif action == "vlan-create":
             v = Vlan.model_validate({"fdb_id": 1000+d["vid"], **d})
             require(v.vid not in cfg.vlans, "VLAN already exists")
+            if any(existing.fdb_id == v.fdb_id for existing in cfg.vlans.values()):
+                configuration_error("FDB IDs must be distinct")
             cfg.vlans[v.vid] = v
             # Re-creation invalidates explicit jobs that captured the absent VLAN.
             es.update(e.id for e in cfg.endpoints.values() if any(x.tag == v.vid for x in e.sources))
@@ -2125,6 +2163,7 @@ class Engine:
                             p.admitted = sorted(set(p.admitted + [1]))
                             if native:
                                 p.untagged = sorted(set(p.untagged + [1]))
+                        cfg.check_port(pid, p)
                         ps.add(pid)
                 if cfg.switch.legacy_vlan == vid:
                     cfg.switch.legacy_vlan = 1
@@ -2133,6 +2172,12 @@ class Engine:
             require(not set(d) - {"name", "description", "contact", "location", "identity", "base_mac", "legacy_vlan", "aging_seconds", "fdb_limit", "endpoint_limit", "source_limit", "queue_limit"}, "Unsupported switch field", 422)
             previous_age = cfg.switch.aging_seconds
             cfg.switch = type(cfg.switch).model_validate({**cfg.switch.model_dump(), **d})
+            if "legacy_vlan" in d and cfg.switch.legacy_vlan not in cfg.vlans:
+                configuration_error("VLAN 1 and the legacy VLAN must exist")
+            if "endpoint_limit" in d:
+                require(len(cfg.endpoints) <= cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
+            if "source_limit" in d:
+                require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
             if previous_age != cfg.switch.aging_seconds:
                 for row in s.fdb.values():
                     row["expires_at_ms"] = row["last_seen_ms"] + cfg.switch.aging_seconds*1000
@@ -2189,6 +2234,8 @@ class Engine:
             for key in list(s.radius_sessions):
                 s.end_session(key, "management-reboot")
             s.queue_accounting(8, reason="management-reboot")
+            require(len(restored.endpoints) <= restored.switch.endpoint_limit, "Endpoint capacity reached", 429)
+            require(sum(len(e.sources) for e in restored.endpoints.values()) <= restored.switch.source_limit, "Source capacity reached", 429)
             s.cfg = restored
             s.reset_operational(reboot=True, announce=False)
             s.event("boot")
@@ -2214,6 +2261,8 @@ class Engine:
             merged = {**cfg.model_dump(mode="json"), **{k: v for k, v in imported.items() if k not in ("lab_settings", "schema_version")}}
             merged["switch"].update(d["lab_settings"])
             s.cfg = Configuration.model_validate(merged)
+            require(len(s.cfg.endpoints) <= s.cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
+            require(sum(len(e.sources) for e in s.cfg.endpoints.values()) <= s.cfg.switch.source_limit, "Source capacity reached", 429)
             s.reset_operational()
             s.event("scenario-import")
         elif action == "snmp-settings":
@@ -2231,6 +2280,8 @@ class Engine:
                     auth = CredentialAuth.model_validate(inline)
                     credential = merge_credential(cfg, None, auth.model_dump())
                     cfg.credentials[credential.id] = credential
+                    cfg.check_snmp_limit("credentials")
+                    cfg.check_credential(credential, unique=True)
                     fields["credential_id"] = credential.id
                     s.event("credential-save", resource_id=credential.id, resource_label=event_resource_label(credential))
             if action == "credential-save":
@@ -2242,12 +2293,32 @@ class Engine:
             else:
                 obj = cls.model_validate({**(previous.model_dump() if previous else {}), **fields})
             collection[obj.id] = obj
+            family = {"credential-save": "credentials", "group-save": "groups", "view-save": "views", "target-save": "targets"}[action]
+            cfg.check_snmp_limit(family)
+            if action == "credential-save":
+                cfg.check_credential(obj, unique=True)
+            elif action == "group-save":
+                cfg.check_policy(obj)
+            elif action == "target-save":
+                cfg.check_target(obj)
             s.event(action, resource_id=obj.id, resource_label=event_resource_label(obj))
             return {"id": obj.id, **({"credential_id": obj.credential_id} if action == "target-save" else {})}
         elif action in ("credential-delete", "group-delete", "view-delete", "target-delete"):
             collection = {"credential-delete": cfg.credentials, "group-delete": cfg.groups, "view-delete": cfg.views, "target-delete": cfg.targets}[action]
             previous = get(collection, d["id"])
             del collection[d["id"]]
+            if action == "credential-delete":
+                for target in cfg.targets.values():
+                    if target.credential_id == d["id"]:
+                        cfg.check_target(target)
+            elif action == "group-delete":
+                for credential in cfg.credentials.values():
+                    if credential.version == "3" and credential.group_id == d["id"]:
+                        cfg.check_credential(credential)
+            elif action == "view-delete":
+                for policy in [c for c in cfg.credentials.values() if c.version == "2c"] + list(cfg.groups.values()):
+                    if d["id"] in (policy.polling.view_id, policy.writing.view_id):
+                        cfg.check_policy(policy)
             s.event(action, resource_id=d["id"], resource_label=event_resource_label(previous))
         elif action == "coldStart":
             s.notify("coldStart")

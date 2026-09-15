@@ -47,6 +47,26 @@ state. Current authorization and captured registration/activation are rechecked;
 revocation followed by restoration, rotation, or repeated reboot cannot revive an
 old request. Same-value and unrelated changes preserve its generation.
 
+Operation-scoped validation assumes a valid published prestate. In
+`SetTransactions`, `ScopedCandidateEquivalent` checks that final legality over
+`AffectedPorts(Candidate(...))` equals complete VLAN legality under `InventoryOK`
+for requests that pass per-binding checks. Deletion/fallback changes the owning
+ports even though they were not named directly; unchanged ports retain valid
+relationships. `HandleSet` uses that scoped predicate while preserving one final
+candidate, original error positions, no-op behavior, and atomic publication.
+Existing runtime transitions preserve validity without a repeated configuration
+audit. This is a finite relation check, not a proof of Python mutation coverage.
+
+`ReadAccess` names the reverse reference sets owned by credential/view deletion,
+including disabled targets and enabled policies on disabled credentials. The
+extended access lifecycle adds four opaque projection observations: resource
+reads retain snapshot data without a capability audit; full reads observe fresh
+capability values. It does not model executable bytes or cryptography. Application
+tests own material/profile dependency closure, collection and capacity bounds,
+record parsing, copy isolation, exact HTTP/redaction equivalence, and the fresh
+native pre-use integrity gate. Complete intake/load/import/reboot validation stays
+with those workflows rather than becoming a per-command fallback.
+
 Grouped access resolves a v3 user's optional group without a copied per-user
 policy. No group denies incoming access without changing target-linked traps.
 Stock-USM normal-management acceptance is opaque authentication at the configured

@@ -6,8 +6,30 @@ import re
 import uuid
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from pysnmp.proto.rfc1902 import ObjectIdentifier
+
+
+def configuration_error(message):
+    """Keep the configuration validation error contract at scoped boundaries."""
+    raise ValidationError.from_exception_data("Configuration", [
+        {"type": "value_error", "loc": (), "input": None, "ctx": {"error": ValueError(message)}}])
+
+
+def check_collection_limit(owner, field, path):
+    """Check an edited collection's declared bound without reconstructing records."""
+    limit = next(m.max_length for m in type(owner).model_fields[field].metadata if hasattr(m, "max_length"))
+    value = getattr(owner, field)
+    if len(value) > limit:
+        raise ValidationError.from_exception_data("Configuration", [{"type": "too_long", "loc": path,
+            "input": None, "ctx": {"field_type": "Dictionary" if isinstance(value, dict) else "List",
+                                    "max_length": limit, "actual_length": len(value)}}])
+
+
+def update_options(settings, options_type, patch):
+    """Validate scalar settings, retaining already-valid separately owned records."""
+    options = options_type.model_validate({**{name: getattr(settings, name) for name in options_type.model_fields}, **patch})
+    return settings.model_copy(update=options.model_dump())
 
 
 def uid() -> str:
@@ -206,9 +228,8 @@ class RadiusServer(Record):
         return self
 
 
-class AccountingSettings(Record):
+class AccountingOptions(Record):
     enabled: bool = False
-    targets: list[RadiusServer] = Field(default_factory=list, max_length=16)
     response_timeout_seconds: int = Field(default=3, ge=1, le=60)
     attempts: int = Field(default=3, ge=1, le=10)
     retry_backoff_seconds: int = Field(default=1, ge=0, le=30)
@@ -220,6 +241,9 @@ class AccountingSettings(Record):
         if value is not None and 0 < value < 60:
             raise ValueError("Interim interval must be zero, absent, or at least 60 seconds")
         return value
+
+class AccountingSettings(AccountingOptions):
+    targets: list[RadiusServer] = Field(default_factory=list, max_length=16)
 
     @model_validator(mode="after")
     def target_ids(self):
@@ -249,16 +273,18 @@ class DynamicSender(Record):
         return RadiusServer.secret_bytes(value)
 
 
-class DynamicSettings(Record):
+class DynamicOptions(Record):
     enabled: bool = False
     host: str = "127.0.0.1"
     port: int = Field(default=3799, ge=1, le=65535)
-    senders: list[DynamicSender] = Field(default_factory=list, max_length=64)
 
     @field_validator("host")
     @classmethod
     def bind_ip(cls, value):
         return str(ipaddress.ip_address(value))
+
+class DynamicSettings(DynamicOptions):
+    senders: list[DynamicSender] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def sender_ids(self):
@@ -270,12 +296,7 @@ class DynamicSettings(Record):
         return self
 
 
-class RadiusSettings(Record):
-    accounting: AccountingSettings = Field(default_factory=AccountingSettings)
-    dynamic_authorization: DynamicSettings = Field(default_factory=DynamicSettings)
-    servers: list[RadiusServer] = Field(default_factory=list, max_length=16)
-    materials: dict[str, RadiusMaterial] = Field(default_factory=dict, max_length=128)
-    templates: dict[str, SupplicantTemplate] = Field(default_factory=dict, max_length=256)
+class RadiusOptions(Record):
     response_timeout_seconds: int = Field(default=3, ge=1, le=60)
     attempts: int = Field(default=3, ge=1, le=10)
     exchange_timeout_seconds: int = Field(default=60, ge=1, le=60)
@@ -306,6 +327,13 @@ class RadiusSettings(Record):
     @classmethod
     def advertised_ipv4(cls, value):
         return str(ipaddress.IPv4Address(value)) if value is not None else None
+
+class RadiusSettings(RadiusOptions):
+    accounting: AccountingSettings = Field(default_factory=AccountingSettings)
+    dynamic_authorization: DynamicSettings = Field(default_factory=DynamicSettings)
+    servers: list[RadiusServer] = Field(default_factory=list, max_length=16)
+    materials: dict[str, RadiusMaterial] = Field(default_factory=dict, max_length=128)
+    templates: dict[str, SupplicantTemplate] = Field(default_factory=dict, max_length=256)
 
     @model_validator(mode="after")
     def ids(self):
@@ -630,55 +658,92 @@ class Configuration(Record):
             if len({getattr(p, attr) for p in self.ports.values()}) != len(self.ports):
                 raise ValueError("Port indexes must be unique")
         for key, p in self.ports.items():
-            if key != p.id or p.pvid not in p.admitted or not set(p.admitted) <= set(self.vlans):
-                raise ValueError("Every PVID must be admitted; all memberships must exist")
-            for field in ("admitted", "untagged", "forbidden"):
-                memberships = getattr(p, field)
-                if len(memberships) != len(set(memberships)):
-                    raise ValueError("Duplicate VLAN membership")
-                if not set(memberships) <= set(self.vlans):
-                    raise ValueError("All VLAN memberships must exist")
-            if not set(p.untagged) <= set(p.admitted) or set(p.forbidden) & set(p.admitted):
-                raise ValueError("Untagged VLANs must be admitted; forbidden VLANs cannot be admitted")
+            self.check_port(key, p)
             if p.mode == "direct" and list(self.attachments.values()).count(key) > 1:
-                raise ValueError("Direct ports accept one endpoint")
+                configuration_error("Direct ports accept one endpoint")
         if any(k != e.id for k, e in self.endpoints.items()) or any(k != v.vid for k, v in self.vlans.items()):
             raise ValueError("Record keys must match their IDs")
         if not set(self.attachments) <= set(self.endpoints) or not set(self.attachments.values()) <= set(self.ports):
             raise ValueError("Invalid attachment reference")
-        profiles = [t.profile for t in self.radius.templates.values()] + [src.supplicant for e in self.endpoints.values() for src in e.sources if src.supplicant is not None]
-        for profile in profiles:
-            trust = self.radius.materials.get(profile.trust_id)
-            identity = self.radius.materials.get(profile.client_identity_id)
-            if trust is None or trust.kind != "ca":
-                raise ValueError("Select an existing RADIUS trust bundle")
-            if profile.method == "tls" and (identity is None or identity.kind != "client"):
-                raise ValueError("Select an existing client certificate and key")
-            if profile.client_identity_id is not None and (identity is None or identity.kind != "client"):
-                raise ValueError("Unknown client identity reference")
+        for profile in self.supplicant_profiles():
+            self.check_profile(profile)
         for c in self.credentials.values():
-            if c.version == "3" and c.group_id is not None and c.group_id not in self.groups:
-                raise ValueError("Unknown SNMPv3 group")
+            self.check_credential(c)
         if any(key != group.id for key, group in self.groups.items()):
             raise ValueError("Group keys must match their IDs")
-        policies = [c for c in self.credentials.values() if c.version == "2c"] + list(self.groups.values())
-        for c in policies:
-            if c.polling.enabled and c.polling.view_id not in self.views:
-                raise ValueError("Unknown read view")
-            if c.writing.enabled and c.writing.view_id not in self.views:
-                raise ValueError("Select an existing write view")
+        for group in self.groups.values():
+            self.check_policy(group)
         users = [(c.version, c.username if c.version == "3" else c.community) for c in self.credentials.values() if c.enabled]
         if len(users) != len(set(users)):
             raise ValueError("Enabled communities and usernames must be unique")
         for t in self.targets.values():
-            c = self.credentials.get(t.credential_id)
-            if c is None:
-                raise ValueError("Unknown target credential")
-            if t.source_address and ipaddress.ip_address(t.source_address).version != ipaddress.ip_address(t.address).version:
-                raise ValueError("Target and source IP families must match")
+            self.check_target(t)
         if any(len(collection) > 100 for collection in (self.credentials, self.groups, self.targets, self.views)):
             raise ValueError("At most 100 credentials, groups, targets and views")
         return self
+
+
+    def check_port(self, key, p):
+        if key != p.id or p.pvid not in p.admitted or any(v not in self.vlans for v in p.admitted):
+            configuration_error("Every PVID must be admitted; all memberships must exist")
+        for field in ("admitted", "untagged", "forbidden"):
+            memberships = getattr(p, field)
+            if len(memberships) != len(set(memberships)):
+                configuration_error("Duplicate VLAN membership")
+            if any(v not in self.vlans for v in memberships):
+                configuration_error("All VLAN memberships must exist")
+        if not set(p.untagged) <= set(p.admitted) or set(p.forbidden) & set(p.admitted):
+            configuration_error("Untagged VLANs must be admitted; forbidden VLANs cannot be admitted")
+
+    def supplicant_profiles(self):
+        yield from (t.profile for t in self.radius.templates.values())
+        yield from (src.supplicant for e in self.endpoints.values() for src in e.sources if src.supplicant is not None)
+
+    def check_profile(self, profile):
+        if profile is None:
+            return
+        trust = self.radius.materials.get(profile.trust_id)
+        identity = self.radius.materials.get(profile.client_identity_id)
+        if trust is None or trust.kind != "ca":
+            configuration_error("Select an existing RADIUS trust bundle")
+        if profile.method == "tls" and (identity is None or identity.kind != "client"):
+            configuration_error("Select an existing client certificate and key")
+        if profile.client_identity_id is not None and (identity is None or identity.kind != "client"):
+            configuration_error("Unknown client identity reference")
+
+    def check_material_dependents(self, ident):
+        # Deletion/kind conversion can invalidate unchanged, even inactive,
+        # templates and copied profiles. No certificate needs reparsing here.
+        for profile in self.supplicant_profiles():
+            if ident in (profile.trust_id, profile.client_identity_id):
+                self.check_profile(profile)
+
+    def check_policy(self, policy):
+        if policy.polling.enabled and policy.polling.view_id not in self.views:
+            configuration_error("Unknown read view")
+        if policy.writing.enabled and policy.writing.view_id not in self.views:
+            configuration_error("Select an existing write view")
+
+    def check_credential(self, credential, *, unique=False):
+        if credential.version == "3":
+            if credential.group_id is not None and credential.group_id not in self.groups:
+                configuration_error("Unknown SNMPv3 group")
+        else:
+            self.check_policy(credential)
+        if unique and credential.enabled:
+            identity = lambda c: (c.version, c.username if c.version == "3" else c.community)
+            if any(c is not credential and c.enabled and identity(c) == identity(credential) for c in self.credentials.values()):
+                configuration_error("Enabled communities and usernames must be unique")
+
+    def check_target(self, target):
+        if target.credential_id not in self.credentials:
+            configuration_error("Unknown target credential")
+        if target.source_address and ipaddress.ip_address(target.source_address).version != ipaddress.ip_address(target.address).version:
+            configuration_error("Target and source IP families must match")
+
+    def check_snmp_limit(self, family):
+        if len(getattr(self, family)) > 100:
+            configuration_error("At most 100 credentials, groups, targets and views")
 
 
 def initial_configuration(port_count: int = 24) -> Configuration:

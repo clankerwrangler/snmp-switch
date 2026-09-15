@@ -379,6 +379,31 @@ Every mutating path enters the same command processor. Validate input and expect
 
 Event creation deep-copies captured details so caller or status changes cannot rewrite history. Candidate construction copies the history sequence and shares its retained read-only records; append and retention eviction affect only the private sequence. Store loading separately decodes persisted records. Other mutable Runtime fields keep independent copies, including status and outboxes. SET retains its separately copied configuration candidate. This representation preserves old Runtime/read snapshots, validation, and commit-before-publication; it does not defer persistence or acknowledge SET early.
 
+Configuration validity is inductive: intake validates and owns supplied configuration;
+Store loading, scenario replacement, and reboot composition validate their complete
+inputs. Ordinary commands validate typed changed records and the relationships
+that their effects can invalidate, not the unchanged configuration recursively.
+Scalar RADIUS/accounting/DAS settings do not reconstruct their record collections.
+Runtime-only clock, scheduling, and delivery results do not parse saved certificates
+or keys. Candidate copying, reconciliation, serialization, and persistence remain
+separate required work, not substitutes for validation.
+
+| Mutation owner | Required dependency checks |
+| --- | --- |
+| Port membership / VLAN deletion | Changed port memberships, PVID, named VLANs, and deletion fallback; direct-mode occupancy when changed |
+| VLAN creation / legacy selection | New FDB identifier uniqueness / selected VLAN existence |
+| Endpoint/source inventory or capacity limit | Edited profiles and material references; applicable endpoint/source count limits |
+| Material deletion or kind conversion | Referencing templates and copied source profiles, including inactive and optional PEAP client identities |
+| RADIUS record collections | Selected record, declared collection bound, IDs and enabled canonical sender-IP uniqueness |
+| SNMP credentials/groups/views/targets | Selected policy/references and enabled identity uniqueness; reverse references on deletion; all collections changed by inline creation or conversion |
+| SET | Per-varbind type/access/row-intent checks and final affected-port relationships/FDB allocation, with original error indexes and no-op behavior |
+
+The SET plan stays inside its synchronous lock-owned planning/commit interval.
+Stale publication identity is rejected; the candidate is copied before installation.
+Neither caller mutation of supplied configuration nor later mutation of a returned
+plan may change published state. Shared relationship checks also serve broad
+intake, without weakening cryptographic validation when material is submitted.
+
 Use optimistic revision checks for UI/API writes. Multiple browser tabs still exist even with one administrator. Concurrent commands are linearized; background callbacks revalidate inside this boundary. SNMP readers retain a snapshot without holding the command lock during encoding or network I/O. Repeated requests may observe different revisions.
 
 SQLite transactions cover lab/startup fragments and revision/event/idempotency/outbox metadata where applicable. Running-only means no implicit startup Save, not zero disk I/O. Operational cache state may remain in memory because restart semantics deliberately clear it. Audit/event storage needs bounded retention; do not turn per-source activity into unbounded database writes. A crash between a network send and recording its result may leave send status uncertain; do not promise exactly-once UDP notifications.
@@ -420,6 +445,13 @@ Version routes under `/api/v1`. UUIDs are opaque. Mutations accept an expected r
 Return 401/403 for web authorization failures, 404 for unknown resources, 409 for stale revisions or state conflicts, 422 for invalid configuration, 429 for resource limits, and 503 before initialization completes. An unset identity is an expected setup state, not an application-wide 503; setup and simulation endpoints remain available. A malformed nonempty `identity.sys_object_id` submitted through the API returns 422. A rejected operation has no state or notification side effects. Support idempotency keys for retryable commands whose duplication would otherwise change state. Entries whose actual effect included volatile logical changes, including mixed edits and scenario imports, return stale-incarnation 409 after reboot/restart. Pure physical/Save results may replay durably; replaying a reboot key never reboots again. The existing 256-entry bound and body-mismatch check remain. State exposes only `configuration_status.unsaved` and `configuration_status.startup_revision`, not private startup fragments.
 
 `POST /clock/advance` takes a positive duration in milliseconds and is allowed only while paused. Its response identifies the operation, reached time, target, and status. HTTP 202 means waiting for authentication; normal status reports completion, cancellation, interruption, or the same-time renewal guard. A source tag referencing an absent VLAN is valid endpoint configuration, not a 422 error. Deleting VLAN 1 and attaching a second endpoint to a direct port are conflicts.
+
+Resource GETs return the same redacted fragment and revision as a captured full
+snapshot, including operational port/FDB fields and missing-resource errors. They
+do not audit the native EAP helper whose capability result they do not return.
+Full `/state` retains a fresh capability audit; native EAP execution independently
+verifies the helper immediately before use. No cross-request integrity cache is
+introduced.
 
 ### 10.2 Web UI
 
