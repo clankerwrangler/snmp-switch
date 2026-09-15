@@ -962,6 +962,15 @@ async def test_set_clone_elision_failure_never_mutates_published_runtime(engine,
     from switchlab.models import Configuration
     e=engine;await endpoint(e);await tick(e)
     before=e.state;saved=copy.deepcopy(before);persisted=stored_state(e.store)
+    if stage == "validation":
+        from switchlab.mib import SetError
+        with pytest.raises(SetError) as error:
+            async with e.lock:
+                e.set_locked([set_binding("2.2.1.7.101",a.Integer32(2)),
+                              set_binding("17.7.1.4.5.1.1.1",a.Unsigned32(20))], ["1"])
+        assert error.value.status == "inconsistentValue" and error.value.index == 2
+        assert e.state is before and e.state == saved and stored_state(e.store) == persisted
+        return
     plan=plan_set(before.cfg,[set_binding("2.2.1.7.101",a.Integer32(2))],["1"])
     candidate=plan.candidate.model_dump(mode="json")
     def fail(*args,**kwargs):raise ValueError("Synthetic selected boundary failure")
@@ -971,7 +980,6 @@ async def test_set_clone_elision_failure_never_mutates_published_runtime(engine,
         return original(self,*args,**kwargs)
     with monkeypatch.context() as patcher:
         if stage == "candidate-copy":patcher.setattr(Configuration,"model_copy",fail_candidate)
-        elif stage == "validation":patcher.setattr(Configuration,"model_validate",classmethod(fail))
         else:patcher.setattr(e.store,"commit",fail)
         with pytest.raises(ValueError,match="Synthetic selected boundary failure"):
             async with e.lock:e.commit_set_locked(plan)
@@ -1322,3 +1330,60 @@ async def test_event_display_failed_publication_and_reload(tmp_path, monkeypatch
         assert next(row for row in restored.state.events if row["kind"]=="endpoint-delete")["endpoint_name"]=="Changed label"
         assert not any(row.get("endpoint_name")=="Unpublished label" for row in restored.state.events)
     finally:store.close()
+
+
+@pytest.mark.parametrize("family", ["credentials","groups","views","targets","inline","conversion"])
+async def test_changed_snmp_collection_capacity_has_no_prefix(store,family):
+    from switchlab.models import initial_configuration, Community, AccessGroup, View, Target
+    cfg=initial_configuration(1);cfg.paused=True
+    credential=Community(id="original",label="Original",community="synthetic-original")
+    cfg.credentials[credential.id]=credential
+    if family in ("credentials","inline"):
+        for i in range(99):cfg.credentials[str(i)]=Community(id=str(i),label=str(i),community=f"synthetic-{i}")
+        action="credential-save";payload={"label":"Extra","community":"synthetic-extra"}
+        if family=="inline":action="target-save";payload={"address":"192.0.2.1","new_credential":payload}
+    elif family in ("groups","conversion"):
+        cfg.groups={str(i):AccessGroup(id=str(i),label=str(i)) for i in range(100)}
+        action="group-save";payload={"label":"Extra"}
+        if family=="conversion":
+            action="credential-save";payload={"id":credential.id,"version":"3","username":"synthetic-user","security_level":"noAuthNoPriv","access_transfer":"keep"}
+    elif family=="views":
+        cfg.views={str(i):View(id=str(i),name=str(i),includes=["1"]) for i in range(100)}
+        action="view-save";payload={"name":"Extra","includes":["1"]}
+    else:
+        cfg.targets={str(i):Target(id=str(i),address="192.0.2.1",credential_id=credential.id) for i in range(100)}
+        action="target-save";payload={"address":"192.0.2.2","credential_id":credential.id}
+    engine=Engine(cfg,store);before=engine.state;persisted=stored_state(store)
+    with pytest.raises(ValidationError,match="At most 100"):
+        await engine.execute(action,payload)
+    assert engine.state is before and stored_state(store)==persisted
+
+
+def test_supplied_configuration_is_validated_and_owned():
+    from switchlab.models import initial_configuration
+    cfg=initial_configuration(1);engine=Engine(cfg)
+    cfg.switch.name="Caller mutation";cfg.ports.clear()
+    assert engine.state.cfg.switch.name!="Caller mutation" and len(engine.state.cfg.ports)==1
+    malformed=initial_configuration(1)
+    next(iter(malformed.ports.values())).admitted=[]
+    with pytest.raises(ValidationError):Engine(malformed)
+
+
+async def test_capacity_validation_follows_inventory_and_limit_mutations(engine):
+    e=engine
+    await e.execute("switch-edit",{"endpoint_limit":1,"source_limit":1})
+    eid=await endpoint(e,active=False)
+    before=e.state;persisted=stored_state(e.store)
+    for action,payload,message in [
+        ("endpoint-create",{"name":"Extra","sources":[]},"Endpoint capacity"),
+        ("endpoint-clone",{"id":eid},"Endpoint capacity"),
+        ("endpoint-edit",{"id":eid,"patch":{"sources":[{"mac":"02:00:00:00:00:21"},{"mac":"02:00:00:00:00:22"}]}},"Source capacity"),
+    ]:
+        with pytest.raises(CommandError,match=message) as error:await e.execute(action,payload)
+        assert error.value.status==429 and e.state is before and stored_state(e.store)==persisted
+    await e.execute("switch-edit",{"endpoint_limit":2,"source_limit":2})
+    await e.execute("endpoint-create",{"name":"Second","sources":[{"mac":"02:00:00:00:00:22"}]})
+    before=e.state
+    for name in ("endpoint_limit","source_limit"):
+        with pytest.raises(CommandError) as error:await e.execute("switch-edit",{name:1})
+        assert error.value.status==429 and e.state is before

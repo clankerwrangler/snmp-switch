@@ -40,7 +40,7 @@ For selected configurations:
 python3 ./run_tlc.py --jar /path/to/tla2tools.jar --models SetResponseEntry StorageRecovery
 ```
 
-The normal catalog contains 52 configurations. Current verification joins separate completed checks; it does not claim one combined 52-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
+The normal catalog contains 54 configurations. Current verification joins separate completed checks; it does not claim one combined 54-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
 
 ```sh
 python3 ./tests/check_mutations.py --jar /path/to/tla2tools.jar

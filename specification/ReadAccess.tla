@@ -122,8 +122,13 @@ SaveCredential(c, on, poll, v, k) ==
          /\ viewOf' = [viewOf EXCEPT ![c] = v]
          /\ UNCHANGED <<presentViews, includes, targetCredential, targetEnabled,
                          writing, writeViewOf, snapshot, request, response>>
+\* Reverse references belong to deletion, including disabled consumers. No
+\* unrelated credential/view validity is needed from a known-valid state.
+TargetsUsing(c) == {t \in Targets : targetCredential[t] = c}
+PoliciesUsing(v) == {c \in polling : viewOf[c] = v}
+    \cup {c \in writing : writeViewOf[c] = v}
 DeleteCredential(c) ==
-    IF c \notin existing \/ (\E t \in Targets : targetCredential[t] = c)
+    IF c \notin existing \/ TargetsUsing(c) # {}
     THEN UNCHANGED vars
     ELSE /\ existing' = existing \ {c} /\ enabled' = enabled \ {c}
          /\ polling' = polling \ {c}
@@ -139,8 +144,7 @@ SaveView(v, vs) ==
     /\ UNCHANGED <<existing, enabled, secret, polling, viewOf, targetCredential,
                     targetEnabled, writing, writeViewOf, snapshot, request, response>>
 DeleteView(v) ==
-    IF v \notin presentViews \/ (\E c \in polling : viewOf[c] = v)
-       \/ (\E c \in writing : writeViewOf[c] = v)
+    IF v \notin presentViews \/ PoliciesUsing(v) # {}
     THEN UNCHANGED vars
     ELSE /\ presentViews' = presentViews \ {v}
          /\ includes' = [includes EXCEPT ![v] = {}]

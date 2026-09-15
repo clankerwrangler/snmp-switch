@@ -106,6 +106,17 @@ AffectedPorts(x) == {p \in Ports :
     <<x.admin[p],x.pvid[p],x.allowed[p],x.untagged[p],x.forbidden[p]>> #
     <<s.admin[p],s.pvid[p],s.allowed[p],s.untagged[p],s.forbidden[p]>>}
 AffectedEndpoints(ops) == UNION {TaggedEndpoints(v) : v \in Creates(ops) \cup (Deletes(ops) \cap s.vlans)}
+\* Valid-state induction: removed VLAN references change their owning ports
+\* through Candidate's membership/fallback rules. Unchanged ports therefore
+\* keep their validated relationships, including when the VLAN set changes.
+ScopedCandidateLegal(x) ==
+    /\ 1 \in x.vlans /\ x.legacy \in x.vlans
+    /\ \A p \in AffectedPorts(x) : IllegalVlans(p,x) = {}
+ScopedCandidateEquivalent ==
+    IF pending = NoPdu THEN TRUE
+    ELSE IF FirstError(pending.ops,Views).status # "noError" THEN TRUE
+    ELSE InventoryOK =>
+        (ScopedCandidateLegal(Candidate(pending.ops)) = VlanConfigLegal(Candidate(pending.ops)))
 EffectivePositions(ops) == {i \in DOMAIN ops :
     LET op == ops[i]
     IN CASE op.kind = "admin" -> op.value # (IF s.admin[op.key] THEN 1 ELSE 2)
@@ -180,7 +191,7 @@ HandleSet ==
           ELSE IF ~auth THEN Reject("authorizationError",0)
           ELSE IF error.status # "noError" THEN Reject(error.status,error.index)
           ELSE LET x == Candidate(r.ops)
-               IN IF ~VlanConfigLegal(x) THEN Reject("inconsistentValue",ConflictIndex(r.ops,x))
+               IN IF ~ScopedCandidateLegal(x) THEN Reject("inconsistentValue",ConflictIndex(r.ops,x))
                   ELSE IF Configuration(x) = Configuration(s) THEN Reject("noError",0)
                   ELSE IF ~r.persist THEN Reject("commitFailed",First(EffectivePositions(r.ops)))
                   ELSE /\ Mutate(x,AffectedEndpoints(r.ops),AffectedPorts(x))
