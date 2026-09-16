@@ -279,3 +279,26 @@ def test_resource_projection_shares_redaction_without_helper_audit(configured,st
             assert client.get(f"/api/v1/{family}/missing").status_code==404
         assert client.get("/api/v1/vlans/01").status_code==404 and len(calls)==1
         assert not client.get("/api/v1/state").json()["radius"]["eap_capability"]["ready"] and len(calls)==2
+
+
+async def test_dynamic_sender_uniqueness_matches_intake_and_scoped_save(store):
+    from switchlab.models import Configuration, DynamicSender
+    cfg=initial_configuration(1);cfg.paused=True
+    cfg.radius.dynamic_authorization.senders=[
+        DynamicSender(id="one",label="First",address="192.0.2.4",secret="synthetic-one"),
+        DynamicSender(id="two",label="Disabled",address="::ffff:192.0.2.4",secret="synthetic-two",enabled=False),
+    ]
+    engine=Engine(cfg,store)
+    await engine.execute("dynamic-sender-save",{"id":"one","label":"Same identity"})
+    before=engine.state;revision=store.get("revision");events=store.events()
+    raw=before.cfg.model_dump(mode="json")
+    assert {sender["address"] for sender in raw["radius"]["dynamic_authorization"]["senders"]}=={"192.0.2.4"}
+    next(sender for sender in raw["radius"]["dynamic_authorization"]["senders"] if sender["id"]=="two")["enabled"]=True
+    with pytest.raises(ValidationError,match="Enabled dynamic sender IPs must be distinct"):
+        Configuration.model_validate(raw)
+    with pytest.raises(ValidationError,match="Enabled dynamic sender IPs must be distinct"):
+        await engine.execute("dynamic-sender-save",{"id":"two","enabled":True})
+    assert engine.state is before and store.get("revision")==revision and store.events()==events
+    await engine.execute("dynamic-sender-save",{"id":"one","enabled":False})
+    await engine.execute("dynamic-sender-save",{"id":"two","enabled":True})
+    assert [sender.id for sender in engine.state.cfg.radius.dynamic_authorization.senders if sender.enabled]==["two"]

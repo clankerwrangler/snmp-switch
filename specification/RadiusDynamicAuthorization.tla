@@ -7,6 +7,11 @@ EXTENDS Integers, FiniteSets
  abstracted as queryClients; an optional exact session ID is conjoined with it.
  Wire parsing, sender authentication, cache expiry/durability, and the rest of
  the switch are outside this small graph. Replay survives session replacement.
+
+ The planner carries only decisions and effects consumed by the transaction.
+ Runtime derives idle expiry from committed policy/activity; the response codec
+ owns State echo normalization. Removing unused proposal/echo fields preserves
+ this relation; concrete timer and wire behavior require application tests.
 ****************************************************************************)
 CONSTANTS Clients, VLANs
 ASSUME /\ IsFiniteSet(Clients) /\ Clients # {}

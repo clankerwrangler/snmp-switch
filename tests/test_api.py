@@ -679,6 +679,8 @@ def test_inline_target_failure_has_no_partial_records(store):
      "auth_key": "synthetic-auth", "priv_key": "synthetic-priv"},
 ])
 def test_shared_identity_uniqueness_and_disabled_references(store, auth):
+    from pydantic import ValidationError
+    from switchlab.models import Configuration
     with session(store) as c:
         sign_in(c, store)
         first = change(c, '/snmp/credentials', {"label": "First", **auth}).json()['id']
@@ -687,7 +689,14 @@ def test_shared_identity_uniqueness_and_disabled_references(store, auth):
         assert created.status_code == 200
         tid = created.json()['id']
         before = c.app.state.engine.state.cfg.model_dump()
-        assert change(c, f'/snmp/credentials/{second}', {"enabled": True}, 'PUT').status_code == 422
+        assert Configuration.model_validate(before).model_dump() == before
+        duplicate = Configuration.model_validate(before).model_dump()
+        duplicate["credentials"][second]["enabled"] = True
+        with pytest.raises(ValidationError, match="Enabled communities and usernames must be unique"):
+            Configuration.model_validate(duplicate)
+        rejected = change(c, f'/snmp/credentials/{second}', {"enabled": True}, 'PUT')
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"][0]["message"] == "Value error, Enabled communities and usernames must be unique"
         assert c.app.state.engine.state.cfg.model_dump() == before
         assert change(c, f'/snmp/credentials/{second}', method='DELETE').status_code == 422
         assert change(c, f'/snmp/credentials/{first}', {"enabled": False}, 'PUT').status_code == 200

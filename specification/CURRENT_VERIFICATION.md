@@ -6,6 +6,26 @@ queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
 
+## Integrated ownership follow-up (2026-09-16)
+
+Before product edits, the existing checks passed: `RadiusDynamicAuthorization`
+(8,106/5,826 generated/distinct states), `AccessLifecycle` (72/70),
+`GroupOwnership` (32/24), `GroupQueuedSet` (378/324), and `StorageRecovery`
+(3,000/2,880). All queues completed; inputs remained unchanged during the batch.
+The model edits clarify correspondence only: unused CoA planner fields have no
+abstract effect; family-owned checks preserve valid-state transitions; local
+form cancellation stutters before a revision-checked command is dispatched.
+No transition, invariant, state variable, or catalog entry was added or removed.
+
+Concrete idle expiry, normalized identity uniqueness, bounds, and DOM form/file
+lifetimes remain application-test obligations, not new TLC proofs. This was not
+a whole-catalog or negative-control rerun. See [implementation validation](../docs/VALIDATION.md#integrated-ownership)
+for those separate results. Reproduce this checkpoint from `specification/`:
+
+```sh
+python3 run_tlc.py --jar /path/to/tla2tools.jar --models RadiusDynamicAuthorization AccessLifecycle GroupOwnership GroupQueuedSet StorageRecovery --output logs/ownership
+```
+
 ## Operation-scoped validation follow-up (2026-09-15)
 
 The scoped SET legality predicate retains the valid-prestate equivalence invariant.

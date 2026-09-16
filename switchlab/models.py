@@ -290,10 +290,13 @@ class DynamicSettings(DynamicOptions):
     def sender_ids(self):
         if len({sender.id for sender in self.senders}) != len(self.senders):
             raise ValueError("Dynamic sender IDs must be distinct")
+        self.check_sender_addresses()
+        return self
+
+    def check_sender_addresses(self):
         addresses = [sender.address for sender in self.senders if sender.enabled]
         if len(set(addresses)) != len(addresses):
-            raise ValueError("Enabled dynamic sender IPs must be distinct")
-        return self
+            configuration_error("Enabled dynamic sender IPs must be distinct")
 
 
 class RadiusOptions(Record):
@@ -673,13 +676,11 @@ class Configuration(Record):
             raise ValueError("Group keys must match their IDs")
         for group in self.groups.values():
             self.check_policy(group)
-        users = [(c.version, c.username if c.version == "3" else c.community) for c in self.credentials.values() if c.enabled]
-        if len(users) != len(set(users)):
-            raise ValueError("Enabled communities and usernames must be unique")
+        self.check_credential_identities()
         for t in self.targets.values():
             self.check_target(t)
-        if any(len(collection) > 100 for collection in (self.credentials, self.groups, self.targets, self.views)):
-            raise ValueError("At most 100 credentials, groups, targets and views")
+        for family in ("credentials", "groups", "targets", "views"):
+            self.check_snmp_limit(family)
         return self
 
 
@@ -731,9 +732,13 @@ class Configuration(Record):
         else:
             self.check_policy(credential)
         if unique and credential.enabled:
-            identity = lambda c: (c.version, c.username if c.version == "3" else c.community)
-            if any(c is not credential and c.enabled and identity(c) == identity(credential) for c in self.credentials.values()):
-                configuration_error("Enabled communities and usernames must be unique")
+            self.check_credential_identities()
+
+    def check_credential_identities(self):
+        identities = [(c.version, c.username if c.version == "3" else c.community)
+                      for c in self.credentials.values() if c.enabled]
+        if len(identities) != len(set(identities)):
+            configuration_error("Enabled communities and usernames must be unique")
 
     def check_target(self, target):
         if target.credential_id not in self.credentials:

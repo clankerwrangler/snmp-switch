@@ -1354,6 +1354,14 @@ async def test_changed_snmp_collection_capacity_has_no_prefix(store,family):
         cfg.targets={str(i):Target(id=str(i),address="192.0.2.1",credential_id=credential.id) for i in range(100)}
         action="target-save";payload={"address":"192.0.2.2","credential_id":credential.id}
     engine=Engine(cfg,store);before=engine.state;persisted=stored_state(store)
+    if family in ("credentials","groups","views","targets"):
+        from switchlab.models import Configuration
+        raw=cfg.model_dump(mode="json");record=copy.deepcopy(next(iter(raw[family].values())))
+        record["id"]="overflow"
+        if family=="credentials":record["community"]="synthetic-overflow"
+        raw[family]["overflow"]=record
+        with pytest.raises(ValidationError,match="At most 100"):
+            Configuration.model_validate(raw)
     with pytest.raises(ValidationError,match="At most 100"):
         await engine.execute(action,payload)
     assert engine.state is before and stored_state(store)==persisted
