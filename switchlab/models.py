@@ -104,7 +104,9 @@ class Switch(Record):
     location: str = Field(default="", max_length=255)
     identity: Identity = Field(default_factory=Identity)
     base_mac: str = "02:00:00:00:00:01"
-    port_count: int = Field(default=24, ge=1, le=256)
+    port_count: int = Field(default=0, ge=0, le=256)
+    next_bridge_port: int = Field(default=1, ge=1, le=65536, strict=True)
+    next_if_index: int = Field(default=101, ge=1, le=2147483648, strict=True)
     legacy_vlan: int = Field(default=1, ge=1, le=4094)
     aging_seconds: int = Field(default=300, ge=10, le=1000000)
     fdb_limit: int = Field(default=16384, ge=1, le=100000)
@@ -555,7 +557,7 @@ class SnmpSettings(Record):
 
 
 class Configuration(Record):
-    schema_version: Literal[4] = 4
+    schema_version: Literal[5] = 5
     radius: RadiusSettings = Field(default_factory=RadiusSettings)
     switch: Switch = Field(default_factory=Switch)
     ports: dict[str, Port] = Field(default_factory=dict)
@@ -569,15 +571,36 @@ class Configuration(Record):
     groups: dict[str, AccessGroup] = Field(default_factory=dict)
     targets: dict[str, Target] = Field(default_factory=dict)
 
+    @staticmethod
+    def migrate_port_inventory(value):
+        raw = copy.deepcopy(value)
+        hardware = raw.get("switch", {})
+        if not isinstance(hardware, dict) or {"next_bridge_port", "next_if_index"} & hardware.keys():
+            raise ValueError("Legacy configuration cannot contain port allocators")
+        ports = raw.get("ports", {})
+        if not isinstance(ports, dict):
+            raise ValueError("Configuration ports must be an object")
+        ports = [Port.model_validate(p) for p in ports.values()]
+        raw["switch"] = {**hardware,
+            "next_bridge_port": max((p.bridge_port for p in ports), default=0) + 1,
+            "next_if_index": max((p.if_index for p in ports), default=100) + 1}
+        raw["schema_version"] = 5
+        return raw
+
     @model_validator(mode="before")
     @classmethod
     def migrate_credentials(cls, value):
         if not isinstance(value, dict):
             return value
-        version = value.get("schema_version", 4)
+        version = value.get("schema_version", 5)
         if type(version) is not int:
             raise ValueError("Configuration schema version must be an integer")
+        if version == 4:
+            return cls.migrate_port_inventory(value)
         if version not in (1, 2, 3):
+            hardware = value.get("switch")
+            if version == 5 and isinstance(hardware, dict) and not {"next_bridge_port", "next_if_index"} <= hardware.keys():
+                raise ValueError("Current configuration requires port allocators")
             return value
         ports, endpoints = value.get("ports", {}), value.get("endpoints", {})
         if (not isinstance(ports, dict) or not isinstance(endpoints, dict) or
@@ -590,7 +613,7 @@ class Configuration(Record):
         if version == 3:
             raw = copy.deepcopy(value)
             raw["schema_version"] = 4
-            return raw
+            return cls.migrate_port_inventory(raw)
         if "groups" in value:
             raise ValueError("Legacy configuration cannot contain schema 3 groups")
         raw = copy.deepcopy(value)
@@ -639,7 +662,7 @@ class Configuration(Record):
                 credential["group_id"] = gid
             credentials[cid] = credential
         raw.update(schema_version=4, groups=groups)
-        return raw
+        return cls.migrate_port_inventory(raw)
 
     @field_validator("credentials", mode="before")
     @classmethod
@@ -655,11 +678,13 @@ class Configuration(Record):
             raise ValueError("VLAN 1 and the legacy VLAN must exist")
         if len({v.fdb_id for v in self.vlans.values()}) != len(self.vlans):
             raise ValueError("FDB IDs must be distinct")
-        if self.ports and len(self.ports) != self.switch.port_count:
-            raise ValueError("Port count is fixed at initialization")
+        if len(self.ports) != self.switch.port_count:
+            raise ValueError("Port count must match the physical inventory")
         for attr in ("if_index", "bridge_port"):
             if len({getattr(p, attr) for p in self.ports.values()}) != len(self.ports):
                 raise ValueError("Port indexes must be unique")
+            if any(getattr(p, attr) >= getattr(self.switch, "next_" + attr) for p in self.ports.values()):
+                raise ValueError("Port allocator must exceed every issued live index")
         for key, p in self.ports.items():
             self.check_port(key, p)
             if p.mode == "direct" and list(self.attachments.values()).count(key) > 1:
@@ -752,8 +777,6 @@ class Configuration(Record):
 
 
 def initial_configuration(port_count: int = 24) -> Configuration:
-    cfg = Configuration(switch=Switch(port_count=port_count))
-    for n in range(1, port_count + 1):
-        p = Port(bridge_port=n, if_index=100+n, name=f"Ethernet{n}")
-        cfg.ports[p.id] = p
-    return cfg
+    switch = Switch(port_count=port_count, next_bridge_port=port_count+1, next_if_index=101+port_count)
+    ports = [Port(bridge_port=n, if_index=100+n, name=f"Ethernet{n}") for n in range(1, port_count+1)]
+    return Configuration(switch=switch, ports={p.id: p for p in ports})

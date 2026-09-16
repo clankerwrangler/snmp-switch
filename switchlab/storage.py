@@ -15,7 +15,7 @@ from pydantic import ValidationError
 # Physical lab fields remain automatically durable; every other switch/port
 # field belongs to the explicitly saved startup policy. These are simulator
 # hardware choices, not persistence rules inferred from MIB writability.
-LAB_SWITCH_FIELDS = ("id", "port_count", "base_mac", "description", "fdb_limit", "endpoint_limit", "source_limit")
+LAB_SWITCH_FIELDS = ("id", "port_count", "next_bridge_port", "next_if_index", "base_mac", "description", "fdb_limit", "endpoint_limit", "source_limit")
 LAB_PORT_FIELDS = ("id", "if_index", "bridge_port", "name", "mode", "shared_partner", "forced_down", "speed", "mtu")
 
 
@@ -63,10 +63,12 @@ def _complete_shape(value, normalized):
             _complete_shape(child, expected)
 
 
-def compose_configuration(lab, startup):
+def compose_configuration(lab, startup, *, legacy=False):
     _shape(lab, ("switch", "ports", "radius", "endpoints", "attachments", "paused"))
     _shape(startup, ("schema_version", "switch", "ports", "radius", "vlans", "snmp", "views", "credentials", "groups", "targets"))
-    _shape(lab["switch"], LAB_SWITCH_FIELDS)
+    _shape(lab["switch"], set(LAB_SWITCH_FIELDS) - ({"next_bridge_port", "next_if_index"} if legacy else set()))
+    if type(startup["schema_version"]) is not int or startup["schema_version"] != (4 if legacy else 5):
+        raise ValueError("Invalid stored configuration schema")
     _shape(startup["switch"], set(Switch.model_fields) - set(LAB_SWITCH_FIELDS))
     _shape(lab["radius"], ("materials", "templates"))
     _shape(startup["radius"], set(RadiusSettings.model_fields) - {"materials", "templates"})
@@ -83,6 +85,8 @@ def compose_configuration(lab, startup):
            "ports": {pid: {**port, **logical["ports"][pid]} for pid, port in lab["ports"].items()}}
     # Validation rejects malformed or missing cross-policy references. No
     # restriction is dropped and no complete saved fragment gets defaulted.
+    if legacy:
+        raw = Configuration.migrate_port_inventory(raw)
     cfg = Configuration.model_validate(copy.deepcopy(raw))
     _complete_shape(raw, cfg.model_dump(mode="json"))
     return cfg
@@ -165,17 +169,18 @@ class Store:
         if keys != {"configuration_format", "lab_configuration", "startup_configuration", "startup_revision"}:
             raise ValueError("Incomplete stored configuration")
         version = self.get("configuration_format")
-        if type(version) is not int or version != 1:
+        if type(version) is not int or version not in (1, 2):
             raise ValueError("Invalid stored configuration format")
         return version
 
     def load(self):
         self.require_healthy()
-        if self.configuration_format() is not None:
+        version = self.configuration_format()
+        if version is not None:
             revision = self.get("startup_revision")
             if type(revision) is not int or revision < 0:
                 raise ValueError("Invalid startup revision")
-            return compose_configuration(self.get("lab_configuration"), self.get("startup_configuration"))
+            return compose_configuration(self.get("lab_configuration"), self.get("startup_configuration"), legacy=version == 1)
         raw = self.get("configuration")
         if raw is not None:
             # Missing saved fields retain their old effective access policy.
@@ -216,7 +221,7 @@ class Store:
 
     def commit(self, state, idempotency, durable=True, radius_metadata=None, save_startup=False):
         with self.transaction():
-            initial = self.configuration_format() is None
+            initial = self.configuration_format() != 2
             if initial or durable:
                 lab, logical = split_configuration(state.cfg)
                 self.put("lab_configuration", lab)
@@ -224,7 +229,7 @@ class Store:
                 self.put("startup_configuration", state.startup if state.startup else logical)
                 self.put("startup_revision", state.startup_revision)
             if initial:
-                self.put("configuration_format", 1)
+                self.put("configuration_format", 2)
                 self.db.execute("DELETE FROM kv WHERE key = ?", ("configuration",))
             # Revisions and protocol bookkeeping remain durable even when an
             # ordinary logical edit does not save startup configuration.

@@ -1033,7 +1033,7 @@ class Engine:
                 operation.update(status="interrupted-on-boot", waiting_reason=None)
         self.state = Runtime(cfg, revision=store.get("revision", 0) if store else 0)
         self.state.configuration_revision = store.get("configuration_revision", 0) if store else 0
-        self.state.startup = (store.get("startup_configuration") if store else None) or split_configuration(cfg)[1]
+        self.state.startup = split_configuration(cfg)[1]
         self.state.startup_revision = store.get("startup_revision", self.state.configuration_revision) if store else 0
         self.state.configuration_revision += 1
         if store:
@@ -1667,18 +1667,21 @@ class Engine:
         if entity_inventory(s.cfg) != entity_inventory(old.cfg):
             s.entity_last_change = s.uptime()
         if action not in ("advance", "job", "reboot", "notification-result", "coldStart", "test-notification"):
-            for pid in s.cfg.ports:
-                if old.up(pid) != s.up(pid):
+            for pid in old.cfg.ports.keys() | s.cfg.ports.keys():
+                before = pid in old.cfg.ports and old.up(pid)
+                after = pid in s.cfg.ports and s.up(pid)
+                if before != after:
                     affected_p.add(pid)
-                    s.counters[pid]["last_change"] = s.uptime()
-                    p = s.cfg.ports[pid]
-                    s.notify("linkUp" if s.up(pid) else "linkDown", enabled=p.link_notifications,
+                    if pid in s.counters:
+                        s.counters[pid]["last_change"] = s.uptime()
+                    p = s.cfg.ports.get(pid) or old.cfg.ports[pid]
+                    s.notify("linkUp" if after else "linkDown", enabled=p.link_notifications,
                              port_id=pid, if_index=p.if_index, admin=1 if p.admin_up else 2,
-                             before=1 if old.up(pid) else 2, after=1 if s.up(pid) else 2)
+                             before=1 if before else 2, after=1 if after else 2)
             for fkey, row in list(s.fdb.items()):
-                if row["vid"] not in s.cfg.vlans or not s.up(row["port_id"]) or (row["vid"] not in s.cfg.ports[row["port_id"]].admitted and not any(session.port_id == row["port_id"] and s.session_vid(session) == row["vid"] for session in s.radius_sessions.values())):
+                if row["port_id"] not in s.cfg.ports or row["vid"] not in s.cfg.vlans or not s.up(row["port_id"]) or (row["vid"] not in s.cfg.ports[row["port_id"]].admitted and not any(session.port_id == row["port_id"] and s.session_vid(session) == row["vid"] for session in s.radius_sessions.values())):
                     del s.fdb[fkey]
-            for pid in affected_p:
+            for pid in affected_p & s.cfg.ports.keys():
                 s.pgens[pid] = uid()
             for eid in affected_e:
                 s.egens[eid] = uid()
@@ -1690,9 +1693,11 @@ class Engine:
                 if vid not in old.cfg.vlans:
                     s.vlan_times[vid] = [s.uptime(), s.uptime()]
                 elif s.cfg.vlans[vid] != old.cfg.vlans[vid] or any(
-                        tuple(vid in getattr(old.cfg.ports[p], field) for field in ("admitted", "untagged", "forbidden")) !=
-                        tuple(vid in getattr(s.cfg.ports[p], field) for field in ("admitted", "untagged", "forbidden")) or
-                        (old.cfg.ports[p].pvid == vid) != (s.cfg.ports[p].pvid == vid) for p in s.cfg.ports):
+                        {p.id for p in old.cfg.ports.values() if vid in getattr(p, field)} !=
+                        {p.id for p in s.cfg.ports.values() if vid in getattr(p, field)}
+                        for field in ("admitted", "untagged", "forbidden")) or (
+                        {p.id for p in old.cfg.ports.values() if p.pvid == vid} !=
+                        {p.id for p in s.cfg.ports.values() if p.pvid == vid}):
                     s.vlan_times[vid][1] = s.uptime()
         for vid in s.cfg.vlans.keys() & old.cfg.vlans.keys():
             if current_vlan_ports(s,vid) != current_vlan_ports(old,vid):
@@ -1713,6 +1718,10 @@ class Engine:
         if action == "save-startup":
             s.startup = split_configuration(s.cfg)[1]
             s.startup_revision = s.configuration_revision
+        elif action in ("port-create", "port-delete"):
+            # Save only this inventory's default/new or removed policy rows.
+            s.startup = reconciled_startup(s.startup, split_configuration(s.cfg)[0]["ports"])
+            s.startup_revision = s.configuration_revision
         if durable:
             lab, logical = split_configuration(s.cfg)
             s.configuration_dirty = logical != reconciled_startup(s.startup, lab["ports"])
@@ -1726,7 +1735,7 @@ class Engine:
                     entry["result"].update(advance=public_operation.copy(), simulation_ms=s.advance_operation["reached_ms"])
         if key:
             idem[key] = dict(signature=signature, result=result)
-            if action not in ("save-startup", "reboot") and split_configuration(old.cfg)[1] != split_configuration(s.cfg)[1]:
+            if action not in ("save-startup", "reboot", "port-create", "port-delete") and split_configuration(old.cfg)[1] != split_configuration(s.cfg)[1]:
                 idem[key]["configuration_incarnation"] = s.configuration_incarnation
             idem = dict(list(idem.items())[-256:])
         updates = dict(radius_updates or {})
@@ -1743,7 +1752,7 @@ class Engine:
         if self.store:
             try:
                 self.store.commit(s, idem, durable=durable, **({"radius_metadata":updates} if updates else {}),
-                                  **({"save_startup":True} if action == "save-startup" else {}))
+                                  **({"save_startup":True} if action in ("save-startup", "port-create", "port-delete") else {}))
             except Exception:
                 if self.storage_fault:
                     self._cancel_inactive_authentication()
@@ -2127,6 +2136,44 @@ class Engine:
             else:
                 s.event(action, endpoint_id=eid, endpoint_name=cfg.endpoints[eid].name if eid in cfg.endpoints else ep.name)
             return {"id": eid}
+        if action == "port-create":
+            require(not set(d) - {"name", "speed", "mtu"}, "Unsupported port field", 422)
+            require(len(cfg.ports) < 256, "Port limit reached (256)", 429)
+            require(cfg.switch.next_bridge_port <= 65535, "Bridge port identity space exhausted", 429)
+            require(cfg.switch.next_if_index <= 2147483647, "Interface identity space exhausted", 429)
+            p = Port(bridge_port=cfg.switch.next_bridge_port, if_index=cfg.switch.next_if_index,
+                     **{"name": f"Ethernet{cfg.switch.next_bridge_port}", **d})
+            cfg.ports[p.id] = p
+            cfg.switch.port_count += 1
+            cfg.switch.next_bridge_port += 1
+            cfg.switch.next_if_index += 1
+            s.counters[p.id] = dict(in_octets=0, in_ucast=0, in_discards=0,
+                                   last_change=s.uptime(), discontinuity=s.uptime())
+            ps.add(p.id)
+            s.event("port-create", port_id=p.id)
+            return {"id": p.id}
+        if action == "port-delete":
+            pid = d["id"]
+            p = get(cfg.ports, pid)
+            # Capture Stop and public history before removing their port context.
+            for key in [key for key in s.radius_sessions if key[0] == pid]:
+                s.end_session(key, "port-deleted", cause=6)
+            for key in [key for key in s.radius_attempts if key[0] == pid]:
+                s.retire_authentication(key)
+            for eid in s.attached(pid):
+                del cfg.attachments[eid]
+                es.add(eid)
+                s.event("detach", endpoint_id=eid, before_port_id=pid, after_port_id=None)
+            s.event("port-delete", port_id=pid)
+            del cfg.ports[pid]
+            cfg.switch.port_count -= 1
+            for rows in (s.counters, s.pgens, s.pae, s.last_auth_sessions):
+                rows.pop(pid, None)
+            for rows in (s.radius_status, s.renewal_budget):
+                for key in [key for key in rows if key[0] == pid]:
+                    del rows[key]
+            ps.add(pid)
+            return {"id": pid}
         if action == "port-edit":
             pid, patch = d["id"], d["patch"]
             p = get(cfg.ports, pid)

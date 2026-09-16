@@ -392,6 +392,7 @@ def test_legacy_inactive_fields_stay_inert_until_version_change(store):
     cfg.pop('radius')
     for port in cfg['ports'].values():port.pop('authentication')
     cfg.pop('groups')
+    for field in ('next_bridge_port', 'next_if_index'): cfg['switch'].pop(field)
     cfg['schema_version'] = 1
     cfg['credentials']['legacy'] = {'id': 'legacy', 'label': 'legacy', 'community': 'legacy-v2',
         'username': 'hidden-old-user', 'auth_key': 'hidden-old-auth', 'priv_key': 'hidden-old-priv',
@@ -517,6 +518,7 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
     raw.pop("radius")
     for port in raw["ports"].values():port.pop("authentication")
     raw.pop("groups")
+    for field in ("next_bridge_port", "next_if_index"): raw["switch"].pop(field)
     raw["schema_version"] = 1
     legacy = {"id": "legacy", "label": "Legacy", "version": "3", "enabled": enabled,
               "username": "legacy-user", "security_level": "authPriv",
@@ -532,7 +534,7 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
                                      "port": 3162, "enabled": False, "types": ["linkUp"]}}
     original = copy.deepcopy(raw)
     cfg = Configuration.model_validate(raw)
-    assert raw == original and cfg.schema_version == 4
+    assert raw == original and cfg.schema_version == 5
     with store.db:
         store.put("configuration", raw)
         store.put("engine_identity", "40000102030405060708090a0b")
@@ -558,14 +560,14 @@ def test_legacy_credential_access_migration(store, purpose, enabled):
         before = saved.model_dump()
         assert change(c, '/scenarios/import', {"scenario": scenario}).status_code == 200
         assert store.load().model_dump() == before
-        assert store.get("startup_configuration")["schema_version"] == 4 and store.get("configuration") is None
+        assert store.get("startup_configuration")["schema_version"] == 5 and store.get("configuration") is None
         assert store.get("engine_identity") == "40000102030405060708090a0b" and store.get("engine_boots") == 9
         assert state["snmp"]["enabled"] is False and state["switch"]["identity"]["sys_object_id"] is None
     assert store.load().groups[credential.group_id].polling == saved.groups[credential.group_id].polling
 
 
 @pytest.mark.parametrize("version,credential", [
-    (5, {"label": "future", "community": "synthetic"}),
+    (6, {"label": "future", "community": "synthetic"}),
     (True, {"label": "invalid tag", "community": "synthetic"}),
     (1, {"label": "mixed", "community": "synthetic", "polling": {"enabled": True}}),
     (2, {"label": "mixed", "community": "synthetic", "purpose": "notification"}),
@@ -714,6 +716,7 @@ def test_legacy_target_cannot_change_polling_privileges(reference):
     raw = initial_configuration(4).model_dump(mode="json")
     raw.pop("radius"); raw.pop("groups")
     for port in raw["ports"].values():port.pop("authentication")
+    for field in ("next_bridge_port", "next_if_index"): raw["switch"].pop(field)
     raw.update(schema_version=1, credentials={"legacy": {"id": "legacy", "label": "Legacy polling",
         "community": "synthetic", "purpose": "polling"}}, targets={"target": {
         "id": "target", "address": "127.0.0.1", "credential_id": reference}})
@@ -1212,3 +1215,28 @@ def test_event_display_names_are_public_context_not_secret_values(store):
         assert [row['endpoint_name'] for row in rows]==['Public <endpoint>','Renamed endpoint','Renamed endpoint']
         assert eid not in c.get('/api/v1/state').json()['endpoints']
         assert all(not {'metadata','sources','supplicant','password','secret','certificate','private_key'} & row.keys() for row in rows)
+
+
+def test_port_inventory_api_revision_defaults_and_empty_chassis(store):
+    with session(store) as c:
+        sign_in(c, store)
+        before = c.get('/api/v1/state').json(); revision_before = before['configuration_revision']
+        for body in ({'if_index': 1}, {'id': 'chosen'}, {'speed': 0}, {'mtu': 63}, {'name': 'x'*256}):
+            assert change(c, '/ports', body).status_code == 422
+        assert revision(c) == revision_before
+        added = change(c, '/ports', {'name': 'New uplink', 'mtu': 9000, 'speed': 10000000000})
+        assert added.status_code == 200, added.text
+        pid = added.json()['id']; state = c.get('/api/v1/state').json()
+        assert state['ports'][pid]['if_index'] == 105 and state['ports'][pid]['bridge_port'] == 5
+        assert state['ports'][pid]['name'] == 'New uplink' and state['ports'][pid]['mtu'] == 9000
+        assert c.request('DELETE', '/api/v1/ports/'+pid, json={'expected_configuration_revision': revision_before}).status_code == 409
+        for current in list(state['ports']):
+            assert change(c, '/ports/'+current, method='DELETE').status_code == 200
+        assert change(c, '/ports/'+pid, method='DELETE').status_code == 404
+        assert change(c, '/switch/reboot').status_code == 200
+        assert c.get('/api/v1/state').json()['switch']['port_count'] == 0
+        added = change(c, '/ports')
+        assert added.status_code == 200
+        port = c.get('/api/v1/state').json()['ports'][added.json()['id']]
+        assert (port['name'], port['if_index'], port['bridge_port']) == ('Ethernet6', 106, 6)
+        assert change(c, '/switch', {'next_if_index': 1}, method='PATCH').status_code == 422

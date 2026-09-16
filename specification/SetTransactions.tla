@@ -48,9 +48,9 @@ VarbindError(ops, i, granted) ==
       [] op.kind = "admin" /\ op.value \notin {1,2} -> "wrongValue"
       [] op.kind = "pvid" /\ op.value \notin VLANs -> "wrongValue"
       [] op.kind \in BitmapKinds /\ ~IsFiniteSet(op.value) -> "wrongType"
-      [] op.kind \in BitmapKinds /\ ~op.value \subseteq Ports -> "wrongValue"
+      [] op.kind \in BitmapKinds /\ ~op.value \subseteq s.present -> "wrongValue"
       [] op.kind = "name" /\ op.value \notin 0..1 -> "wrongValue"
-      [] op.kind \in {"admin","pvid"} /\ op.key \notin Ports -> "noCreation"
+      [] op.kind \in {"admin","pvid"} /\ op.key \notin s.present -> "noCreation"
       [] op.kind \in VlanKinds /\ op.key \notin VLANs -> "noCreation"
       [] op.kind = "row" /\ RowError(op.key,op.value) # "noError" -> RowError(op.key,op.value)
       [] op.kind \in VlanKinds \ {"row"} /\ op.key \notin s.vlans \cup Creates(ops) -> "inconsistentName"

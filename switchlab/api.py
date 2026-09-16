@@ -81,9 +81,10 @@ def patch_model(name, model, fields):
 
 from .models import Port
 
+PortCreate = patch_model("PortCreate", Port, ["name", "speed", "mtu"])
 PortPatch = patch_model("PortPatch", Port, [k for k in Port.model_fields if k not in ("id", "bridge_port", "if_index")])
 EndpointPatch = patch_model("EndpointPatch", Endpoint, ["name", "metadata", "active", "sources"])
-SwitchPatch = patch_model("SwitchPatch", Switch, [k for k in Switch.model_fields if k not in ("id", "port_count")])
+SwitchPatch = patch_model("SwitchPatch", Switch, [k for k in Switch.model_fields if k not in ("id", "port_count", "next_bridge_port", "next_if_index")])
 SnmpPatch = patch_model("SnmpPatch", SnmpSettings, list(SnmpSettings.model_fields))
 class EndpointCreate(Endpoint, Revision):
     pass
@@ -374,6 +375,8 @@ def create_app(store=None, configuration=None):
     mutation("POST", "/endpoints/{id}/supplicant", SourceSupplicantWrite, "source-supplicant-save", lambda d,p: {"id":p["id"], **d})
     mutation("POST", "/endpoints/{id}/authentication", SourceAuthentication, "source-authentication", lambda d,p: {"id":p["id"], **d})
     mutation("PATCH", "/switch", SwitchPatch, "switch-edit")
+    mutation("POST", "/ports", PortCreate, "port-create")
+    mutation("DELETE", "/ports/{id}", Revision, "port-delete", lambda d,p: {"id":p["id"]})
     mutation("PATCH", "/ports/{id}", PortPatch, "port-edit", lambda d,p: {"id":p["id"], "patch":d})
     mutation("POST", "/endpoints", EndpointCreate, "endpoint-create")
     mutation("PATCH", "/endpoints/{id}", EndpointPatch, "endpoint-edit", lambda d,p: {"id":p["id"], "patch":d})

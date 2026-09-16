@@ -129,7 +129,7 @@ async def test_pending_eap_retirement_omits_incomplete_observation(configured,re
     from switchlab.models import Port
     cfg,pid,eid=configured
     other=Port(bridge_port=2,if_index=102,name='Unrelated')
-    cfg.ports[other.id]=other;cfg.switch.port_count=2
+    cfg.ports[other.id]=other;cfg.switch.port_count=2;cfg.switch.next_bridge_port=3;cfg.switch.next_if_index=103
     engine=Engine(cfg);index=cfg.ports[pid].if_index
     engine.state.pae_port(other.id)
     unrelated=copy.deepcopy(engine.state.pae[other.id])

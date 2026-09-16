@@ -1,5 +1,32 @@
 # Implementation validation
 
+## Port inventory
+
+Add/Delete now use the existing revision-checked command, storage, projection,
+and form owners. Tests cover fresh nonreused identities, 0–256 live ports,
+independent sparse-legacy allocators and exhaustion, durable new default policy,
+survivor policy/runtime preservation, and strict format migration. The existing
+five-outcome persistence matrix covers add/delete and both legacy storage layouts.
+Deletion retains endpoint/profile libraries, captures Accounting-Stop/link context,
+cancels actual authentication work, and rejects late results. Real queued SETs in
+v2c and all three v3 protection profiles cannot retarget a newly allocated port.
+
+The full local Python suite passed **1,348 tests and 139 subtests in 120.69 s**,
+with 157 upstream warnings. Fourteen Net-SNMP cases require the Docker test stage
+and skipped locally; puresnmp and application BER cases ran. Independent review
+passed 48 focused cases/probes and caught a legacy `4.0` schema discriminator
+regression, corrected to exact-integer validation before migration.
+
+The canonical full browser passed in **67.814 s**, including Add/Delete, stale
+forms, disconnection/library retention, zero ports, reboot, and mobile layout;
+BER history and all cleanup checks passed. The form-owner probe passed ten controls.
+TypeScript, Vite, dependency consistency, and diff checks passed. OpenAPI now
+contains POST/DELETE port operations; the 129-object MIB manifest is unchanged.
+[Ten model checks and four behavioral controls](../specification/CURRENT_VERIFICATION.md#port-inventory-follow-up-2026-09-16)
+passed. No native EAP, container, user-environment, or deployment checks ran locally;
+release CI remains separate. Initial fixture assertions and incomplete model runs
+are retained as failures, not counted as passing evidence.
+
 ## Integrated ownership
 
 The follow-up from `bd36a1a` consolidates form revision/lifetime ownership and
@@ -26,7 +53,9 @@ when a form opened before refresh after an intentional stale-revision rejection.
 A deterministic reproduction confirmed the correct HTTP 409, not a lifetime fault.
 Three test-only calls to the existing refresh helper now settle those case boundaries;
 all rejection assertions remain. The corrected local full browser passed in
-**68.448 s** with cleanup; product/model/build inputs are unchanged, release CI pending.
+**68.448 s** with cleanup; product/model/build inputs are unchanged. Subsequent
+CI `35082169654` passed Python (1,333 tests and 139 subtests), full BER/browser,
+and runtime/LAN checks.
 
 ## Operation-scoped validation
 

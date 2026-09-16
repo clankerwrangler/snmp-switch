@@ -1048,6 +1048,27 @@ async def test_application_set_real_dispatcher_atomic_echo_and_cleanup(app_excha
     x.empty()
 
 
+async def test_application_queued_set_deleted_port_cannot_retarget_new_inventory(app_exchange):
+    x = app_exchange; removed = next(iter(x.engine.state.cfg.ports))
+    async with x.adapter.io_lock:
+        x.send(request())  # Captures the old ifIndex101 admin SET before deletion.
+        pending = next(iter(x.adapter.pending_sets.values()))
+        await asyncio.sleep(0)
+        assert pending.ticket.phase == "queued"
+        await x.engine.execute("port-delete", {"id": removed})
+        added = await x.engine.execute("port-create", {})
+        fresh = x.engine.state.cfg.ports[added["id"]]
+        assert fresh.if_index == 105 and fresh.bridge_port == 5 and fresh.admin_up
+        await x.adapter._reconcile()
+        after = x.engine.state
+    await x.settle()
+    response = x.decode()
+    assert (int(v2c.apiPDU.get_error_status(response)), int(v2c.apiPDU.get_error_index(response))) == (11, 1)
+    assert x.engine.state is after and fresh.admin_up
+    terminal(pending.ticket)
+    x.empty()
+
+
 def access_write(x, fields):
     credential = x.engine.state.cfg.credentials[x.credential_id]
     if credential.version == "3":

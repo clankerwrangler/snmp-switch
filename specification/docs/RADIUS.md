@@ -241,7 +241,7 @@ substituting another method. The Debian-based build procedure is
 exact source/patch hashes, linkage checks, and installed runtime packages are
 specified by the Dockerfile and `runtime/eap/source.json`.
 
-Configuration schema 4 preserves older SNMP settings and migrates ports to
+Configuration schema 5 preserves older SNMP settings and migrates pre-RADIUS ports to
 force-authorized without servers, sender trust, or secrets. Configuration and
 private material use the existing encrypted Store. API/form reads expose
 presence flags, never saved key, certificate, password, shared-secret, Class,

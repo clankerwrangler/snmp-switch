@@ -99,10 +99,10 @@ def test_redaction_export_and_nonmutating_v3_migration(configured):
     assert "BEGIN PRIVATE KEY" not in text and "BEGIN CERTIFICATE" not in text
     assert "radius" not in scenario and "authentication" not in scenario["ports"][pid]
     assert "supplicant" not in scenario["endpoints"][eid]["sources"][0]
-    legacy=initial_configuration(1).model_dump(mode="json");legacy["schema_version"]=3;legacy.pop("radius")
+    legacy=initial_configuration(1).model_dump(mode="json");legacy["switch"].pop("next_bridge_port");legacy["switch"].pop("next_if_index");legacy["schema_version"]=3;legacy.pop("radius")
     for port in legacy["ports"].values():port.pop("authentication")
     original=copy.deepcopy(legacy);loaded=Configuration.model_validate(legacy)
-    assert legacy==original and loaded.schema_version==4 and not loaded.radius.servers
+    assert legacy==original and loaded.schema_version==5 and not loaded.radius.servers
     assert all(p.authentication.control=="force-authorized" for p in loaded.ports.values())
 
 
@@ -197,7 +197,7 @@ async def test_noop_baseline_pvid_and_other_port_preserve_current_work(configure
     from switchlab.models import Port,Vlan
     cfg,pid,eid=configured;cfg.vlans[20]=Vlan(vid=20,name="Dynamic",fdb_id=1020)
     other=Port(bridge_port=2,if_index=102,name="Other")
-    cfg.ports[other.id]=other;cfg.switch.port_count=2
+    cfg.ports[other.id]=other;cfg.switch.port_count=2;cfg.switch.next_bridge_port=3;cfg.switch.next_if_index=103
     engine=Engine(cfg);first=await begin(engine,pid,eid)
     await engine.execute("radius-result",{**first,"result":AccessResult(2,tuple(vlan()),PEER,bytes(16))})
     capture=await begin(engine,pid,eid);subject=(pid,capture["mac"])
@@ -260,3 +260,31 @@ async def test_startup_save_preserves_attempt_and_durable_peer_catalog(configure
         assert "synthetic-startup-secret" not in content and "BEGIN PRIVATE KEY" not in content
     for (encrypted,) in store.db.execute("SELECT value FROM kv"):
         assert b"BEGIN PRIVATE KEY" not in encrypted and b"synthetic-startup-secret" not in encrypted
+
+
+async def test_port_delete_ends_grant_before_context_and_retires_only_affected_work(configured, store):
+    from switchlab.models import RadiusServer
+    cfg, pid, eid = configured
+    cfg.radius.accounting.enabled = True
+    target = RadiusServer(label="Accounting", address="127.0.0.1", port=1813, secret="synthetic")
+    cfg.radius.accounting.targets = [target]
+    e = Engine(cfg, store)
+    capture = await begin(e, pid, eid)
+    await e.execute("radius-result", {**capture, "result": AccessResult(2, (), PEER, bytes(16))})
+    grant = next(iter(e.state.radius_sessions.values()))
+    retry = await begin(e, pid, eid)
+    before = e.state
+    await e.execute("port-delete", {"id": pid})
+    assert not e.state.radius_sessions and not e.state.radius_attempts
+    assert not e.state.radius_status and not e.state.pae and not e.state.last_auth_sessions
+    assert e.state.cfg.endpoints == before.cfg.endpoints and e.state.cfg.radius == before.cfg.radius
+    stops = [record for record in e.state.accounting_outbox if record["status_type"] == 2]
+    assert len(stops) == 1 and stops[0]["session_id"] == grant.id
+    from test_radius_accounting import number
+    assert number(stops[0], 49) == 6 and number(stops[0], 5) == cfg.ports[pid].bridge_port
+    assert any(event["kind"] == "authentication-ended" and event["if_index"] == cfg.ports[pid].if_index
+               for event in e.state.events)
+    state = e.state
+    late = await e.execute("radius-result", {**retry, "result": AccessResult(2, (), PEER, bytes(16))})
+    assert not late["accepted"] and e.state is state
+    assert e.store.get("radius_accounting_outbox") == e.state.accounting_outbox

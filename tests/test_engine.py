@@ -436,6 +436,7 @@ def test_schema2_groups_preserve_encrypted_policy_and_identity(store, level, rea
     raw.pop("radius")
     for port in raw["ports"].values():port.pop("authentication")
     raw.pop("groups")
+    for field in ("next_bridge_port", "next_if_index"): raw["switch"].pop(field)
     raw["schema_version"] = 2
     policy = {"polling": {"enabled": read, "view_id": "interfaces" if read else "missing-read", "networks": ["192.0.2.0/24"]},
               "writing": {"enabled": write, "view_id": "all" if write else None, "networks": ["2001:db8::/32"]}}
@@ -451,7 +452,7 @@ def test_schema2_groups_preserve_encrypted_policy_and_identity(store, level, rea
         store.put("engine_identity", "40000102030405060708090a0b")
         store.put("engine_boots", 9)
     cfg = store.load()
-    assert raw == before and cfg.schema_version == 4
+    assert raw == before and cfg.schema_version == 5
     assert Configuration.model_validate(raw) == cfg
     assert len(cfg.groups) == 2
     for cid in ("one", "two"):
@@ -467,8 +468,8 @@ def test_schema2_groups_preserve_encrypted_policy_and_identity(store, level, rea
     assert community.polling.model_dump() == policy["polling"] and community.writing.model_dump() == policy["writing"]
     assert (community.username, community.auth_key, community.priv_key) == ("retained-inactive", "inactive-auth", "inactive-priv")
     e = Engine(cfg, store)
-    assert store.load() == cfg and store.get("startup_configuration")["schema_version"] == 4
-    assert store.get("configuration") is None and store.get("configuration_format") == 1
+    assert store.load() == cfg and store.get("startup_configuration")["schema_version"] == 5
+    assert store.get("configuration") is None and store.get("configuration_format") == 2
     assert store.get("engine_identity") == "40000102030405060708090a0b" and store.get("engine_boots") == 9
     assert e.export()["schema_version"] == 1 and not {"credentials", "groups"} & e.export().keys()
     assert "synthetic-auth" not in str(e.snapshot()) and "inactive-auth" not in str(e.snapshot())
@@ -617,6 +618,7 @@ def test_schema2_generated_group_ids_are_url_safe_distinct_and_repeatable():
     raw.pop("radius")
     for port in raw["ports"].values():port.pop("authentication")
     raw.pop("groups"); raw["schema_version"] = 2
+    for field in ("next_bridge_port", "next_if_index"): raw["switch"].pop(field)
     ids = ["a/b", "a?b", "a#b", "管理", "a:b", "a%2Fb"]
     raw["credentials"] = {cid: {"id": cid, "label": "Saved user", "version": "3", "username": str(n),
         "security_level": "noAuthNoPriv"} for n, cid in enumerate(ids)}
@@ -672,6 +674,7 @@ def test_saved_views_preserve_effective_policy_on_close_reload(tmp_path, version
         "custom": {"id":"custom", "name":"All implemented objects", "includes":["1.0.8802.1.1.1.1.2.1.1.6"]},
     }
     raw = initial_configuration(4).model_dump(mode="json")
+    for field in ("next_bridge_port", "next_if_index"): raw["switch"].pop(field)
     raw["schema_version"] = version
     if version < 4:
         raw.pop("radius")
@@ -792,7 +795,7 @@ async def test_running_startup_effect_scoped_idempotency(engine, restore):
     assert e.state.cfg.switch.description == "Durable hardware description"
 
 
-@pytest.mark.parametrize("action", ["save-startup", "switch-edit", "reboot"])
+@pytest.mark.parametrize("action", ["save-startup", "switch-edit", "reboot", "port-create", "port-delete"])
 @pytest.mark.parametrize("stage", ["mid-write", "commit-before", "rollback", "commit-after", "commit-rolled-back"])
 async def test_startup_sqlite_failure_publication_and_recovery(tmp_path, monkeypatch, action, stage):
     import sqlite3
@@ -815,7 +818,8 @@ async def test_startup_sqlite_failure_publication_and_recovery(tmp_path, monkeyp
             else: patcher.setattr(store, "db", proxy)
             expected = RollbackFailed if stage == "rollback" else CommitUncertain if stage in ("commit-after", "commit-rolled-back") else sqlite3.OperationalError
             with pytest.raises(expected):
-                await e.execute(action, {"name": "Mixed", "description": "New hardware"} if action == "switch-edit" else {}, key="uncertain")
+                await e.execute(action, {"name": "Mixed", "description": "New hardware"} if action == "switch-edit" else
+                    {"id": next(iter(e.state.cfg.ports))} if action == "port-delete" else {}, key="uncertain")
         assert e.state is before and "uncertain" not in e.idempotency
         if stage in ("commit-after", "commit-rolled-back", "rollback"):
             assert e.storage_fault
@@ -831,6 +835,7 @@ async def test_startup_sqlite_failure_publication_and_recovery(tmp_path, monkeyp
         committed = stage == "commit-after"
         assert recovered.state.cfg.switch.name == ("Unsaved" if committed and action == "save-startup" else "Switch Lab")
         assert recovered.state.cfg.switch.description == ("New hardware" if committed and action == "switch-edit" else "Generic Ethernet switch management simulation")
+        assert len(recovered.state.cfg.ports) == (2 if committed and action == "port-create" else 0 if committed and action == "port-delete" else 1)
         assert recovered.state.configuration_revision >= before.configuration_revision
         assert not recovered.snapshot()["configuration_status"]["unsaved"]
         assert ("uncertain" in recovered.idempotency) == committed
@@ -840,14 +845,15 @@ async def test_startup_sqlite_failure_publication_and_recovery(tmp_path, monkeyp
                 with pytest.raises(CommandError, match="earlier running configuration"):
                     await recovered.execute(action, {"name":"Mixed", "description":"New hardware"}, key="uncertain")
             else:
-                await recovered.execute(action, key="uncertain")
+                await recovered.execute(action, {"id": next(iter(before.cfg.ports))} if action == "port-delete" else {}, key="uncertain")
             assert recovered.state is current
     finally:
         if not store.closed: store.close()
 
 
 @pytest.mark.parametrize("stage", ["mid-write", "commit-before", "rollback", "commit-after", "commit-rolled-back"])
-def test_startup_legacy_split_migration_is_atomic(tmp_path, monkeypatch, stage):
+@pytest.mark.parametrize("layout", ["whole", "split"])
+def test_startup_legacy_split_migration_is_atomic(tmp_path, monkeypatch, stage, layout):
     import sqlite3
     from cryptography.fernet import Fernet
     from switchlab.models import initial_configuration
@@ -855,9 +861,17 @@ def test_startup_legacy_split_migration_is_atomic(tmp_path, monkeypatch, stage):
     from test_snmp_lifetime import TransactionFault
     path = str(tmp_path / "migration.db"); key = Fernet.generate_key(); store = Store(path, key)
     cfg = initial_configuration(2); cfg.switch.name = "Preserved legacy"
-    raw = cfg.model_dump(mode="json")
+    from switchlab.storage import split_configuration
+    raw = cfg.model_dump(mode="json"); raw["schema_version"] = 4
+    lab, startup = split_configuration(cfg); startup["schema_version"] = 4
+    for field in ("next_bridge_port", "next_if_index"):
+        raw["switch"].pop(field); lab["switch"].pop(field)
     with store.transaction():
-        store.put("configuration", raw); store.put("configuration_revision", 41); store.put("revision", 70)
+        if layout == "whole": store.put("configuration", raw)
+        else:
+            store.put("configuration_format", 1); store.put("lab_configuration", lab)
+            store.put("startup_configuration", startup); store.put("startup_revision", 41)
+        store.put("configuration_revision", 41); store.put("revision", 70)
     connection = store.db; original = store.put
     def fail(name, value):
         original(name, value)
@@ -869,14 +883,14 @@ def test_startup_legacy_split_migration_is_atomic(tmp_path, monkeypatch, stage):
             expected = RollbackFailed if stage == "rollback" else CommitUncertain if stage in ("commit-after", "commit-rolled-back") else sqlite3.OperationalError
             with pytest.raises(expected): Engine(store.load(), store)
         store.close(); store = Store(path, key)
-        assert (store.get("configuration") is None) == (stage == "commit-after")
         if stage != "commit-after":
-            assert store.get("configuration") == raw
-            assert store.get("configuration_format") is None
-            assert store.get("lab_configuration") is None and store.get("startup_configuration") is None
+            assert store.get("configuration") == (raw if layout == "whole" else None)
+            assert store.get("configuration_format") == (None if layout == "whole" else 1)
+            assert store.get("lab_configuration") == (None if layout == "whole" else lab)
+            assert store.get("startup_configuration") == (None if layout == "whole" else startup)
         restored = Engine(store.load(), store)
         assert restored.state.cfg == cfg and restored.state.configuration_revision > 41
-        assert store.get("configuration") is None and store.get("configuration_format") == 1
+        assert store.get("configuration") is None and store.get("configuration_format") == 2
         assert store.load() == cfg
     finally: store.close()
 
@@ -1395,3 +1409,110 @@ async def test_capacity_validation_follows_inventory_and_limit_mutations(engine)
     for name in ("endpoint_limit","source_limit"):
         with pytest.raises(CommandError) as error:await e.execute("switch-edit",{name:1})
         assert error.value.status==429 and e.state is before
+
+
+@pytest.mark.parametrize("restore", ["process", "reboot"])
+async def test_port_inventory_scoped_cleanup_saved_policy_and_nonreuse(engine, restore):
+    from switchlab.mib import Projection, oid
+    from pysnmp.proto import rfc1905
+    e = engine; pid, survivor = list(e.state.cfg.ports)[:2]
+    await e.execute("port-edit", {"id": survivor, "patch": {"alias": "saved"}})
+    await e.execute("save-startup")
+    await e.execute("port-edit", {"id": survivor, "patch": {"alias": "dirty"}})
+    removed_endpoint = await endpoint(e)
+    retained_endpoint = await endpoint(e, port=1, mac="02:00:00:00:00:12")
+    await tick(e)
+    before = e.state; old_port = before.cfg.ports[pid]
+    pending = next(job for job in before.jobs.values() if job.port_id == pid)
+    survivor_fdb = {key: row for key, row in before.fdb.items() if row["port_id"] == survivor}
+    projection = Projection(before, ["1.3.6.1.2.1"])
+    await e.execute("port-delete", {"id": pid}, key="remove-port")
+    assert pid not in e.state.cfg.ports and e.state.cfg.switch.port_count == 3
+    assert pid not in e.state.startup["ports"] and pid not in e.store.get("startup_configuration")["ports"]
+    assert e.state.cfg.endpoints == before.cfg.endpoints
+    assert e.state.cfg.attachments == {retained_endpoint: survivor}
+    assert e.state.cfg.ports[survivor] == before.cfg.ports[survivor]
+    assert e.state.counters[survivor] == before.counters[survivor]
+    assert e.state.pgens[survivor] == before.pgens[survivor]
+    assert e.state.fdb == survivor_fdb
+    assert all(job.port_id != pid for job in e.state.jobs.values())
+    assert e.state.epoch == before.epoch and e.state.activation == before.activation
+    assert e.state.cfg.ports[survivor].alias == "dirty"
+    assert e.store.load().ports[survivor].alias == "saved"
+    assert e.snapshot()["configuration_status"]["unsaved"]
+    deletion = next(row for row in e.state.events if row["kind"] == "port-delete")
+    down = next(row for row in e.state.events if row["kind"] == "linkDown" and row["port_id"] == pid)
+    assert deletion["if_index"] == down["if_index"] == old_port.if_index
+    assert (down["before"], down["after"]) == (1, 2)
+    assert before.cfg.ports[pid] == old_port  # Captured read remains immutable.
+    old_index = oid(f"1.3.6.1.2.1.2.2.1.1.{old_port.if_index}")
+    assert int(projection.get(old_index)[1]) == old_port.if_index
+    assert Projection(e.state, ["1.3.6"]).get(old_index)[1].tagSet == rfc1905.noSuchInstance.tagSet
+    await e.execute("job", asdict(pending))
+    assert e.state.fdb == survivor_fdb
+    added = await e.execute("port-create", {}, key="create-port")
+    fresh = e.state.cfg.ports[added["id"]]
+    assert fresh.id != pid and fresh.bridge_port == 5 and fresh.if_index == 105
+    assert fresh.name == "Ethernet5" and fresh.pvid == 1 and fresh.admin_up
+    assert fresh.authentication.control == "force-authorized" and fresh.id not in e.state.cfg.attachments.values()
+    assert e.store.load().ports[fresh.id] == fresh
+    if restore == "process": e = Engine(e.store.load(), e.store)
+    else: await e.execute("reboot")
+    assert pid not in e.state.cfg.ports and e.state.cfg.ports[survivor].alias == "saved"
+    assert removed_endpoint in e.state.cfg.endpoints and removed_endpoint not in e.state.cfg.attachments
+    state = e.state
+    assert await e.execute("port-create", {}, key="create-port") == added
+    await e.execute("port-delete", {"id": pid}, key="remove-port")
+    assert e.state is state
+    for current in list(e.state.cfg.ports): await e.execute("port-delete", {"id": current})
+    assert not e.state.cfg.ports and e.store.load().switch.port_count == 0
+    await e.execute("reboot")
+    assert not e.state.cfg.ports and not e.state.counters
+    empty = Projection(e.state, ["1.3.6"])
+    assert int(empty.get("1.3.6.1.2.1.2.1.0")[1]) == 0
+    assert empty.get("1.3.6.1.2.1.17.7.1.4.3.1.2.1")[1].asOctets() == b""
+    fresh_id = (await e.execute("port-create", {}))["id"]
+    assert e.state.cfg.ports[fresh_id].bridge_port == 6 and e.state.cfg.ports[fresh_id].if_index == 106
+
+
+@pytest.mark.parametrize("bound", ["count", "bridge_port", "if_index"])
+async def test_port_inventory_exhaustion_has_no_prefix(bound):
+    from switchlab.models import initial_configuration
+    cfg = initial_configuration(256 if bound == "count" else 0)
+    if bound != "count": setattr(cfg.switch, "next_"+bound, 65536 if bound == "bridge_port" else 2147483648)
+    e = Engine(cfg); before = e.state
+    with pytest.raises(CommandError) as failure: await e.execute("port-create", {})
+    assert failure.value.status == 429 and e.state is before
+    assert not e.idempotency
+
+
+def test_port_allocator_legacy_sparse_migration_and_current_loss_fail_closed(store):
+    from switchlab.models import Configuration, initial_configuration
+    from switchlab.storage import split_configuration
+    cfg = initial_configuration(2); ports = list(cfg.ports.values())
+    ports[0].bridge_port = 65535; ports[0].if_index = 7
+    ports[1].bridge_port = 3; ports[1].if_index = 2147483647
+    raw = cfg.model_dump(mode="json"); raw["schema_version"] = 4
+    for field in ("next_bridge_port", "next_if_index"): raw["switch"].pop(field)
+    original = copy.deepcopy(raw)
+    migrated = Configuration.model_validate(raw)
+    assert raw == original
+    assert (migrated.switch.next_bridge_port, migrated.switch.next_if_index) == (65536, 2147483648)
+    lab, startup = split_configuration(migrated)
+    startup["schema_version"] = 4
+    for field in ("next_bridge_port", "next_if_index"): lab["switch"].pop(field)
+    with store.transaction():
+        store.put("configuration_format", 1); store.put("lab_configuration", lab)
+        store.put("startup_configuration", startup); store.put("startup_revision", 7)
+    assert store.load() == migrated and store.get("configuration_format") == 1
+    for malformed in (4.0, "4", True, 5):
+        with store.transaction(): store.put("startup_configuration", {**startup, "schema_version": malformed})
+        with pytest.raises(ValueError, match="configuration schema"): store.load()
+    with store.transaction(): store.put("startup_configuration", startup)
+    Engine(store.load(), store)
+    assert store.load() == migrated and store.get("configuration_format") == 2
+    current = store.get("lab_configuration"); current["switch"].pop("next_if_index")
+    with store.transaction(): store.put("lab_configuration", current)
+    with pytest.raises(ValueError): store.load()
+    raw["schema_version"] = 5
+    with pytest.raises(ValidationError, match="requires port allocators"): Configuration.model_validate(raw)

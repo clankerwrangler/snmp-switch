@@ -25,7 +25,7 @@ def octets(value):
 
 
 def entity_inventory(cfg):
-    """Return the fixed emulated inventory used by projection and change detection."""
+    """Return the live emulated inventory used by projection and change detection."""
     records = [(1, cfg.switch, cfg.switch.description, 0, 3, -1, None)]
     records.extend((p.bridge_port + 1, p, "Emulated Ethernet port", 1, 10, p.bridge_port, p.if_index)
                    for p in sorted(cfg.ports.values(), key=lambda p: p.bridge_port))
@@ -43,7 +43,7 @@ def entity_inventory(cfg):
 
 
 def port_list(state, predicate):
-    data = bytearray((max(p.bridge_port for p in state.cfg.ports.values()) + 7) // 8)
+    data = bytearray((max((p.bridge_port for p in state.cfg.ports.values()), default=0) + 7) // 8)
     for p in state.cfg.ports.values():
         if predicate(p):
             data[(p.bridge_port-1)//8] |= 0x80 >> ((p.bridge_port-1) % 8)

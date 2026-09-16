@@ -1,7 +1,7 @@
 # SNMP Switch Emulator
-## Technical specification · revision 4
+## Technical specification · revision 5
 
-**Date:** 2026-09-10
+**Date:** 2026-09-16
 
 **Implementation target:** current application
 
@@ -39,7 +39,7 @@ The first release includes a web UI, an automation API, SNMPv2c and SNMPv3 reads
 
 Defaults are 24 ports, VLAN 1, administrative enablement on, direct attachment mode, no endpoints attached, 1 Gbit/s configured port speed, a 300-second MAC age, a 1-second first-activity delay, a 30-second refresh interval, and automatic time advancement. The bridge aging range exposed on the wire follows its defined syntax; shortened TLC lifetimes are abstract test units, not wire values. [R1]
 
-Numeric defaults can change without changing the behavioral contract. Port count is selected when initializing the switch and fixed thereafter in the first release. Endpoint and VLAN inventories remain editable at runtime. SNMP access starts unconfigured, not with an implicit `public` community. Public defaults set `identity.sys_object_id: null`; the identity setup gate in section 6.2 applies before any SNMP listener or notification sender starts.
+Numeric defaults can change without changing the behavioral contract. Port, endpoint, and VLAN inventories remain editable at runtime; an empty chassis is valid. At most 256 ports may be present. SNMP access starts unconfigured, not with an implicit `public` community. Public defaults set `identity.sys_object_id: null`; the identity setup gate in section 6.2 applies before any SNMP listener or notification sender starts.
 
 ## 2. State and identifiers
 
@@ -47,7 +47,7 @@ Numeric defaults can change without changing the behavioral contract. Port count
 
 | Record | Required fields and rules |
 |---|---|
-| Switch | Stable UUID; name, description, contact, location; `identity.sys_descr`; nullable `identity.sys_object_id`; base MAC; listener binding and SNMP enablement; port count; selected legacy VLAN; aging configuration; limits; schema version. |
+| Switch | Stable UUID; name, description, contact, location; `identity.sys_descr`; nullable `identity.sys_object_id`; base MAC; listener binding and SNMP enablement; live port count and persisted `next_bridge_port`/`next_if_index` allocators; selected legacy VLAN; aging configuration; limits; schema version. |
 | Port | Stable internal ID, bridge-port number, `ifIndex`, name/alias, admin flag, direct/shared mode, shared-partner presence, forced-link-down flag, speed, MTU, PVID, independent admitted/untagged/forbidden VLAN sets, link-notification enablement; authentication control/method/host mode and explicit fallback choices. |
 | VLAN | VID, name, FDB ID, management creation/change times. VLAN 1 always exists. |
 | Endpoint | UUID, display name, optional metadata, active/silent setting, source entries, configuration revision. An attachment is stored separately. |
@@ -63,7 +63,7 @@ VIDs are 1–4094. Explicit endpoint tags may refer to an unconfigured VID. VLAN
 
 MAC input accepts conventional hex notation and normalizes to six bytes. Multicast, broadcast, zero, and malformed source MACs are rejected. Duplicate unicast MACs between endpoints, between source entries, or between VLANs are allowed. Labels and endpoint metadata are not used to decide forwarding-table ownership.
 
-Port numbers, bridge-port numbers, and `ifIndex` are distinct concepts. The initial allocator can use bridge ports 1…N and interface indexes 101…100+N. FDB IDs are stable and independent of the VID; the default mapping is `1000 + VID`. Persist or reproducibly derive these assignments. Never compact interface indexes after a rename. The bridge-port-to-interface relationship must use `dot1dBasePortIfIndex`. [R1]
+Port numbers, bridge-port numbers, and `ifIndex` are distinct concepts. Initial ports use bridge ports 1…N and interface indexes 101…100+N. Separate durable monotonic allocators issue fresh bridge ports (1–65535) and ifIndexes (1–2147483647); the next values 65536 and 2147483648 mean exhausted. Add fails atomically at either exhausted allocator or the 256-live-port cap. Deletion, reboot, and restart never compact or reuse these numbers. Surviving IDs and mappings remain unchanged. FDB IDs are stable and independent of the VID; the default mapping is `1000 + VID`. The bridge-port-to-interface relationship uses `dot1dBasePortIfIndex`. [R1]
 
 ### 2.2 Operational records
 
@@ -71,7 +71,7 @@ An FDB entry is keyed by `(fdb_id, mac)` and contains `bridge_port`, `last_seen_
 
 Operational state also includes scheduled activity, immutable pending jobs, simulated time, clock phase, real management uptime, interface counters/timestamps, a state revision, and notification queues. Saved endpoint instances are not FDB entries. Cached observations can outlive an attachment or the endpoint instance itself.
 
-## 3. Endpoint and link lifecycle
+## 3. Port, endpoint, and link lifecycle
 
 ### 3.1 Create, edit, clone, delete
 
@@ -92,6 +92,26 @@ The forced-down flag persists through connections, moves, edits, and restart. At
 Connect, disconnect, and move are atomic topology operations. Moving validates the destination before removing the old attachment. No observer may see an endpoint attached to two ports. An operational down transition flushes that port's dynamic learning and invalidates its activity jobs. A still-up shared port preserves cached learning after one source leaves. Administrative disablement preserves attachments.
 
 Link establishment and source learning remain separate. Connecting a silent endpoint can produce `linkUp` with no learned MAC. No accepted activity occurs while a port is operationally down.
+
+### 3.3 Port inventory
+
+Adding a port accepts an optional name, speed, and MTU. Defaults are
+`Ethernet{bridge_port}`, 1 Gbit/s, and 1500 bytes. Its fresh UUID and numeric
+identities receive the existing direct, admin-up, VLAN 1, force-authorized policy
+and no attachment. The new policy is durable without saving unrelated dirty policy.
+
+Deleting a port disconnects its endpoints but retains their source definitions,
+copied profiles, and the material/template library. End affected sessions and
+capture Accounting-Stop with Admin-Reset before removing port context. Retire
+only affected authentication/activity work, FDB rows, counters, PAE state, and
+saved port policy. An up port produces a captured linkDown through the existing
+notification gates. Commit the entire change before publication; survivors keep
+their identities, runtime state, and running/saved policy. Both inventory changes
+survive reboot and process restart. The last port may be deleted.
+
+SNMP projections expose current ports only. A queued SET naming a removed
+interface fails against current inventory; a newly added port cannot inherit its
+OID or be targeted by the old request. Existing response ownership is unchanged.
 
 ## 4. VLAN and FDB behavior
 
@@ -226,7 +246,7 @@ Q-BRIDGE exposes the full VLAN-aware FDB. Its index is the FDB ID followed by th
 
 Configured VLAN names and independent membership sets appear through the static table and the approved SET subset. The current egress-membership table adds active authorized client VLAN membership to configured membership and updates the affected change clock. Static membership, saved PVID, and current untagged membership remain configured values. Every configured VLAN is permanent and active in this release; dynamic VLAN registration is not implemented. [R2]
 
-Serialize a `PortList` as bridge-port bits, most-significant bit first within each octet. Use a stable length sufficient for the highest bridge port. Do not use `ifIndex` as the bit position. FDB MAC indexes use six octet subidentifiers without an added length subidentifier. OID keys are integer sequences, never strings sorted lexically.
+Serialize a `PortList` as bridge-port bits, most-significant bit first within each octet. Use the canonical length sufficient for the highest present bridge port, or zero octets for an empty chassis. Do not use `ifIndex` as the bit position. FDB MAC indexes use six octet subidentifiers without an added length subidentifier. OID keys are integer sequences, never strings sorted lexically.
 
 The formal projections contain sets and maps, not wire encodings. In particular, `IfTable` in the model is keyed by bridge port for convenient joins; the wire interface tables must instead be indexed by `ifIndex`.
 
@@ -282,7 +302,7 @@ After the final ready claim, one synchronous interval commits, publishes, materi
 
 ### 6.6 Read-only ENTITY inventory
 
-Let `E = 1.3.6.1.2.1.47` and `P = E.1.1.1.1`. Physical cells are `P.<column>.<physicalIndex>`. Chassis index 1 and port index `bridge_port + 1` are stable and independent of `ifIndex`, names, VLANs, and attachments. Only the emulated chassis and fixed ports appear. [R16]
+Let `E = 1.3.6.1.2.1.47` and `P = E.1.1.1.1`. Physical cells are `P.<column>.<physicalIndex>`. Chassis index 1 and port index `bridge_port + 1` are stable and independent of `ifIndex`, names, VLANs, and attachments. Only the emulated chassis and currently present ports appear. [R16]
 
 | Physical columns | Syntax / value |
 |---|---|
@@ -322,7 +342,7 @@ New users default to `authPriv` with no group. New groups default to `authPriv` 
 
 Credential-wide disablement stops reads, writes, and traps. Read-only access does not grant writes, write-only access does not grant reads, and target association grants neither. A v3 user without a group has no incoming access but can still serve independently enabled trap targets. Either incoming permission can hold the listener; outgoing trap transport is independent. One enabled credential identifies each community or v3 username in the single SNMP engine. Target-linked v3 traps retain the user's profile, keys, username, and local engine identity.
 
-Configuration schema 4 has one `credentials` collection with version-specific community/user records and one `groups` collection. Group creation, editing, and deletion use the same revision-checked transaction as other configuration. Deletion rejects any member reference, including disabled users. Sparse updates preserve omitted permission fields and secrets. APIs return secret-presence flags, not secrets; stored configuration is encrypted with a separately stored key. Web authentication remains separate. Scenario schema 1 excludes credentials, groups, identity, notification destinations, RADIUS settings, port authentication, and supplicant profiles; import preserves destination security configuration.
+Configuration schema 5 has one `credentials` collection with version-specific community/user records and one `groups` collection. Group creation, editing, and deletion use the same revision-checked transaction as other configuration. Deletion rejects any member reference, including disabled users. Sparse updates preserve omitted permission fields and secrets. APIs return secret-presence flags, not secrets; stored configuration is encrypted with a separately stored key. Web authentication remains separate. Scenario schema 1 excludes credentials, groups, identity, notification destinations, RADIUS settings, port authentication, and supplicant profiles; import preserves destination security configuration.
 
 Changing a saved credential's protocol requires fresh active protocol secrets and explicit incoming-access intent. `CredentialWrite.access_transfer` is request-only: `keep` copies the current saved policy and `none` denies incoming access. A v2c-to-v3 conversion also requires an explicit `security_level` and accepts an explicitly present `group_id` instead of `access_transfer`. `keep` creates one group with that profile as its minimum; a selected existing group or null uses that exact choice. A v3-to-v2c conversion requires `keep` or `none`; keeping access copies the selected group's policy into the community. Community protection has no USM minimum, so copied active permissions can become usable even if the old user could not meet its group minimum. Missing/conflicting intent and concurrent permission overrides are rejected. IDs, targets, other members, and retained groups are unchanged; a failed save publishes neither a conversion nor a new group. Fresh Add and inline target creation need no transfer intent and start with no incoming access.
 
@@ -352,12 +372,12 @@ One assembled `Runtime.cfg` drives consumers. The encrypted Store separates auto
 
 | Lifetime | Existing fields |
 |---|---|
-| Durable physical lab | Switch ID, port count, base MAC, description and FDB/endpoint/source capacities; port ID, ifIndex, bridge-port, name, mode, shared partner, forced fault, speed and MTU; complete endpoints/source identities, tags, activity and copied supplicant profiles; attachments and paused mode; complete peer material/template catalog. These hardware choices describe this simulator. |
+| Durable physical lab | Switch ID, live port count and both monotonic allocators, base MAC, description and FDB/endpoint/source capacities; port ID, ifIndex, bridge-port, name, mode, shared partner, forced fault, speed and MTU; complete endpoints/source identities, tags, activity and copied supplicant profiles; attachments and paused mode; complete peer material/template catalog. These hardware choices describe this simulator. |
 | Running/startup switch policy | Switch name, contact, location, advertised identity, legacy VLAN, aging and notification queue limit; port alias/admin/PVID/admitted/untagged/forbidden/notification/authentication policy; VLAN records; SNMP listener, views, communities, users, groups and trap targets; RADIUS Access/accounting/DAS servers, trust/secrets, NAS identity and timers, excluding the peer material/template catalog. |
 | Ephemeral runtime | Learned FDB, counters, simulation time, jobs, sessions, grants, attempts, PAE observations and current-generation scheduling. |
 | Independent durable bookkeeping | Administrator hash and external encryption key; USM identity/boots; monotonic revisions, bounded events/idempotency/outboxes; accounting sequence/drop state; DAS generations, replay decisions/tombstones and highwater. These are never copied or rolled back from startup. |
 
-Existing validated complete configuration seeds both fragments atomically on upgrade. Loading alone does not write; initialization publishes the split before consumers activate and removes the old complete key in that transaction. Partial or malformed fragments and missing cross-policy references fail initialization. Retained physical IDs select saved port policy; removed ports cannot reappear, and a genuinely new ID uses existing VLAN1/force-authorized initial policy rather than an old same-index port's settings. Invalid attachments are rejected. Current APIs still have fixed interface inventory. Peer material references validate within the durable catalog; no raw startup export or new orphan store is introduced.
+Configuration schema 5 uses split storage format 2. Recognized older whole configurations and split format 1/schema 4 migrate atomically before consumers activate; loading alone does not write. Each allocator starts above its independent existing maximum (empty defaults: bridge 1, ifIndex 101). Missing current-format allocators, malformed fragments/discriminators, or invalid references fail initialization rather than reseeding identities. Retained physical IDs select saved port policy; add/delete reconcile only new/removed policy rows. Peer material references validate within the durable catalog; no raw startup export or orphan store is introduced.
 
 Management reboot and process restart compose saved switch policy onto the current lab, discarding unsaved logical edits. End live access/accounting segments, clear FDB learning, reset counters, management uptime and simulation time, invalidate pre-boot work, cancel the old notification queue with its reason, and restart source delays. Preserve endpoints, source credentials, connections, hardware/fault properties and paused/running mode. A paused restored lab relearns only after manual advancement or resume. Composition and required bookkeeping must commit before publication; a failed reboot leaves current running state intact.
 
@@ -390,6 +410,7 @@ separate required work, not substitutes for validation.
 
 | Mutation owner | Required dependency checks |
 | --- | --- |
+| Port inventory | Fresh identities and live capacity on add; attached endpoints, sessions, work, runtime rows, and saved policy on delete |
 | Port membership / VLAN deletion | Changed port memberships, PVID, named VLANs, and deletion fallback; direct-mode occupancy when changed |
 | VLAN creation / legacy selection | New FDB identifier uniqueness / selected VLAN existence |
 | Endpoint/source inventory or capacity limit | Edited profiles and material references; applicable endpoint/source count limits |
@@ -427,7 +448,8 @@ Version routes under `/api/v1`. UUIDs are opaque. Mutations accept an expected r
 
 | Route family | Operations |
 |---|---|
-| `/state`, `/switch`, `/ports/{id}` | Snapshot, identity/settings, port configuration and link controls. |
+| `/state`, `/switch` | Snapshot and identity/settings. |
+| `/ports`, `/ports/{id}` | POST creates from optional name/speed/MTU; PATCH edits; DELETE removes even when attached. Mutations return `id`; numeric allocators are read-only. |
 | `/endpoints`, `/endpoints/{id}` | List/create/read/edit/delete; reject deletion while attached. |
 | `/endpoints/{id}/sources` | Atomically replace the source list while preserving explicit source IDs. |
 | `/endpoints/{id}/attachment` | PUT attaches/moves; DELETE detaches. Destination validation precedes any move. |
@@ -458,9 +480,11 @@ introduced.
 
 ### 10.2 Web UI
 
-Provide a switch port grid, a reusable endpoint library with a source editor, a VLAN editor, distinct **SNMP**, **RADIUS**, and general **Settings** destinations, live interface/MAC address/VLAN tables, and an event history. General settings retain switch name/location/contact, base MAC, learning limits, and reboot; SNMP owns advertised identity, access, views, and notifications. Forms share the existing sparse, revision-checked commands. Each form owns its opening revision (or explicit preview revision); a canceled or replaced form cannot dispatch after a deferred file read or borrow another form's revision. Once dispatched, a command is not retracted by closing the form. One whole-app **Save configuration** action shows saved/unsaved status; logical/mixed forms use **Apply**, while durable endpoint/material/template/profile edits retain **Save**. Reboot warns that unsaved switch policy is discarded while clients/connections remain. The compact **Simulation** header control reveals the current time and **Pause/Resume**, **+1s**, and **Advance…** controls. It closes on navigation; opening or closing it does not change clock mode. The port panel distinguishes admin state, carrier, forced-down state, **Port VLAN ID (PVID)** and independent **Allowed VLANs (configured)**, untagged, and forbidden sets, shared partner, attachments, and learned MAC count. Untouched Untagged VLANs preview the API PVID/untagged-membership update; a user-edited field is exact, including empty. The SNMP settings page has compact community, user, and group sections with ordinary Add/Edit/Delete controls. Community and group forms use one **Access** dropdown: **None (traps only)**, **Read**, **Read/write**, or **Write only**. Conditional fields preserve independent read/write views and networks. Mode changes retain drafts, but hidden final-inactive restriction edits are not submitted. User forms select a group alongside authentication and global enablement, and show security-level/minimum mismatches. Protocol changes require an explicit incoming-access choice without a preselected transfer. The service card shows one actual **Listener status**, its address/port, engine identity, and independent trap transport, not separate per-access status rows. The document title is **Switch Lab**. The full-width selected-port detail uses a compact link-status header, quieter interface/speed/learning metadata, grouped link and configured VLAN facts, attachments, and readable client rows. Effective authorization stays separate from configured VLAN policy and carrier. Existing source/session actions remain available; narrow layouts stack the same client fields without changing overview colors. The RADIUS page uses five always-visible cards for Access, templates, full-width certificates, accounting, and dynamic authorization. Authentication servers remain visible within Access; compact header actions open the existing forms. CA/client certificate lists show separate template and copied-source reference counts. Bounded PEM file selection or paste is a local draft until Save; imports never implicitly select trust. Saved contents are not redisplayed; sparse replacement and reference validation remain in the existing material owner. Client rows provide on-demand allowlisted **Returned RADIUS attributes** and the shared history from existing bounded events. Missing, present, and invalid returned values are distinct from effective policy. Unclassified/private attributes expose presence/count only. Background refresh preserves disclosure, focus, scroll, and selection; accounting delivery status does not determine authorization. Endpoint profiles remain in the endpoint library; there is no parallel endpoint inventory.
+Provide a switch port grid, a reusable endpoint library with a source editor, a VLAN editor, distinct **SNMP**, **RADIUS**, and general **Settings** destinations, live interface/MAC address/VLAN tables, and an event history. General settings retain switch name/location/contact, base MAC, learning limits, and reboot; SNMP owns advertised identity, access, views, and notifications. Forms share the existing sparse, revision-checked commands. Each form owns its opening revision (or explicit preview revision); a canceled or replaced form cannot dispatch after a deferred file read or borrow another form's revision. Once dispatched, a command is not retracted by closing the form, but its late result cannot select or dismiss a replacement form. One whole-app **Save configuration** action shows saved/unsaved status; logical/mixed forms use **Apply**, while durable endpoint/material/template/profile edits retain **Save**. Reboot warns that unsaved switch policy is discarded while clients/connections remain. The compact **Simulation** header control reveals the current time and **Pause/Resume**, **+1s**, and **Advance…** controls. It closes on navigation; opening or closing it does not change clock mode. The port panel distinguishes admin state, carrier, forced-down state, **Port VLAN ID (PVID)** and independent **Allowed VLANs (configured)**, untagged, and forbidden sets, shared partner, attachments, and learned MAC count. Untouched Untagged VLANs preview the API PVID/untagged-membership update; a user-edited field is exact, including empty. The SNMP settings page has compact community, user, and group sections with ordinary Add/Edit/Delete controls. Community and group forms use one **Access** dropdown: **None (traps only)**, **Read**, **Read/write**, or **Write only**. Conditional fields preserve independent read/write views and networks. Mode changes retain drafts, but hidden final-inactive restriction edits are not submitted. User forms select a group alongside authentication and global enablement, and show security-level/minimum mismatches. Protocol changes require an explicit incoming-access choice without a preselected transfer. The service card shows one actual **Listener status**, its address/port, engine identity, and independent trap transport, not separate per-access status rows. The document title is **Switch Lab**. The full-width selected-port detail uses a compact link-status header, quieter interface/speed/learning metadata, grouped link and configured VLAN facts, attachments, and readable client rows. Effective authorization stays separate from configured VLAN policy and carrier. Existing source/session actions remain available; narrow layouts stack the same client fields without changing overview colors. The RADIUS page uses five always-visible cards for Access, templates, full-width certificates, accounting, and dynamic authorization. Authentication servers remain visible within Access; compact header actions open the existing forms. CA/client certificate lists show separate template and copied-source reference counts. Bounded PEM file selection or paste is a local draft until Save; imports never implicitly select trust. Saved contents are not redisplayed; sparse replacement and reference validation remain in the existing material owner. Client rows provide on-demand allowlisted **Returned RADIUS attributes** and the shared history from existing bounded events. Missing, present, and invalid returned values are distinct from effective policy. Unclassified/private attributes expose presence/count only. Background refresh preserves disclosure, focus, scroll, and selection; accounting delivery status does not determine authorization. Endpoint profiles remain in the endpoint library; there is no parallel endpoint inventory.
 
 The SNMP settings page labels the identity field **System object ID (`sysObjectID`)** and asks for a full numeric OID. Do not prefill it with a placeholder in the public UI. Explain that it changes advertised identity only. When unset, show **SNMP disabled: configure a system object ID** without hiding simulation controls. Warn when the documentation-only development placeholder is selected, including when an operator deliberately enters it in a public build. [R15]
+
+The port grid keeps **Add port** available even with no ports. Selected-port **Delete port** confirms permanent port/configuration removal and endpoint disconnection while retaining the library. After deletion, selection falls back to the first surviving port or the empty view; successful Add selects the new port. An empty attachment chooser offers Add and disables Connect.
 
 The live FDB view shows MAC, VID, FDB ID, bridge port, joined `ifIndex`, last observation, and remaining simulated age. Cached entries without current endpoint instances remain visible; do not remove them merely because no library row can be joined.
 

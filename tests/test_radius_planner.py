@@ -41,7 +41,7 @@ def fixture():
         port.authentication.control = "auto"
         port.authentication.host_mode = "multi-auth"
     ports["p2"].authentication.host_mode = "multi-host"
-    cfg = Configuration(switch=Switch(port_count=3, name="Current NAS"), ports=ports,
+    cfg = Configuration(switch=Switch(port_count=3, next_bridge_port=4, next_if_index=104, name="Current NAS"), ports=ports,
                         vlans={v:Vlan(vid=v,fdb_id=1000+v) for v in (1,20,30,40)})
     cfg.radius.nas_ip_address = "192.0.2.9"
     endpoint = Endpoint(id="ep", name="Synthetic", sources=[Source(mac=MAC_C),Source(mac=MAC_D)])

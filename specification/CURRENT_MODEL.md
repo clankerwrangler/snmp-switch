@@ -10,11 +10,11 @@ and [application validation](../docs/VALIDATION.md) for implementation tests.
 
 | Model | State and properties | Application boundary |
 | --- | --- | --- |
-| `Switch.tla` | Endpoint/port/VLAN references, independent VLAN learning, legal FDB entries, generation-checked activity, link events, and fixed ENTITY joins | Runtime scheduling, invalidation, port/VLAN edits, and MIB projection |
+| `Switch.tla` | Endpoint/port/VLAN references, independent VLAN learning, legal FDB entries, generation-checked activity, link events, live/issued port identities, and stable ENTITY joins | Runtime scheduling, invalidation, port/VLAN edits, and MIB projection |
 | `ReadAccess.tla` | Shared credential/view/target references, independent read/write grants, current read authorization, coherent snapshots, and atomic inline creation | Authentication, source filtering, credential saves, and per-PDU reads |
 | `SetTransactions.tla` | Existing switch/access state; simultaneous candidate validation, original error positions, atomic commit/rejection, and stale queued-request denial | SET planner and engine transaction |
 | `GroupedAccess.tla` | Canonical communities/users/groups, policy projection into the existing access/SET owners, normalized migration, atomic saves, and shared-generation invalidation | Schema loading, group/credential commands, and incoming authorization |
-| `EntityInventory.tla` | Fixed physical/alias/interface identity, independent filtered snapshots, and actual-row-change timestamps | Read-only ENTITY projection and management uptime |
+| `EntityInventory.tla` | Surviving physical/alias/interface identity, independent filtered snapshots, and actual-row-change timestamps | Read-only ENTITY projection and management uptime |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original MP/security record association, exact ownership through admission, consumption/discard, expiry, reuse, and response failure | Pinned response-lifetime integration |
 | `RadiusAuthorization.tla` | Current authorization captures, lease/VLAN invalidation, and link/accounting independence | Per-port/MAC authorization and existing runtime admission |
 | `RadiusDynamicAuthorization.tla` | Conjunctive session selection, all-or-none CoA/Disconnect, and cached duplicate decisions | Existing engine transaction and dynamic-request handling |
@@ -24,7 +24,10 @@ and [application validation](../docs/VALIDATION.md) for implementation tests.
 
 Core safety includes `TypeOK`, `InventoryOK`, `FdbOK`, `JobsOK`, `MibOK`, and
 `TrapsOK`; transition properties require valid learning provenance and prevent
-stale jobs from committing. Creation/deletion of a VLAN invalidates explicitly
+stale jobs from committing. `present` selects live ports; monotonically growing
+`issued` prevents deleted identities from returning. Add initializes default policy;
+delete detaches affected endpoints through the existing `Mutate` owner.
+Creation/deletion of a VLAN invalidates explicitly
 tagged source work even when the tag is not admitted. Restricted liveness
 fixtures require source refresh, aging, and notification draining under their
 stated stable-input and service-fairness assumptions.
@@ -82,9 +85,9 @@ minimum, view, and membership changes invalidate every affected queued writer;
 label-only and same-value edits do not. Schema formats, conversion input rules,
 and sparse form drafts are covered by implementation tests, not these models.
 
-ENTITY has one chassis and fixed ports, with physical index `bridge_port + 1`
+ENTITY has one chassis and the currently present ports, with physical index `bridge_port + 1`
 and alias pointers to saved `ifIndex` values. No endpoints or VLANs add physical
-rows. Visible label/description changes update the timestamp; no-ops, rejection,
+rows. Inventory and visible label/description changes update the timestamp; no-ops, rejection,
 unrelated work, and clock wrap preserve it, while management reboot clears it.
 Clock-only graphs do not check reads: separate reachable-read and lifecycle
 fixtures check immutable observations and alias-only access without permission
@@ -130,7 +133,10 @@ actual durable lab/startup image. Logical API/SET changes do not save startup;
 mixed lab edits persist physical changes without saving dirty logical policy.
 Explicit Save captures running policy without resetting runtime or queued work.
 Management reboot applies confirmed startup to current physical IDs: removed
-hardware stays absent and replacement hardware receives defaults. `Switch.Reboot`
+hardware stays absent and replacement hardware receives defaults. Add/remove use
+the same commit/fault relation and reconcile only affected saved policy rows.
+Concrete independent numeric allocators, strict format migration, exhaustion,
+Accounting-Stop, and actual task cancellation remain application obligations. `Switch.Reboot`
 is the operational-reset component, not the complete restore transaction.
 
 Confirmed rollback preserves the previous state. Failed rollback or an unknown
@@ -166,11 +172,11 @@ traces; these do not collectively prove an unrestricted production-sized system.
 | Core | Full `Smoke`: one port/endpoint/source/MAC, VLAN 1, queue 0. Focused graphs separately cover nonzero queues, multiple ports/endpoints/sources, VLAN lifecycle, and conditional liveness. |
 | Core scenarios | Two ports/endpoints, three source slots each, three MACs, VLANs 1/10/20/30; queue 8 except overflow queue 1; prescribed sequences with completion assertions. |
 | Access | Up to two credentials/views/targets/secrets, opaque snapshots, one pending read; separate reference and authorization fixtures. |
-| ENTITY | Two fixed ports, two labels, four-value clock; sparse port/index fixture and independent physical/alias/IF selections. |
+| ENTITY | Two available identities, initially one present, two labels, four-value clock; sparse port/index fixture and independent physical/alias/IF selections. |
 | SET graph | One port/endpoint/source/MAC, VLANs 1/10, two credentials/secrets/views, three tokens, one pending PDU, all 31 selected request forms. |
-| SET scenarios | Seven scripted cases, VLANs 1/10/20, up to four varbinds; bitmap/absent-destroy cases use two ports. |
+| SET scenarios | Seven scripted cases, VLANs 1/10/20, up to four varbinds; bitmap uses three identities with two initially live, including queued SET across delete/add; absent-destroy uses two ports. |
 | Response | One ticket plus foreign replacement identities; lifecycle graph, 19 reuse/diagnostic traces, 14 transaction traces, and 240 insertion-boundary branches. EventHistory adds 15 prescribed cases: two ports, one endpoint, VLANs 1/10, three tokens, one pending SET, at most three revisions and nine relevant records. |
-| Storage | Four Boolean-pair policies, three incarnation tokens, one queued item/four work kinds; 120 recovery branches, one retained/removed/replacement identity trace, and five legacy-seeding outcomes. |
+| Storage | Four Boolean-pair policies, three incarnation tokens, one queued item/four work kinds; 200 recovery branches, one retained/removed/replacement identity trace, and five legacy-seeding outcomes. |
 | RADIUS authorization | One client, two VLANs, three generation tokens, two-tick leases; automatic/manual ticks and independent accounting availability. |
 | RADIUS dynamic requests | Two clients, two VLANs, two session incarnations; one immutable request and its retained decision, optional conjunctive session selector, and per-client applicability. |
 | Groups | Two credentials, three groups, two views plus no-view, two opaque key bundles, three security levels, two source classes, two targets, one pending PDU. Eight normalized ownership cases and 54 queued/current-boundary traces replace detailed schema, conversion, form, and security-input cross-products. |
@@ -181,7 +187,8 @@ and local draft/file selection or cancellation project to stuttering of switch
 state. Each form captures its opening revision and lifetime. Save invokes the
 existing atomic command with that original revision; a canceled or replaced form
 cannot dispatch a deferred continuation or borrow its replacement's revision. Once a
-command is dispatched, closing the form does not retract it. Local selection
+command is dispatched, closing the form does not retract it; its later result cannot
+select or dismiss a replacement form. Local selection
 alone does not import material or change trust. This correspondence is an
 implementation/browser obligation, not an additional TLC draft-state graph.
 Event filters, readable summaries, paging, reversible grouping, and following or

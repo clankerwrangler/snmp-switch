@@ -124,7 +124,8 @@ async def test_worker_holds_timeline_and_publishes_before_continuing(configured,
 
 
 @pytest.mark.asyncio
-async def test_worker_bounds_and_cancellation_do_not_hold_engine_lock(configured,monkeypatch):
+@pytest.mark.parametrize("retirement", ["shutdown", "port-delete"])
+async def test_worker_bounds_and_cancellation_do_not_hold_engine_lock(configured,monkeypatch,retirement):
     import asyncio
     from switchlab.models import RadiusServer,Source
     cfg,pid,eid=configured;cfg.radius.servers=[RadiusServer(label="Synthetic",address=PEER[0],secret="synthetic-shared")]
@@ -141,9 +142,17 @@ async def test_worker_bounds_and_cancellation_do_not_hold_engine_lock(configured
     monkeypatch.setattr("switchlab.radius.native_exchange",exchange)
     await engine.execute("advance",{"duration_ms":5000});await engine.service_authentication();await all_started.wait()
     assert len(engine.state.radius_attempts)==len(engine._authentication_tasks)==8
-    await engine.close_authentication()
+    tasks=list(engine._authentication_tasks.values())
+    if retirement == "shutdown": await engine.close_authentication()
+    else:
+        await engine.execute("port-delete", {"id":pid})
+        await asyncio.gather(*tasks, return_exceptions=True)
+        assert all(task.cancelled() for task in tasks)
+        await engine.service_authentication()  # Existing worker owner reaps completed tasks.
+        assert not engine.state.radius_attempts and not engine.state.jobs
     assert len(cancelled)==8 and not engine._authentication_tasks and not engine.state.radius_sessions
-    with pytest.raises(CommandError):await engine.execute("advance",{"duration_ms":1})
+    if retirement == "shutdown":
+        with pytest.raises(CommandError):await engine.execute("advance",{"duration_ms":1})
 
 
 @pytest.mark.asyncio
