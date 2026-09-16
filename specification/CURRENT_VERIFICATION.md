@@ -6,6 +6,46 @@ queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
 
+## Port inventory follow-up (2026-09-16)
+
+Existing core, ENTITY, storage, and SET owners now cover live/issued port identity,
+add/delete, survivor preservation, zero ports, immutable reads, affected obsolete
+jobs, and queued SET rejection after deletion and fresh allocation. Storage adds
+add/remove to its existing commit/recovery relation, preserving unrelated saved
+and running policy. No catalog entry or independent inventory subsystem was added.
+
+| Completed check | Generated / distinct states |
+| --- | ---: |
+| `Smoke` | 8,187,877 / 750,240 |
+| `EntityInventory`, `EntitySparse` (each) | 108,033 / 3,072 |
+| `EntityReadConsistency` | 687,457 / 14,400 |
+| `EntityLifecycle` | 35 / 31 |
+| `StorageRecovery` (200 branches) | 5,000 / 4,800 |
+| `StartupLifecycle` | 34 / 28 |
+| `SetBitmapPorts` | 21 / 20 |
+| `SetTokenEquivalence` | 1,026 / 513 |
+| `SetTransactionsEquality` | 6,708,324 / 526,688 |
+
+All queues completed; the equality graph finished temporal checking in 355.513 s.
+Its earlier 180-second timeout remains incomplete. An initial storage parse error
+and mistaken config selector were corrected before the model-first checkpoint;
+neither counts as a pass. Inputs remained unchanged within the completed checks.
+After the core/ENTITY runs, the sole core edit names their unchanged initial set
+`InitialLivePorts == Ports`; only the later bitmap scenario overrides it. Storage
+checks use their independent module; SET checks and controls use final inputs.
+Four existing negative controls produced behavioral counterexamples: obsolete-job
+acceptance, wrong ENTITY alias, removed-hardware resurrection, and storage-fault
+gate removal. This is not a whole-catalog run or a composed/refinement proof.
+Independent numeric allocator bounds/migration, concrete RADIUS cleanup, HTTP,
+BER, and form lifetimes remain [application obligations](../docs/VALIDATION.md#port-inventory).
+
+Reproduce from `specification/` with the existing tools:
+
+```sh
+python3 run_tlc.py --jar /path/to/tla2tools.jar --models Smoke EntityInventory EntitySparse EntityReadConsistency EntityLifecycle StorageRecovery StartupLifecycle SetBitmapPorts SetTokenEquivalence SetTransactionsEquality --timeout 600 --output logs/port-inventory
+python3 tests/check_mutations.py --jar /path/to/tla2tools.jar --mutations accept_obsolete_job entity_alias_uses_bridge_port startup_resurrects_hardware storage_fault_gate_removed --output logs/port-inventory-controls
+```
+
 ## Integrated ownership follow-up (2026-09-16)
 
 Before product edits, the existing checks passed: `RadiusDynamicAuthorization`

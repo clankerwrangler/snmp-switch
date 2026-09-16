@@ -113,6 +113,7 @@ async def test_populated_encrypted_v3_store_migration_preserves_baseline_and_rel
     await engine.execute('credential-save',{'label':'Preserved user','version':'3','username':'baseline-user','security_level':'authPriv','auth_key':'synthetic-auth-key','priv_key':'synthetic-priv-key','group_id':group})
     await engine.execute('target-save',{'address':'192.0.2.8','port':2162,'credential_id':community,'enabled':False})
     legacy=engine.state.cfg.model_dump(mode='json');legacy['schema_version']=3;legacy.pop('radius')
+    legacy['switch'].pop('next_bridge_port');legacy['switch'].pop('next_if_index')
     for port in legacy['ports'].values():port.pop('authentication')
     for endpoint in legacy['endpoints'].values():
         for source in endpoint['sources']:source.pop('supplicant')
@@ -125,10 +126,11 @@ async def test_populated_encrypted_v3_store_migration_preserves_baseline_and_rel
     try:
         loaded=store.load();assert store.get('configuration')==original
         normalized=loaded.model_dump(mode='json');normalized['schema_version']=3;normalized.pop('radius')
+        normalized['switch'].pop('next_bridge_port');normalized['switch'].pop('next_if_index')
         for port in normalized['ports'].values():port.pop('authentication')
         for endpoint in normalized['endpoints'].values():
             for source in endpoint['sources']:source.pop('supplicant')
-        assert normalized==original and loaded.schema_version==4
+        assert normalized==original and loaded.schema_version==5
         assert all(port.authentication.control=='force-authorized' for port in loaded.ports.values())
         assert not loaded.radius.servers and not loaded.radius.dynamic_authorization.senders
         assert not loaded.radius.accounting.enabled and not loaded.radius.dynamic_authorization.enabled
@@ -139,7 +141,7 @@ async def test_populated_encrypted_v3_store_migration_preserves_baseline_and_rel
         saved=migrated.state.cfg.model_dump(mode='json')
     finally:store.close()
     store=Store(str(path),key)
-    try:assert store.load().model_dump(mode='json')==saved and store.get('startup_configuration')['schema_version']==4 and store.get('configuration') is None
+    try:assert store.load().model_dump(mode='json')==saved and store.get('startup_configuration')['schema_version']==5 and store.get('configuration') is None
     finally:store.close()
 
 

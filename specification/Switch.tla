@@ -55,7 +55,7 @@ Token0 == CHOOSE t \in Tokens : TRUE
 Fresh(used) == CHOOSE t \in Tokens \ used : TRUE
 At(x, p) == {e \in x.exists : x.attached[e] = p}
 Carrier(x, p) == IF x.mode[p] = "shared" THEN x.partner[p] ELSE At(x, p) # {}
-Oper(x, p) == x.admin[p] /\ ~x.fault[p] /\ Carrier(x, p)
+Oper(x, p) == p \in x.present /\ x.admin[p] /\ ~x.fault[p] /\ Carrier(x, p)
 VlanOf(id) == CHOOSE v \in VLANs : VlanToFdb[v] = id
 Live(x) == {k \in FdbKeys : x.fdb[k].port # NoPort}
 Effective(x, sk) == IF x.sources[sk].tag = Untagged
@@ -127,7 +127,8 @@ Mutate(x, es, ps) ==
           !.traps = AppendBounded(s.traps, ev),
           !.overflow = s.overflow \/ Len(s.traps) + Len(ev) > QueueLimit]
 
-InitialState == [exists |-> {},
+InitialLivePorts == Ports
+InitialState == [present |-> InitialLivePorts, issued |-> InitialLivePorts, exists |-> {},
     sources |-> [sk \in SourceKeys |-> NoSource], active |-> {},
     attached |-> [e \in Endpoints |-> NoPort],
     egen |-> [e \in Endpoints |-> Token0],
@@ -160,7 +161,21 @@ DeleteEndpoint(e) ==
           !.sources = [sk \in SourceKeys |-> IF sk[1] = e THEN NoSource ELSE @ [sk]]],
           {e}, {})
 
-HasRoom(p) == s.mode[p] = "shared" \/ At(s, p) = {}
+\* Ports is the finite identity universe. Issued identities never return to the
+\* allocation pool; concrete independent numeric high-water marks implement it.
+AddPort(p) ==
+    /\ p \notin s.issued
+    /\ Mutate([s EXCEPT !.present = @ \cup {p}, !.issued = @ \cup {p},
+          !.admin[p] = TRUE, !.mode[p] = "direct", !.partner[p] = FALSE,
+          !.fault[p] = FALSE, !.pvid[p] = 1, !.allowed[p] = {1},
+          !.untagged[p] = {1}, !.forbidden[p] = {}], {}, {p})
+DeletePort(p) ==
+    /\ p \in s.present
+    /\ Mutate([s EXCEPT !.present = @ \ {p},
+          !.attached = [e \in Endpoints |-> IF s.attached[e] = p THEN NoPort ELSE @ [e]]],
+          At(s,p), {p})
+InventoryNext == \E p \in Ports : AddPort(p) \/ DeletePort(p)
+HasRoom(p) == p \in s.present /\ (s.mode[p] = "shared" \/ At(s, p) = {})
 Connect(e, p) ==
     /\ e \in s.exists /\ s.attached[e] = NoPort /\ HasRoom(p)
     /\ Mutate([s EXCEPT !.attached[e] = p], {e}, {})
@@ -174,13 +189,17 @@ SetActive(e, on) ==
     /\ e \in s.exists /\ (e \in s.active) # on
     /\ Mutate([s EXCEPT !.active = IF on THEN @ \cup {e} ELSE @ \ {e}], {e}, {})
 SetAdmin(p, on) ==
+    /\ p \in s.present
     /\ s.admin[p] # on /\ Mutate([s EXCEPT !.admin[p] = on], {}, {p})
 SetFault(p, on) ==
+    /\ p \in s.present
     /\ s.fault[p] # on /\ Mutate([s EXCEPT !.fault[p] = on], {}, {p})
 SetMode(p, mode) ==
+    /\ p \in s.present
     /\ s.mode[p] # mode /\ (mode = "shared" \/ Cardinality(At(s, p)) <= 1)
     /\ Mutate([s EXCEPT !.mode[p] = mode, !.partner[p] = (mode = "shared")], {}, {p})
 SetPartner(p, on) ==
+    /\ p \in s.present
     /\ s.mode[p] = "shared" /\ s.partner[p] # on
     /\ Mutate([s EXCEPT !.partner[p] = on], {}, {p})
 
@@ -204,6 +223,7 @@ DeleteVlan(v) ==
                 !.legacy = IF s.legacy = v THEN 1 ELSE s.legacy]
        IN Mutate(x, TaggedEndpoints(v), ps)
 ConfigurePort(p, native, members) ==
+    /\ p \in s.present
     /\ native \in members /\ members \subseteq s.vlans
     /\ s.pvid[p] # native \/ s.allowed[p] # members
     /\ members \cap s.forbidden[p] = {}
@@ -216,7 +236,8 @@ SetLegacy(v) ==
     /\ v \in s.vlans /\ s.legacy # v
     /\ Mutate([s EXCEPT !.legacy = v], {}, {})
 ClearPort(p) ==
-    Mutate([s EXCEPT !.fdb = [k \in FdbKeys |->
+    /\ p \in s.present
+    /\ Mutate([s EXCEPT !.fdb = [k \in FdbKeys |->
          IF s.fdb[k].port = p THEN EmptyEntry ELSE s.fdb[k]]], {}, {p})
 
 SetPaused(on) ==
@@ -274,7 +295,7 @@ VlanNext ==
 ActivityNext ==
     \/ AutoTick \/ ManualTick \/ FinishStep
     \/ \E sk \in SourceKeys : QueueActivity(sk) \/ ApplyActivity(sk)
-Next == LibraryNext \/ TopologyNext \/ VlanNext \/ ActivityNext \/ DispatchTrap \/ Reboot
+Next == InventoryNext \/ LibraryNext \/ TopologyNext \/ VlanNext \/ ActivityNext \/ DispatchTrap \/ Reboot
         \/ (\E b \in BOOLEAN : SetPaused(b)) \/ (\E p \in Ports : ClearPort(p))
 Spec == Init /\ [][Next]_vars
 ServiceFairness ==
@@ -287,10 +308,10 @@ FairSpec == Spec /\ ServiceFairness
  readable columns. Wire OIDs, OCTET STRING bitmaps and TimeFilter belong to
  the SNMP adapter. Untagged and forbidden egress are independent configured membership sets.
 ***************************************************************************)
-IfTable == [p \in Ports |-> [ifIndex |-> IfIndex[p],
+IfTable == [p \in s.present |-> [ifIndex |-> IfIndex[p],
     ifAdminStatus |-> IF s.admin[p] THEN 1 ELSE 2,
     ifOperStatus |-> IF Oper(s, p) THEN 1 ELSE 2]]
-Dot1dBasePortTable == [p \in Ports |-> [dot1dBasePortIfIndex |-> IfIndex[p]]]
+Dot1dBasePortTable == [p \in s.present |-> [dot1dBasePortIfIndex |-> IfIndex[p]]]
 Dot1qTpFdbTable == [k \in Live(s) |-> [dot1qTpFdbPort |-> s.fdb[k].port,
                                      dot1qTpFdbStatus |-> 3]]
 LegacyMACs == {m \in MACs : <<VlanToFdb[s.legacy], m>> \in Live(s)}
@@ -299,26 +320,26 @@ Dot1dTpFdbTable == [m \in LegacyMACs |-> [dot1dTpFdbAddress |-> m,
 Dot1qFdbTable == [id \in {VlanToFdb[v] : v \in s.vlans} |->
     [dot1qFdbDynamicCount |-> Cardinality({k \in Live(s) : k[1] = id})]]
 Dot1qVlanCurrentTable == [v \in s.vlans |-> [dot1qVlanFdbId |-> VlanToFdb[v],
-    dot1qVlanCurrentEgressPorts |-> {p \in Ports : v \in s.allowed[p]},
-    dot1qVlanCurrentUntaggedPorts |-> {p \in Ports : v \in s.untagged[p]},
+    dot1qVlanCurrentEgressPorts |-> {p \in s.present : v \in s.allowed[p]},
+    dot1qVlanCurrentUntaggedPorts |-> {p \in s.present : v \in s.untagged[p]},
     dot1qVlanStatus |-> 2]]
 Dot1qVlanStaticTable == [v \in s.vlans |-> [
-    dot1qVlanStaticEgressPorts |-> {p \in Ports : v \in s.allowed[p]},
-    dot1qVlanStaticUntaggedPorts |-> {p \in Ports : v \in s.untagged[p]},
-    dot1qVlanForbiddenEgressPorts |-> {p \in Ports : v \in s.forbidden[p]},
+    dot1qVlanStaticEgressPorts |-> {p \in s.present : v \in s.allowed[p]},
+    dot1qVlanStaticUntaggedPorts |-> {p \in s.present : v \in s.untagged[p]},
+    dot1qVlanForbiddenEgressPorts |-> {p \in s.present : v \in s.forbidden[p]},
     dot1qVlanStaticRowStatus |-> 1]]
-Dot1qPvid == s.pvid
+Dot1qPvid == [p \in s.present |-> s.pvid[p]]
 
 
 (***************************************************************************
- ENTITY-MIB fixed physical inventory. UUID encoding and unknown-value sentinels
+ ENTITY-MIB live physical inventory. UUID encoding and unknown-value sentinels
  belong to the wire adapter. Labels and the change clock are exercised by the
  EntityInventory fixture; neither endpoint nor VLAN inventory adds hardware.
 ***************************************************************************)
 PhysicalIndex(p) == p + 1
-PhysicalPorts == {PhysicalIndex(p) : p \in Ports}
+PhysicalPorts == {PhysicalIndex(p) : p \in s.present}
 PhysicalDomain == {1} \cup PhysicalPorts
-PhysicalPort(i) == CHOOSE p \in Ports : PhysicalIndex(p) = i
+PhysicalPort(i) == CHOOSE p \in s.present : PhysicalIndex(p) = i
 EntPhysicalTable == [i \in PhysicalDomain |->
     [parent |-> IF i = 1 THEN 0 ELSE 1,
      class |-> IF i = 1 THEN 3 ELSE 10,
@@ -328,8 +349,8 @@ EntPhysicalContainsTable == [i \in PhysicalPorts |-> <<1, i>>]
 EntAliasMappingTable == [i \in PhysicalPorts |->
     [logicalIndex |-> 0, pointer |-> <<"ifIndex", IfIndex[PhysicalPort(i)]>>]]
 EntityOK ==
-    /\ DOMAIN EntPhysicalTable = {1} \cup {p + 1 : p \in Ports}
-    /\ Cardinality(PhysicalDomain) = Cardinality(Ports) + 1
+    /\ DOMAIN EntPhysicalTable = {1} \cup {p + 1 : p \in s.present}
+    /\ Cardinality(PhysicalDomain) = Cardinality(s.present) + 1
     /\ EntPhysicalTable[1].parent = 0 /\ EntPhysicalTable[1].position = -1
     /\ \A i \in PhysicalPorts :
           /\ EntPhysicalTable[i].parent = 1 /\ EntPhysicalTable[i].class = 10
@@ -340,8 +361,9 @@ EntityOK ==
           /\ EntAliasMappingTable[i].pointer = <<"ifIndex", IfTable[PhysicalPort(i)].ifIndex>>
 
 TypeOK ==
+    /\ s.present \subseteq s.issued /\ s.issued \subseteq Ports
     /\ s.exists \subseteq Endpoints /\ s.sources \in [SourceKeys -> SourceType \cup {NoSource}]
-    /\ s.active \subseteq s.exists /\ s.attached \in [Endpoints -> Ports \cup {NoPort}]
+    /\ s.active \subseteq s.exists /\ s.attached \in [Endpoints -> s.present \cup {NoPort}]
     /\ s.egen \in [Endpoints -> Tokens] /\ s.vlans \subseteq VLANs
     /\ s.vlanNames \in [VLANs -> 0..1]
     /\ s.pvid \in [Ports -> VLANs] /\ s.allowed \in [Ports -> SUBSET VLANs]
@@ -407,7 +429,10 @@ StaleJobCannotCommit == [][\A sk \in SourceKeys :
     IF s.pending[sk] = NoJob THEN TRUE
     ELSE (~ValidJob(s, sk, s.pending[sk]) /\ ApplyActivity(sk)) => s'.fdb = s.fdb]_vars
 
-StableInputs == <>[][UNCHANGED <<s.exists, s.sources, s.active, s.attached,
+InventoryNeverReuses == [][s.issued \subseteq s'.issued /\
+    (s'.present \ s.present) \cap s.issued = {}]_vars
+
+StableInputs == <>[][UNCHANGED <<s.present, s.issued, s.exists, s.sources, s.active, s.attached,
     s.egen, s.vlans, s.pvid, s.allowed, s.admin, s.mode, s.partner,
     s.fault, s.pgen, s.boot>>]_vars
 SourcePresent(sk) == IF ~Eligible(s, sk) THEN FALSE ELSE

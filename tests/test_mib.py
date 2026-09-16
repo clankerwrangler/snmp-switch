@@ -66,7 +66,7 @@ async def test_management_wrap_and_counter_wrap(engine):
     assert int(m.get("1.3.6.1.2.1.31.1.1.1.6.101")[1])==2**32+12
 
 
-@pytest.mark.parametrize("count", [1, 4, 24, 256])
+@pytest.mark.parametrize("count", [0, 1, 4, 24, 256])
 def test_entity_physical_types_and_inventory(count):
     cfg = initial_configuration(count)
     e = Engine(cfg)
@@ -103,6 +103,7 @@ def test_entity_sparse_independent_indexes_and_unknown_ids():
     cfg = initial_configuration(4)
     cfg.switch.id = "saved-non-uuid-switch"
     ports = list(cfg.ports.values())
+    cfg.switch.next_bridge_port = 65536; cfg.switch.next_if_index = 2147483648
     for p, bridge, interface in zip(ports, (1, 9, 300, 65535), (2147483647, 2, 400, 101)):
         p.bridge_port, p.if_index = bridge, interface
     prior_id = ports[0].id

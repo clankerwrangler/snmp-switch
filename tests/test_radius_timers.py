@@ -131,7 +131,7 @@ async def test_positive_time_renewal_does_not_hit_zero_time_guard(configured):
 async def test_retained_shared_mab_session_renews_without_destination_or_activity():
     cfg,pid,eid=plain();cfg.ports[pid].mode='shared';cfg.ports[pid].shared_partner=True
     other=Port(bridge_port=2,if_index=102,name='Destination');other.authentication.control='auto';other.authentication.method='mab'
-    cfg.ports[other.id]=other;cfg.switch.port_count=2;engine=Engine(cfg)
+    cfg.ports[other.id]=other;cfg.switch.port_count=2;cfg.switch.next_bridge_port=3;cfg.switch.next_if_index=103;engine=Engine(cfg)
     await engine.execute('advance',{'duration_ms':1000});key=next(iter(engine.state.radius_attempts));initial=engine.state.radius_attempts[key]
     await engine.execute('radius-result',{'port_id':pid,'mac':key[1],'attempt_id':initial.id,'result':controls(lease=2,idle=5,action=1)})
     await engine.continue_advance();session=engine.state.radius_sessions[key];original_id=session.id
@@ -150,7 +150,7 @@ async def test_retained_shared_mab_session_renews_without_destination_or_activit
 @pytest.mark.asyncio
 async def test_pre_move_renewal_stays_stale_and_independent_expiry_ends_cached_work():
     cfg,pid,eid=plain();cfg.ports[pid].mode='shared';cfg.ports[pid].shared_partner=True
-    other=Port(bridge_port=2,if_index=102,name='Destination');cfg.ports[other.id]=other;cfg.switch.port_count=2
+    other=Port(bridge_port=2,if_index=102,name='Destination');cfg.ports[other.id]=other;cfg.switch.port_count=2;cfg.switch.next_bridge_port=3;cfg.switch.next_if_index=103
     engine=Engine(cfg);await engine.execute('advance',{'duration_ms':1000});key=next(iter(engine.state.radius_attempts));first=engine.state.radius_attempts[key]
     await engine.execute('radius-result',{'port_id':pid,'mac':key[1],'attempt_id':first.id,'result':controls(lease=1,action=1)})
     await engine.continue_advance();await engine.execute('advance',{'duration_ms':1000})

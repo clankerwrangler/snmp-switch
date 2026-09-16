@@ -7,19 +7,19 @@ Values == [primary : BOOLEAN, secondary : BOOLEAN]
 OldValue == [primary |-> FALSE, secondary |-> FALSE]
 Fields == {"primary","secondary"}
 Kinds == {"api","set","background","notify"}
-Commands == {"api","set","lab","save","reboot","seed"}
+Commands == {"api","set","lab","save","reboot","seed","add","remove"}
 Outcomes == {"success","rolledBack","rollbackFailed","commitUnknown"}
 ActualDurability == {"old","candidate"}
 Faults == {"rollbackFailed","commitUnknown"}
 Edit(v, field) == [v EXCEPT ![field] = ~@]
 Result(status, index) == [status |-> status, index |-> index, operation |-> "none"]
 
-\* Two current hardware inventories; C replaces B's numeric slot, not its identity.
+\* Finite issued identities abstract durable independent monotonic index allocators.
 PortIds == {"A","B","C"}
-InitialLab == [ports |-> {"A","B"}, attached |-> {"B"}, sourceTag |-> 20]
-ReplacementLab == [ports |-> {"A","C"}, attached |-> {}, sourceTag |-> 20]
-Labs == {l \in [ports : SUBSET PortIds, attached : SUBSET PortIds, sourceTag : {20}] :
-          l.attached \subseteq l.ports}
+InitialLab == [ports |-> {"A","B"}, issued |-> {"A","B"}, attached |-> {"B"}, sourceTag |-> 20]
+ReplacementLab == [ports |-> {"A","C"}, issued |-> PortIds, attached |-> {}, sourceTag |-> 20]
+Labs == {l \in [ports : SUBSET PortIds, issued : SUBSET PortIds, attached : SUBSET PortIds, sourceTag : {20}] :
+          l.attached \subseteq l.ports /\ l.ports \subseteq l.issued}
 Policies == UNION {[ids -> BOOLEAN] : ids \in SUBSET PortIds}
 DefaultPolicy == FALSE
 Policy(lab,v) == [p \in lab.ports |-> IF p = "A" THEN v.primary ELSE v.secondary]
@@ -49,22 +49,31 @@ RebootLab == store.durable.lab
 \* An image denotes only these durable projections. Ordinary required event,
 \* revision and protocol transactions may stutter in this projection.
 Candidate(operation,field) ==
-    LET nextLab == Compose(ReplacementLab,store.published.policy)
+    LET hardware == CASE operation = "add" -> [store.published.lab EXCEPT
+              !.ports = @ \cup {"C"}, !.issued = @ \cup {"C"}]
+          [] operation = "remove" -> [store.published.lab EXCEPT
+              !.ports = @ \ {"B"}, !.attached = @ \ {"B"}]
+          [] OTHER -> ReplacementLab
+        nextLab == Compose(hardware,store.published.policy)
         published == CASE operation \in {"api","set"} ->
                 [store.published EXCEPT !.policy = EditPolicy(@,field)]
           [] operation = "lab" -> [nextLab EXCEPT !.policy = EditPolicy(@,field)]
+          [] operation \in {"add","remove"} -> nextLab
           [] operation = "reboot" -> Compose(RebootLab,store.saved)
           [] operation = "seed" -> Compose(store.durable.lab,store.durable.startup)
           [] OTHER -> store.published
         saved == IF operation = "save" THEN store.published.policy
-                 ELSE IF operation = "seed" THEN store.durable.startup ELSE store.saved
+                 ELSE IF operation = "seed" THEN store.durable.startup
+                 ELSE IF operation \in {"add","remove"} THEN Compose(hardware,store.saved).policy
+                 ELSE store.saved
         image == CASE operation = "save" -> [store.durable EXCEPT !.startup = store.published.policy]
           [] operation = "lab" -> [store.durable EXCEPT !.lab = ReplacementLab]
+          [] operation \in {"add","remove"} -> [store.durable EXCEPT !.lab = hardware, !.startup = saved]
           [] operation = "seed" -> [store.durable EXCEPT !.seeded = TRUE]
           [] OTHER -> store.durable
     IN [published |-> published, saved |-> saved, image |-> image,
-        reset |-> operation \in {"reboot","seed"},
-        runtime |-> IF operation \in {"reboot","seed"} THEN FALSE
+        reset |-> operation \in {"reboot","seed","add","remove"},
+        runtime |-> IF operation \in {"reboot","seed","add","remove"} THEN FALSE
                    ELSE IF operation \in {"api","set","lab"} THEN ~store.runtime ELSE store.runtime]
 OutcomeResult(outcome) == CASE outcome = "success" -> Result("noError",0)
     [] outcome = "rolledBack" -> Result("commitFailed",FirstEffectiveIndex)
@@ -79,7 +88,9 @@ CommitState(c,outcome,actual) ==
       [] outcome = "commitUnknown" -> [store EXCEPT !.durable = IF actual = "old" THEN @ ELSE c.image,
                                        !.health = "commitUnknown", !.transaction = NoVersion]
 Attempt(operation,field,outcome,actual) ==
-    /\ operation \in Commands /\ field \in Fields /\ outcome \in Outcomes /\ actual \in ActualDurability
+    /\ operation \in Commands /\ field \in Fields
+    /\ (operation = "add" => "C" \notin store.published.lab.issued)
+    /\ (operation = "remove" => "B" \in store.published.lab.ports) /\ outcome \in Outcomes /\ actual \in ActualDurability
     /\ (IF CommitAllowed \/ (operation = "seed" /\ store.open /\ ~store.active /\ store.health = "healthy")
        THEN /\ store' = CommitState(Candidate(operation,field),outcome,actual)
             /\ result' = [OutcomeResult(outcome) EXCEPT !.operation = operation]
@@ -212,15 +223,22 @@ RebootUsesCurrentLab == [][result'.status = "noError" /\ result'.operation = "re
     /\ store'.published = Compose(store.durable.lab,store.saved)
     /\ store'.durable = store.durable /\ store'.saved = store.saved
     /\ store'.incarnation \notin UsedIncarnations /\ ~store'.runtime]_StorageVars
+InventoryCommit == [][result'.status = "noError" /\ result'.operation \in {"add","remove"} =>
+    /\ store.published.lab.issued \subseteq store'.published.lab.issued
+    /\ (store'.published.lab.ports \ store.published.lab.ports) \cap store.published.lab.issued = {}
+    /\ DOMAIN store'.saved = store'.published.lab.ports
+    /\ \A p \in store.published.lab.ports \cap store'.published.lab.ports :
+          /\ store'.saved[p] = store.saved[p]
+          /\ store'.published.policy[p] = store.published.policy[p]]_StorageVars
 IndependentFactSurvives == [][store.durable.independent => store'.durable.independent]_StorageVars
 ReadIsConfirmed == [][result'.status = "read" => /\ seen' = ReadView /\ UNCHANGED store]_StorageVars
 InspectionCannotHeal == [][result'.status = "inspected" => /\ seen' = StorageView /\ UNCHANGED store]_StorageVars
 
 \* The original 40 outcome/work/stage cases remain for SET; Save and mixed lab
 \* each add the same 40. Unknown actual-old is not conflated with candidate.
-RecoveryInitialStore(op) == IF op = "save" THEN [InitialStore EXCEPT
+RecoveryInitialStore(op) == IF op \in {"save","add","remove"} THEN [InitialStore EXCEPT
     !.published.policy = Policy(InitialLab,Edit(OldValue,"primary"))] ELSE InitialStore
-RecoveryInit == BaseInit /\ scenario \in [operation : {"set","save","lab"}, outcome : Outcomes]
+RecoveryInit == BaseInit /\ scenario \in [operation : {"set","save","lab","add","remove"}, outcome : Outcomes]
     /\ workKind \in Kinds /\ deliveryStage \in {"faulted","afterRestart"}
     /\ actualOutcome \in (IF scenario.outcome = "commitUnknown" THEN ActualDurability ELSE {"candidate"})
     /\ store = RecoveryInitialStore(scenario.operation)
