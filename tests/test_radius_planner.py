@@ -247,7 +247,6 @@ class PlannerTests(unittest.TestCase):
         proposal = self.plan(((44,b"a"),*vlan(30))).sessions[0]
         self.assertEqual(proposal.policy,replace(old.policy,vid=30,source="radius"))
         self.assertEqual(proposal.lease_deadline_ms,120_000)
-        self.assertEqual(proposal.idle_deadline_ms,110_000)
         self.assertEqual(proposal.grant_generation,"grant-a")
         self.assertEqual(proposal.session_id,"a")
 
@@ -317,27 +316,15 @@ class PlannerTests(unittest.TestCase):
         proposal = self.plan(((44,b"a"),(27,u32(15)))).sessions[0]
         self.assertEqual(proposal.policy.session_timeout,15)
         self.assertEqual(proposal.lease_deadline_ms,115_000)
-        self.assertEqual(proposal.idle_deadline_ms,110_000)
         self.runtime.sim_ms = 200_000
         self.assertEqual(self.plan(((44,b"a"),(27,u32(15)))).sessions[0].lease_deadline_ms,215_000)
-
-    def test_idle_timeout_uses_true_last_activity_or_idle_origin(self):
-        proposal = self.plan(((44,b"a"),(28,u32(5)))).sessions[0]
-        self.assertEqual(proposal.policy.idle_timeout,5)
-        self.assertEqual(proposal.idle_deadline_ms,45_000)
-        self.assertEqual(proposal.lease_deadline_ms,120_000)
-        session = self.runtime.radius_sessions[("p1",MAC_A)]
-        session.last_activity_ms = None
-        self.assertEqual(self.plan(((44,b"a"),(28,u32(5)))).sessions[0].idle_deadline_ms,6_000)
-        session.last_activity_ms = 0
-        self.assertEqual(self.plan(((44,b"a"),(28,u32(5)))).sessions[0].idle_deadline_ms,5_000)
 
     def test_zero_limits_are_not_disabled_and_do_not_execute(self):
         for action in (0,1):
             with self.subTest(action=action):
                 proposal = self.plan(((44,b"a"),(27,u32(0)),(28,u32(0)),(29,u32(action)))).sessions[0]
                 self.assertEqual(proposal.lease_deadline_ms,100_000)
-                self.assertEqual(proposal.idle_deadline_ms,40_000)
+                self.assertEqual(proposal.policy.idle_timeout,0)
                 self.assertEqual(proposal.policy.termination_action,action)
                 self.assertIn(("p1",MAC_A),self.runtime.radius_sessions)
                 self.assertEqual(self.runtime.radius_attempts,{})
@@ -357,7 +344,6 @@ class PlannerTests(unittest.TestCase):
         self.runtime.cfg.radius.inactivity_seconds = 50
         self.runtime.cfg.radius.reauthentication_seconds = 70
         proposal = self.plan(((44,b"a"),*vlan())).sessions[0]
-        self.assertEqual(proposal.idle_deadline_ms,90_000)
         self.assertIsNone(proposal.lease_deadline_ms)
         self.assertIsNone(proposal.policy.session_timeout)
         self.assertIsNone(proposal.policy.idle_timeout)
@@ -365,7 +351,7 @@ class PlannerTests(unittest.TestCase):
     def test_control_uint32_boundaries(self):
         proposal = self.plan(((44,b"a"),(27,u32(0xffffffff)),(28,u32(0xffffffff)))).sessions[0]
         self.assertEqual(proposal.lease_deadline_ms,100_000+0xffffffff*1000)
-        self.assertEqual(proposal.idle_deadline_ms,40_000+0xffffffff*1000)
+        self.assertEqual(proposal.policy.idle_timeout,0xffffffff)
 
     def test_duplicate_controls_are_invalid_request(self):
         for kind in (27,28,29):
@@ -389,7 +375,6 @@ class PlannerTests(unittest.TestCase):
         for attrs in (((24,b""),),((24,b"a"),(24,b"b")),((24,b"a"),(24,b"a"))):
             values = ((44,b"a"),(33,b"proxy"),*attrs)
             plan = self.nak(404,values)
-            self.assertTrue(plan.omit_state_echo)
             response = dynamic_response(request(values),45,SECRET,error_cause=plan.error_cause)
             _, echoed = packet_attributes(response)
             self.assertNotIn(24,[kind for kind,_ in echoed])
@@ -398,7 +383,6 @@ class PlannerTests(unittest.TestCase):
     def test_valid_state_echoes_on_unrelated_nak(self):
         values = ((44,b"a"),(24,b"single"),(11,b"unsupported"))
         plan = self.nak(401,values)
-        self.assertFalse(plan.omit_state_echo)
         _, echoed = packet_attributes(dynamic_response(request(values),45,SECRET,error_cause=plan.error_cause))
         self.assertIn((24,b"single"),echoed)
 

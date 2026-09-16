@@ -316,8 +316,34 @@ const path = require('node:path');
   assert.equal(await page.locator('dialog[open]').count(),0);
   await attachFromPort(endpoint.id,firstPort);
   assert.equal((await state()).attachments[endpoint.id],firstPort);
-  // The existing endpoint-library disconnect remains available.
+  // Native implicit submission must still Connect, never default to Disconnect.
   await page.locator('nav button[data-id=endpoints]').click();
+  await page.locator(`button[data-action="attachment"][data-id="${endpoint.id}"]`).click();
+  await page.setViewportSize({width:390,height:844});
+  const attachmentButtons=await page.locator('dialog footer button').evaluateAll(buttons=>buttons.map(button=>{const box=button.getBoundingClientRect();return {x:box.x,width:box.width,height:box.height};}));
+  assert.equal(attachmentButtons.length,3);
+  for(const box of attachmentButtons)assert.ok(box.width>0&&box.height>0&&box.x>=0&&box.x+box.width<=390);
+  await page.setViewportSize({width:1440,height:1100});
+  // This selects-only form has no text entry; add an inert field to exercise the
+  // browser's Enter/default-button rule rather than choosing a submitter in JS.
+  await page.locator('dialog form').evaluate(form=>{const input=document.createElement('input');form.append(input);input.focus();});
+  const defaultConnect=page.waitForResponse(r=>r.url()===deleteURL&&r.request().method()==='PUT');
+  const beforeDefaultConnect=mutations.length;
+  let releaseConnect,connectRequested;
+  const connectGate=new Promise(resolve=>releaseConnect=resolve),connectHeld=new Promise(resolve=>connectRequested=resolve);
+  await page.route(deleteURL,async route=>{connectRequested();await connectGate;await route.continue();});
+  try{
+    await page.keyboard.press('Enter');await connectHeld;
+    assert.deepEqual(await page.locator('dialog [type=submit]').evaluateAll(buttons=>buttons.map(button=>button.disabled)),[true,true]);
+    await page.locator('dialog form').evaluate(form=>form.requestSubmit());
+    await page.waitForTimeout(80);assert.equal(mutations.length,beforeDefaultConnect+1);
+  }finally{releaseConnect();}
+  assert.equal((await defaultConnect).status(),200);
+  await page.locator('dialog').waitFor({state:'hidden'});
+  await page.unroute(deleteURL);
+  assert.equal(mutations.length,beforeDefaultConnect+1);
+  assert.equal((await state()).attachments[endpoint.id],firstPort);
+  // The existing endpoint-library disconnect remains available.
   await page.locator(`button[data-action="attachment"][data-id="${endpoint.id}"]`).click();
   await page.getByRole('button',{name:'Disconnect endpoint',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
@@ -1128,6 +1154,58 @@ const path = require('node:path');
   const radiusText=JSON.stringify(radiusState);for(const privateValue of ['synthetic-browser-radius-secret','synthetic-browser-peap-password','synthetic-browser-accounting-secret','synthetic-browser-das-secret','BEGIN CERTIFICATE'])assert.equal(radiusText.includes(privateValue),false);
   await page.locator('nav button[data-id=radius]').click();
   console.log('RADIUS browser passed: independent disabled destinations, captured retry policy, sparse secrets, copied profiles/templates, unchanged carrier/colors, selected-port successful/pending/failed presentation, escaped unmerged authentication history, safe on-demand attributes, focus/disclosure/scroll refresh and mobile. Presentation samples do not authorize backend sessions.');
+  // Import and PEM reads share the opening form's revision/lifetime boundary.
+  // Canceled and replaced are distinct: neither may dispatch an import, while
+  // an open stale form must dispatch its own revision and keep the real 409.
+  const importURL=new URL('/api/v1/scenarios/import',fixtureURL).href;
+  const importScenario=await (await page.request.get(new URL('/api/v1/scenarios/export',fixtureURL).href)).json();
+  for(const outcome of ['canceled','replaced','stale']){
+    await clockRefresh();
+    await page.locator('button[data-action=import]').click();
+    await page.locator('dialog [name=file]').setInputFiles({name:'deferred-scenario.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(importScenario))});
+    const opened=await state(),beforeImport=mutations.length;
+    await page.evaluate(()=>{
+      const selected=document.querySelector('dialog [name=file]').files[0],read=File.prototype.text;
+      window.restoreImportRead=()=>{File.prototype.text=read;delete window.restoreImportRead;delete window.releaseImportRead;};
+      File.prototype.text=function(){return this===selected?new Promise(resolve=>{window.releaseImportRead=()=>read.call(this).then(resolve);}):read.call(this);};
+    });
+    await page.getByRole('button',{name:'Apply scenario',exact:true}).click();
+    await page.waitForFunction(()=>!!window.releaseImportRead);
+    if(outcome!=='stale')await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    if(outcome!=='canceled'){
+      assert.equal((await page.request.post(new URL('/api/v1/clock/pause',fixtureURL).href,{headers:{'X-CSRF-Token':auth.csrf_token},data:{expected_configuration_revision:opened.configuration_revision}})).status(),200);
+      if(outcome==='replaced'){
+        await clockRefresh();
+        await radiusCard.getByRole('button',{name:'+ Add certificate',exact:true}).click();
+        await page.getByLabel('Label',{exact:true}).fill('Replacement import draft');
+      }
+    }
+    const beforeRelease=await state(),toastBeforeRelease=await page.locator('#toast').textContent();
+    const staleImport=outcome==='stale'?page.waitForResponse(r=>r.url()===importURL&&r.request().method()==='POST'):null;
+    await page.evaluate(async()=>{await window.releaseImportRead();window.restoreImportRead();});
+    if(staleImport){
+      const response=await staleImport;
+      assert.equal(response.status(),409);
+      assert.equal(response.request().postDataJSON().expected_configuration_revision,opened.configuration_revision);
+      await page.locator('dialog .form-error').filter({hasText:'Configuration changed while editing'}).waitFor();
+      assert.equal(await page.locator('dialog [name=file]').evaluate(input=>input.files[0].name),'deferred-scenario.json');
+    }else{
+      await page.waitForTimeout(80);
+      assert.equal(mutations.length,beforeImport,'Retired import must not dispatch');
+      assert.equal(await page.locator('#toast').textContent(),toastBeforeRelease);
+      if(outcome==='replaced'){
+        assert.equal(await page.getByLabel('Label',{exact:true}).inputValue(),'Replacement import draft');
+        assert.equal(await page.locator('dialog .form-error').textContent(),'');
+      }else{
+        assert.equal(await page.locator('dialog[open]').count(),0);
+        assert.equal(await page.locator('dialog').textContent(),'');
+      }
+    }
+    const afterRelease=await state();
+    for(const key of ['configuration_revision','switch','vlans','endpoints','attachments','radius'])assert.deepEqual(afterRelease[key],beforeRelease[key],key);
+    if(outcome!=='canceled')await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  }
+  console.log('Deferred import browser passed: canceled/replaced reads never dispatch or disturb replacement; open stale read sends its opening revision and retains the server rejection.');
   // Explicit startup save is global; lab saves never save dirty switch policy.
   assert.equal(await page.getByRole('button',{name:'Save configuration',exact:true}).count(),1);
   const saveConfiguration=async()=>{
@@ -1192,9 +1270,11 @@ const path = require('node:path');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     if(destination==='radius'){
       for(const body of await radiusCard.locator(':scope > .card > .detail-body').all())assert.equal(await body.isVisible(),true);
-      for(const control of await radiusCard.locator('.card-head button,#radius-servers button').all()){
-        const box=await control.boundingBox();assert.ok(box&&box.x>=0&&box.x+box.width<=390);
-      }
+      // Sample one rendered tree: periodic refresh can detach a control between
+      // the locator query and a later boundingBox protocol call.
+      const controlBounds=await radiusCard.locator('.card-head button,#radius-servers button').evaluateAll(controls=>controls.map(control=>{const box=control.getBoundingClientRect();return {x:box.x,width:box.width,height:box.height,visible:getComputedStyle(control).visibility==='visible'};}));
+      assert.ok(controlBounds.length>0);
+      for(const box of controlBounds)assert.ok(box.visible&&box.width>0&&box.height>0&&box.x>=0&&box.x+box.width<=390);
       await screenshot('radius-mobile.png');
     }
   }

@@ -1,5 +1,26 @@
 # Implementation validation
 
+## Integrated ownership
+
+The follow-up from `bd36a1a` consolidates form revision/lifetime ownership and
+existing family uniqueness/bounds and Engine capacity rules. Unused CoA planner
+outputs are removed; Runtime timers and response-codec State echoing remain.
+
+The full Python suite passed **1,319 tests and 139 subtests in 119.18 s**, with
+156 upstream warnings. Fourteen missing-Net-SNMP cases skipped; independent
+puresnmp loopback UDP cases ran. Authenticated CoA tests check actual idle expiry;
+intake/scoped tests cover identity uniqueness, disabled duplicates and SNMP bounds.
+The [model-first checkpoint](../specification/CURRENT_VERIFICATION.md#integrated-ownership-follow-up-2026-09-16)
+passed five existing configurations; concrete browser/wire behavior is not a TLC proof.
+
+The final full browser run passed in **69.683 s**, including deferred-import
+cancel/replacement/stale saves, PEM drafts, attachment submit ownership and mobile
+bounds; cleanup passed. An initial split-sample mobile bounds failure was replaced
+with atomic rendered-tree sampling, retaining visibility, size and bounds checks.
+TypeScript and canonical Vite build passed; OpenAPI and the 129-object MIB manifest
+are unchanged. No native EAP, container, user-environment or deployment validation
+ran; the separate CoA timeout is not established as fixed.
+
 ## Operation-scoped validation
 
 The follow-up from `dd534db` validates supplied configuration at intake and keeps

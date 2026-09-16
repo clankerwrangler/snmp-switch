@@ -62,10 +62,10 @@ including disabled targets and enabled policies on disabled credentials. The
 extended access lifecycle adds four opaque projection observations: resource
 reads retain snapshot data without a capability audit; full reads observe fresh
 capability values. It does not model executable bytes or cryptography. Application
-tests own material/profile dependency closure, collection and capacity bounds,
-record parsing, copy isolation, exact HTTP/redaction equivalence, and the fresh
-native pre-use integrity gate. Complete intake/load/import/reboot validation stays
-with those workflows rather than becoming a per-command fallback.
+tests own material/profile dependency closure, identity uniqueness, collection and
+capacity bounds, record parsing, copy isolation, exact HTTP/redaction equivalence,
+and the fresh native pre-use integrity gate. Complete intake/load/import/reboot
+validation stays with those workflows rather than becoming a per-command fallback.
 
 Grouped access resolves a v3 user's optional group without a copied per-user
 policy. No group denies incoming access without changing target-linked traps.
@@ -148,7 +148,8 @@ Authorization distinguishes explicit VLAN assignment from inherited PVID and
 rejects stale replies after invalidation or lease expiry. Authentication and
 accounting availability do not change carrier state. Dynamic requests match all
 selectors together, apply to all selected sessions or none, and reuse a cached
-decision without repeating effects. These graphs do not compose with `Switch`
+decision without repeating effects. Concrete idle expiry and State echo behavior
+remain application-test obligations. These graphs do not compose with `Switch`
 or establish liveness. Causal manual advancement, equal-deadline scheduling,
 real EAP/packet validation, and a bounded replay cache that survives graceful
 restart remain implementation-test obligations.
@@ -177,10 +178,14 @@ traces; these do not collectively prove an unrestricted production-sized system.
 Generation tokens are not reused while captured by outstanding work. Abstract
 ticks/countdowns replace wall-clock time. Disclosure open/close, settings navigation,
 and local draft/file selection or cancellation project to stuttering of switch
-state. Save invokes the existing atomic, revision-checked command; local selection
-alone does not import material or change trust. Event filters, readable summaries,
-paging, reversible grouping, and following or freezing the visible event window
-are also observations; they do not pause simulation. Independently running time
+state. Each form captures its opening revision and lifetime. Save invokes the
+existing atomic command with that original revision; a canceled or replaced form
+cannot dispatch a deferred continuation or borrow its replacement's revision. Once a
+command is dispatched, closing the form does not retract it. Local selection
+alone does not import material or change trust. This correspondence is an
+implementation/browser obligation, not an additional TLC draft-state graph.
+Event filters, readable summaries, paging, reversible grouping, and following or
+freezing the visible event window are also observations; they do not pause simulation. Independently running time
 can still advance through `AutoTick`; pause/resume and manual advance retain
 `SetPaused` and `ManualTick`. Browser tests check these controls and command
 handlers, not TLA+. The certified SET view normalizes only

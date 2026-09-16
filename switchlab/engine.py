@@ -991,8 +991,8 @@ class Engine:
         # storage has already crossed its complete shape/reference boundary.
         if saved is None:
             cfg = Configuration.model_validate(cfg.model_dump(mode="json"))
-        require(len(cfg.endpoints) <= cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
-        require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
+        self.check_endpoint_capacity(cfg)
+        self.check_source_capacity(cfg)
         self.lock = asyncio.Lock()
         self._authentication_tasks = {}
         self._accounting_tasks = {}
@@ -1058,6 +1058,14 @@ class Engine:
         if store:
             store.commit(self.state, self.idempotency, **({"radius_metadata":metadata} if metadata else {}))
         self._das_generations = generations
+
+    @staticmethod
+    def check_endpoint_capacity(cfg):
+        require(len(cfg.endpoints) <= cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
+
+    @staticmethod
+    def check_source_capacity(cfg):
+        require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
 
     @property
     def storage_fault(self):
@@ -1787,8 +1795,8 @@ class Engine:
             sender = DynamicSender.model_validate({**(previous.model_dump() if previous else {}),**fields})
             cfg.radius.dynamic_authorization.senders = [value for value in cfg.radius.dynamic_authorization.senders if value.id!=sender.id] + [sender]
             check_collection_limit(cfg.radius.dynamic_authorization, "senders", ("radius", "dynamic_authorization", "senders"))
-            if sender.enabled and any(value.id != sender.id and value.enabled and value.address == sender.address for value in cfg.radius.dynamic_authorization.senders):
-                configuration_error("Enabled dynamic sender IPs must be distinct")
+            if sender.enabled:
+                cfg.radius.dynamic_authorization.check_sender_addresses()
             s.event(action,resource_id=sender.id,resource_label=event_resource_label(sender));return {"id":sender.id}
         if action == "dynamic-sender-delete":
             sender = next((sender for sender in cfg.radius.dynamic_authorization.senders if sender.id==d["id"]),None)
@@ -2068,8 +2076,8 @@ class Engine:
             cfg.endpoints[ep.id] = ep
             for source in ep.sources:
                 cfg.check_profile(source.supplicant)
-            require(len(cfg.endpoints) <= cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
-            require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
+            self.check_endpoint_capacity(cfg)
+            self.check_source_capacity(cfg)
             es.add(ep.id)
             s.event("endpoint-created", endpoint_id=ep.id)
             return {"id": ep.id}
@@ -2092,7 +2100,7 @@ class Engine:
                 if "sources" in patch:
                     for source in cfg.endpoints[eid].sources:
                         cfg.check_profile(source.supplicant)
-                    require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
+                    self.check_source_capacity(cfg)
                 if {"sources", "active"} & patch.keys():
                     es.add(eid)
             elif action == "endpoint-clone":
@@ -2175,9 +2183,9 @@ class Engine:
             if "legacy_vlan" in d and cfg.switch.legacy_vlan not in cfg.vlans:
                 configuration_error("VLAN 1 and the legacy VLAN must exist")
             if "endpoint_limit" in d:
-                require(len(cfg.endpoints) <= cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
+                self.check_endpoint_capacity(cfg)
             if "source_limit" in d:
-                require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
+                self.check_source_capacity(cfg)
             if previous_age != cfg.switch.aging_seconds:
                 for row in s.fdb.values():
                     row["expires_at_ms"] = row["last_seen_ms"] + cfg.switch.aging_seconds*1000
@@ -2234,8 +2242,8 @@ class Engine:
             for key in list(s.radius_sessions):
                 s.end_session(key, "management-reboot")
             s.queue_accounting(8, reason="management-reboot")
-            require(len(restored.endpoints) <= restored.switch.endpoint_limit, "Endpoint capacity reached", 429)
-            require(sum(len(e.sources) for e in restored.endpoints.values()) <= restored.switch.source_limit, "Source capacity reached", 429)
+            self.check_endpoint_capacity(restored)
+            self.check_source_capacity(restored)
             s.cfg = restored
             s.reset_operational(reboot=True, announce=False)
             s.event("boot")
@@ -2261,8 +2269,8 @@ class Engine:
             merged = {**cfg.model_dump(mode="json"), **{k: v for k, v in imported.items() if k not in ("lab_settings", "schema_version")}}
             merged["switch"].update(d["lab_settings"])
             s.cfg = Configuration.model_validate(merged)
-            require(len(s.cfg.endpoints) <= s.cfg.switch.endpoint_limit, "Endpoint capacity reached", 429)
-            require(sum(len(e.sources) for e in s.cfg.endpoints.values()) <= s.cfg.switch.source_limit, "Source capacity reached", 429)
+            self.check_endpoint_capacity(s.cfg)
+            self.check_source_capacity(s.cfg)
             s.reset_operational()
             s.event("scenario-import")
         elif action == "snmp-settings":

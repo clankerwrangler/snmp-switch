@@ -56,6 +56,33 @@ async def test_authenticated_atomic_coa_persists_before_reply_and_replays_withou
     assert 'private-state' not in json.dumps(engine.snapshot())
 
 
+@pytest.mark.parametrize("last_activity,idle_timeout,expected_deadline", [
+    (40_000, 5, 45_000), (None, 5, 6_000), (0, 5, 5_000),
+    (1_000, 0, 1_000), (None, None, 51_000),
+])
+async def test_coa_idle_expiry_uses_committed_policy_and_actual_activity(store, last_activity, idle_timeout, expected_deadline):
+    engine,protocol,pid,sender,wall,elapsed=configured_engine(store)
+    engine.state.cfg.radius.inactivity_seconds=50
+    engine.state.sim_ms=40_000 if last_activity==40_000 else 2_000
+    key=(pid,MAC);session=engine.state.radius_sessions[key]
+    session.last_activity_ms=last_activity;session.idle_origin_ms=1_000
+    fields=() if idle_timeout is None else ((28,idle_timeout.to_bytes(4,"big")),)
+    # The lease is rebased by CoA, but changing policy must not refresh activity.
+    packet=request(vlan()+fields+((27,(60).to_bytes(4,"big")),))
+    now=engine.state.sim_ms
+    assert await send(engine,protocol,packet)==[signed_response(packet,44,ma=True,secret=SECRET)]
+    if expected_deadline>now:
+        current=engine.state.radius_sessions[key]
+        assert current.policy.idle_timeout==idle_timeout and current.lease_deadline_ms==now+60_000
+        assert current.last_activity_ms==last_activity and current.idle_origin_ms==1_000
+        await engine.execute("advance",{"duration_ms":expected_deadline-now-1})
+        assert key in engine.state.radius_sessions
+        await engine.execute("advance",{"duration_ms":1})
+    assert key not in engine.state.radius_sessions
+    ended=next(event for event in reversed(engine.state.events) if event["kind"]=="authentication-ended")
+    assert ended["reason"]=="idle-timeout" and ended["simulation_ms"]==max(now,expected_deadline)
+
+
 @pytest.mark.asyncio
 async def test_nak_preserves_all_runtime_and_valid_or_malformed_state(store):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store)

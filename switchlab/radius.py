@@ -893,14 +893,12 @@ class _DynamicSessionProposal:
     grant_generation: str
     policy: Authorization | None
     lease_deadline_ms: int | None
-    idle_deadline_ms: int | None
 
 
 @dataclass(frozen=True, repr=False)
 class _DynamicPlan:
     error_cause: int | None
     sessions: tuple[_DynamicSessionProposal, ...] = ()
-    omit_state_echo: bool = False
 
 
 def plan_dynamic_request(request: _DynamicRequest, runtime) -> _DynamicPlan:
@@ -923,7 +921,7 @@ def plan_dynamic_request(request: _DynamicRequest, runtime) -> _DynamicPlan:
     coa = request.code == 43
     states = values.get(24, [])
     if coa and (len(states) > 1 or any(not value for value in states)):
-        return _DynamicPlan(404, omit_state_echo=True)
+        return _DynamicPlan(404)
     selectors = {1, 5, 31, 44, 87}
     allowed = selectors | {4, 32, 33, 55, 80}
     if coa:
@@ -997,7 +995,7 @@ def plan_dynamic_request(request: _DynamicRequest, runtime) -> _DynamicPlan:
     proposals = []
     for key, session in selected:
         if not coa:
-            proposals.append(_DynamicSessionProposal(key, session.id, session.grant_generation, None, None, None))
+            proposals.append(_DynamicSessionProposal(key, session.id, session.grant_generation, None, None))
             continue
         changes = {}
         if vid is not None:
@@ -1009,9 +1007,7 @@ def plan_dynamic_request(request: _DynamicRequest, runtime) -> _DynamicPlan:
             changes["state"] = states[0]
         policy = replace(session.policy, **changes)
         lease = runtime.sim_ms + controls[27] * 1000 if 27 in controls else session.lease_deadline_ms
-        candidate = replace(session, policy=policy, lease_deadline_ms=lease)
-        idle, _, _ = runtime.session_deadlines(candidate)
-        proposals.append(_DynamicSessionProposal(key, session.id, session.grant_generation, policy, lease, idle))
+        proposals.append(_DynamicSessionProposal(key, session.id, session.grant_generation, policy, lease))
     return _DynamicPlan(None, tuple(proposals))
 
 
