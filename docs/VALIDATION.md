@@ -13,13 +13,20 @@ intake/scoped tests cover identity uniqueness, disabled duplicates and SNMP boun
 The [model-first checkpoint](../specification/CURRENT_VERIFICATION.md#integrated-ownership-follow-up-2026-09-16)
 passed five existing configurations; concrete browser/wire behavior is not a TLC proof.
 
-The final full browser run passed in **69.683 s**, including deferred-import
+The initial local full browser run passed in **69.683 s**, including deferred-import
 cancel/replacement/stale saves, PEM drafts, attachment submit ownership and mobile
 bounds; cleanup passed. An initial split-sample mobile bounds failure was replaced
 with atomic rendered-tree sampling, retaining visibility, size and bounds checks.
 TypeScript and canonical Vite build passed; OpenAPI and the 129-object MIB manifest
 are unchanged. No native EAP, container, user-environment or deployment validation
 ran; the separate CoA timeout is not established as fixed.
+
+CI `35080662784` passed Python (1,333 tests and 139 subtests) but failed the browser
+when a form opened before refresh after an intentional stale-revision rejection.
+A deterministic reproduction confirmed the correct HTTP 409, not a lifetime fault.
+Three test-only calls to the existing refresh helper now settle those case boundaries;
+all rejection assertions remain. The corrected local full browser passed in
+**68.448 s** with cleanup; product/model/build inputs are unchanged, release CI pending.
 
 ## Operation-scoped validation
 

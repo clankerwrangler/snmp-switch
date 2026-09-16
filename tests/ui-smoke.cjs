@@ -269,6 +269,7 @@ const path = require('node:path');
   assert.equal((await state()).simulation_ms,staleClock.simulation_ms);
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
+  await clockRefresh(); // Settle the out-of-band revision before the next independent write.
   await openSimulation();
   await page.getByRole('button',{name:'▶ Resume',exact:true}).click();
   await page.getByRole('button',{name:'Ⅱ Pause',exact:true}).waitFor();
@@ -986,6 +987,7 @@ const path = require('node:path');
   assert.equal((await page.request.post(new URL('/api/v1/clock/pause',fixtureURL).href,{headers:{'X-CSRF-Token':auth.csrf_token},data:{expected_configuration_revision:staleMaterialBefore.configuration_revision}})).status(),200);
   await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('dialog .form-error').filter({hasText:'Configuration changed while editing'}).waitFor();
   assert.deepEqual((await state()).radius.materials,staleMaterialBefore.radius.materials);await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await clockRefresh(); // The next form must open after the deliberate stale case settles.
   await radiusCard.getByRole('button',{name:'+ Template',exact:true}).click();
   assert.equal(await page.locator('dialog [name=client_identity_id]').inputValue(),'');assert.ok((await page.locator('dialog [name=client_identity_id]').textContent()).includes('Browser client renamed'));assert.equal(await page.getByLabel('Expected server DNS name',{exact:true}).getAttribute('required'),'');
   await page.getByLabel('Template label',{exact:true}).fill('Browser supplicant');await page.locator('dialog [name=method]').selectOption('peap');
@@ -1205,6 +1207,7 @@ const path = require('node:path');
     for(const key of ['configuration_revision','switch','vlans','endpoints','attachments','radius'])assert.deepEqual(afterRelease[key],beforeRelease[key],key);
     if(outcome!=='canceled')await page.getByRole('button',{name:'Cancel',exact:true}).click();
   }
+  await clockRefresh(); // Leave the final stale branch at the same fresh-state boundary.
   console.log('Deferred import browser passed: canceled/replaced reads never dispatch or disturb replacement; open stale read sends its opening revision and retains the server rejection.');
   // Explicit startup save is global; lab saves never save dirty switch policy.
   assert.equal(await page.getByRole('button',{name:'Save configuration',exact:true}).count(),1);
