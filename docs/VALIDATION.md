@@ -1,5 +1,59 @@
 # Implementation validation
 
+## Local management access
+
+The 2026-10-15 follow-up adds named administrator/viewer permissions and one
+optional disabled-by-default local viewer credential. No RADIUS/TACACS+ management
+adapter, deployment, real device exchange, or remote credential test was added.
+The [access guide](../specification/docs/MANAGEMENT.md) owns operator/API behavior;
+[finite model results](../specification/CURRENT_VERIFICATION.md#local-management-access-follow-up-2026-10-15)
+are separate from executable validation.
+
+Nineteen focused management cases passed in 6.30 s with zero nonloopback attempts.
+They cover the complete registered route matrix and default-deny additions,
+explicit providers, redaction, CSRF/Origin, root prefixes/lookalikes, generation
+conflicts, pending hash revocation, actual queued I/O-lock writes, per-yield SSE
+revocation, encrypted persistence, independent connections, and five storage
+write/commit/rollback/restart outcomes. Slow fake hash workers establish the
+four-worker bound through repeated request cancellation. Twenty-session cases
+check viewer-only eviction, administrator priority, and rejected viewer admission
+preserving even the calling administrator token. These are bounded regressions,
+not load or production-capacity tests.
+
+Independent read-only review reproduced the original prefixed anonymous-access
+failure and verified its correction. Its bounded executable probes passed 444
+route/prefix/role assertions, real CSRF/Origin and rate gates, cancellation and
+session-allocation checks, plus seven maintained queued-write/revocation/SSE
+cases. Source review found no further blocker in the reviewed backend. This does
+not substitute for packaged browser or full-suite results.
+
+The UI build used exact committed dependencies (TypeScript 5.9.3, Vite 7.1.12)
+in an isolated Linux scratch tree, with frozen-lockfile integrity checks, disabled
+install scripts, and a clean private HOME. The pre-existing Windows-native
+`ui/node_modules` tree and lockfile were preserved. pnpm 10 required omitting only
+the copied newer `allowBuilds` workspace policy; install scripts remained disabled.
+Built assets were copied into `switchlab/static` and compared byte-for-byte.
+The generated OpenAPI adds the explicit provider and viewer-policy request fields.
+
+Initial integrated browser attempts are retained as failures: one failed an
+existing mobile port-control geometry assertion; the unchanged source passed
+that assertion on the diagnostic repeat, without an established CSS cause.
+The repeat exposed a new helper's missing sign-in readiness wait and exact-label
+selector mismatch for a nested select. A bounded DOM/ARIA probe confirmed the
+product's correct accessible combobox name; exact role/name selectors fixed the
+helper. The packaged management-only fixture then passed in 10.170 s with cleanup.
+No assertion or 165-second work limit was relaxed. The final combined canonical
+full browser passed in **85.483 s**, including the original workflows, actual
+BER/history, and new management cases, with no page errors. Child processes,
+loopback listener, and private synthetic state were cleaned. The original mobile
+failure remains unexplained rather than being relabeled as a fixed product bug.
+
+The final guarded Python suite passed **1,368 tests and 139 subtests in
+130.11 s**, with 14 missing-Net-SNMP skips and 157 upstream warnings. The guard
+recorded zero nonloopback attempts; all 37 recorded Python source/test inputs
+were unchanged after execution. No container, release CI, deployment, or external
+management AAA interoperability check ran.
+
 ## Snapshot read cost
 
 The 2026-10-15 review replaces one full FDB scan per port with one request-local
@@ -27,7 +81,7 @@ and size are unchanged. Source, measurements, and guards are retained under
 passed before implementation, with an intended invariant failure when counting
 is disabled. No deployment, device, or external network checks ran.
 
-The final synthetic/loopback-only Python suite passed **1,349 tests and 139
+At the performance-only checkpoint, the synthetic/loopback-only Python suite passed **1,349 tests and 139
 subtests in 474.06 s**, with 14 missing-Net-SNMP skips and 157 upstream warnings.
 The guard recorded zero nonloopback attempts. One existing notification fixture
 now explicitly chooses its loopback source address; runtime defaults are unchanged.
@@ -39,7 +93,7 @@ all existing workflows and mobile layouts, with no page errors. Child processes,
 loopback listener, and private synthetic state were cleaned. An earlier run under
 concurrent test load exceeded the unchanged 165-second limit; its failure remains
 in the evidence. The successful retry used a coordinated quiet slot, not weaker
-assertions or a longer timeout. No Switch Lab UI source changed.
+assertions or a longer timeout. No Switch Lab UI source changed in that performance-only checkpoint.
 
 ## Port inventory
 

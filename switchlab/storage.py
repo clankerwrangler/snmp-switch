@@ -10,6 +10,7 @@ from cryptography.fernet import Fernet
 
 from .models import Configuration, Identity, Port, Switch, RadiusSettings, default_views
 from pydantic import ValidationError
+from .management import ViewerPolicy, ViewerConflict
 
 
 # Physical lab fields remain automatically durable; every other switch/port
@@ -126,6 +127,7 @@ class Store:
             self.db.commit()
             self.last_event = self.db.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
             self._confirmed_administrator = self.get("admin_hash")
+            self._confirmed_viewer = ViewerPolicy.model_validate(self.get("management_viewer", {}))
         except BaseException:
             self.db.close()
             raise
@@ -160,6 +162,25 @@ class Store:
             result = self.db.execute("INSERT OR IGNORE INTO kv VALUES (?, ?)", ("admin_hash", encrypted))
         self._confirmed_administrator = self.get("admin_hash")
         return result.rowcount == 1
+
+    def viewer_policy(self):
+        if not self.fault_reason and not self.closed:
+            self._confirmed_viewer = ViewerPolicy.model_validate(self.get("management_viewer", {}))
+        return self._confirmed_viewer
+
+    def configure_viewer(self, expected_generation, enabled, password_hash=None):
+        self.require_healthy()
+        with self.transaction():
+            # Serialize independent SQLite connections before comparing policy.
+            self.db.execute("BEGIN IMMEDIATE")
+            current = self.viewer_policy()
+            if current.generation != expected_generation:
+                raise ViewerConflict("Viewer access changed; reload and retry")
+            candidate = ViewerPolicy(enabled=enabled, generation=current.generation + 1,
+                                     password_hash=password_hash if password_hash is not None else current.password_hash)
+            self.put("management_viewer", candidate.model_dump())
+        self._confirmed_viewer = candidate
+        return candidate
 
     def configuration_format(self):
         keys = {row[0] for row in self.db.execute(

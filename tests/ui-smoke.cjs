@@ -1356,6 +1356,8 @@ const path = require('node:path');
   assert.equal((await state()).attachments[endpoint.id],restoredID);
   await page.setViewportSize({width:390,height:844});
   const inventoryBounds=await page.locator('.port-card .card-head button,.port-heading button').evaluateAll(controls=>controls.map(control=>{const box=control.getBoundingClientRect();return {x:box.x,width:box.width,height:box.height,visible:getComputedStyle(control).visibility==='visible'};}));
+  console.log('Port inventory mobile bounds:',JSON.stringify(inventoryBounds));
+  if(inventoryBounds.some(box=>!box.visible||box.width<=0||box.height<=0||box.x<0||box.x+box.width>390))console.log('Port inventory layout:',await page.evaluate(()=>({innerWidth,scrollX,scrollWidth:document.documentElement.scrollWidth,rects:[...document.querySelectorAll('.sidebar,main,.port-heading')].map(el=>({selector:el.className||el.tagName,rect:el.getBoundingClientRect().toJSON()}))})));
   assert.equal(inventoryBounds.length,3);for(const box of inventoryBounds)assert.ok(box.visible&&box.width>0&&box.height>0&&box.x>=0&&box.x+box.width<=390);
   await screenshot('port-inventory-mobile.png');await page.setViewportSize({width:1440,height:1100});
   await page.locator('nav button[data-id=radius]').click();
@@ -1403,6 +1405,8 @@ const path = require('node:path');
   await page.getByRole('button',{name:'Sign in'}).click();
   await page.getByRole('heading',{name:'Switch overview',exact:true}).waitFor();
   console.log('Credential browser checks passed: optional filters, version-only fields and payloads, blank-secret edits, protocol changes, short-password login and setup closure.');
+  await require('./browser/management.cjs')({page,browser,fixtureURL,password:process.env.SWITCHLAB_TEST_PASSWORD});
+  if(errors.length)throw new Error(errors.join('\n'));
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exit(1);});
 

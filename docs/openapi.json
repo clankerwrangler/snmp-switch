@@ -81,7 +81,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Login"
+                "$ref": "#/components/schemas/SignIn"
               }
             }
           },
@@ -119,6 +119,56 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/management/viewer": {
+      "get": {
+        "summary": "Viewer Settings",
+        "operationId": "viewer_settings_api_v1_management_viewer_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Viewer Update",
+        "operationId": "viewer_update_api_v1_management_viewer_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewerWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -4470,6 +4520,31 @@
         ],
         "title": "SessionAuthentication"
       },
+      "SignIn": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "local-admin",
+              "local-viewer"
+            ],
+            "title": "Provider",
+            "default": "local-admin"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "SignIn"
+      },
       "SnmpPatch": {
         "properties": {
           "expected_revision": {
@@ -5266,6 +5341,39 @@
           "includes"
         ],
         "title": "ViewWrite"
+      },
+      "ViewerWrite": {
+        "properties": {
+          "expected_generation": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Generation"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_generation",
+          "enabled"
+        ],
+        "title": "ViewerWrite"
       },
       "VlanCreate": {
         "properties": {

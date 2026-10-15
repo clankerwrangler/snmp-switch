@@ -40,7 +40,7 @@ For selected configurations:
 python3 ./run_tlc.py --jar /path/to/tla2tools.jar --models SetResponseEntry StorageRecovery
 ```
 
-The normal catalog contains 55 configurations. Current verification joins separate completed checks; it does not claim one combined 55-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
+The normal catalog contains 57 configurations. Current verification joins separate completed checks; it does not claim one combined 57-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
 
 ```sh
 python3 ./tests/check_mutations.py --jar /path/to/tla2tools.jar
@@ -59,6 +59,7 @@ Both entry points regenerate ignored scenario/config inputs through their existi
 | `RadiusAuthorization.tla`, `RadiusDynamicAuthorization.tla` | Current grants and atomic duplicate-safe dynamic requests; separate bounded safety graphs |
 | `EntityInventory.tla` | Inventory snapshots and change-clock behavior |
 | `SnapshotCounts.tla` | One-pass learned-address counts and detached read results |
+| `ManagementAccess.tla`, `ManagementResources.tla` | Local role/generation, queued write/stream and routing boundaries; worker ownership and session admission |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original response ownership, stage-aware finalization, and pre-admission association |
 | `StorageOutcomes.tla` | Confirmed/uncertain durability, faulted mutation/send gates, and existing-startup recovery |
 | `configs/*.cfg` | Finite graph and scripted scenario selections |

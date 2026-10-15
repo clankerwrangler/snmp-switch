@@ -15,6 +15,8 @@ and [application validation](../docs/VALIDATION.md) for implementation tests.
 | `SetTransactions.tla` | Existing switch/access state; simultaneous candidate validation, original error positions, atomic commit/rejection, and stale queued-request denial | SET planner and engine transaction |
 | `GroupedAccess.tla` | Canonical communities/users/groups, policy projection into the existing access/SET owners, normalized migration, atomic saves, and shared-generation invalidation | Schema loading, group/credential commands, and incoming authorization |
 | `EntityInventory.tla` | Surviving physical/alias/interface identity, independent filtered snapshots, and actual-row-change timestamps | Read-only ENTITY projection and management uptime |
+| `ManagementAccess.tla` | Named local roles, authenticated/current-generation issuance, queued writes, stream revocation and route-relative API classification | HTTP middleware/dependencies, policy changes and per-yield stream checks |
+| `ManagementResources.tla` | Canceled requests retain worker slots; viewer admission never evicts administrators | Argon2 task ownership and bounded role-aware session allocation |
 | `SnapshotCounts.tla` | One-pass per-port counts over captured rows, with unchanged published results after source mutations | API snapshot learned counts; two ports and three optional rows |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original MP/security record association, exact ownership through admission, consumption/discard, expiry, reuse, and response failure | Pinned response-lifetime integration |
 | `RadiusAuthorization.tla` | Current authorization captures, lease/VLAN invalidation, and link/accounting independence | Per-port/MAC authorization and existing runtime admission |
@@ -161,10 +163,20 @@ or establish liveness. Causal manual advancement, equal-deadline scheduling,
 real EAP/packet validation, and a bounded replay cache that survives graceful
 restart remain implementation-test obligations.
 
+The independent management graphs check two local roles, three generation values,
+two issued session tokens, one pending login/write, and ten segment-level
+root/path combinations. Logout and expiry share a revocation transition. They do
+not model passwords, HTTP syntax, framework routing internals, or an identity
+server. The resource graph uses three workers/two slots and two ordered session
+positions; cancellation leaves work owned until completion. Concrete four-worker
+and twenty-session limits, same-cookie rotation/admission, encrypted storage
+outcomes, URL spelling, CSRF/Origin, UI cleanup, and complete route registration
+remain implementation tests. No remote AAA transport is present.
+
 ## Finite scope
 
 `configs/` is the executable source of bounds, selected actions, invariants, and
-fairness. There are 55 normal configurations and one explicit unreduced SET
+fairness. There are 57 normal configurations and one explicit unreduced SET
 diagnostic. The normal suite contains both general finite graphs and scripted
 traces; these do not collectively prove an unrestricted production-sized system.
 
