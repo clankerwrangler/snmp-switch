@@ -1,7 +1,7 @@
 # SNMP Switch Emulator
 ## Technical specification · revision 5
 
-**Date:** 2026-09-16
+**Date:** 2026-10-15
 
 **Implementation target:** current application
 
@@ -30,7 +30,7 @@ The first release includes a web UI, an automation API, SNMPv2c and SNMPv3 reads
 | VLAN-02 | Deleting a native/PVID VLAN falls back affected ports to permanent VLAN 1. |
 | TIME-01 | Automatic simulation time can pause; explicit advancement remains available. |
 | BOOT-01 | Application restart restores explicit startup switch policy over the current durable physical lab and reboots operational state. |
-| DEP-01 | Docker-first deployment, one administrator, private-lab defaults. |
+| DEP-01 | Docker-first deployment, one local administrator plus an optional disabled-by-default local viewer, private-lab defaults. |
 | ID-01 | Public runtime defaults leave `identity.sys_object_id` unset. Operators supply the full advertised OID; no project-owned PEN is required to publish the application. |
 | ID-02 | An explicitly selected isolated-development configuration uses `1.3.6.1.4.1.32473.1`. It is not a production fallback or an assigned operational identity. |
 | ID-03 | An unset identity disables SNMP listening and notification sending, not the web UI, API, or simulation. An operator-selected identity does not enable vendor-specific behavior. |
@@ -448,6 +448,8 @@ Version routes under `/api/v1`. UUIDs are opaque. Mutations accept an expected r
 
 | Route family | Operations |
 |---|---|
+| `/auth/status`, `/auth/setup`, `/auth/login`, `/auth/logout` | Explicit local identity, permissions, setup and session lifetime. |
+| `/management/viewer` | Administrator-only policy read/update using independent expected generation. |
 | `/state`, `/switch` | Snapshot and identity/settings. |
 | `/ports`, `/ports/{id}` | POST creates from optional name/speed/MTU; PATCH edits; DELETE removes even when attached. Mutations return `id`; numeric allocators are read-only. |
 | `/endpoints`, `/endpoints/{id}` | List/create/read/edit/delete; reject deletion while attached. |
@@ -496,7 +498,7 @@ Optional SNMP request tracing shows manager, operation, OIDs, view/result, snaps
 
 Ship one container and a Compose example with a persistent data volume. Run without privileged mode, host Docker socket access, or raw-packet capabilities. Default the SNMP query listener and host publication to UDP 161, with configurable alternatives using the same port on both sides. Container-scoped port permissions allow the nonroot process to bind 161 without additional capabilities. Serve the UI on a configurable HTTP port; bind local-only by default and document deliberate LAN exposure. Publish CoA/Disconnect on UDP 3799 at the same host bind address, with `SWITCHLAB_COA_PORT` selecting the same port on both sides; publication does not enable or configure the separately saved listener. [R12]
 
-Require administrator setup, authenticated API mutations, protected sessions, CSRF protection for cookie-authenticated writes, and rate/size limits. HTTP traffic is unencrypted; HTTPS can be provided by a reverse proxy. The Secure session-cookie option requires HTTPS. SNMPv2c and unprotected v3 modes are identified as unencrypted.
+Require administrator setup, authenticated and explicitly authorized API reads/writes, protected sessions, CSRF protection for cookie-authenticated writes, and rate/size limits. The [management access contract](docs/MANAGEMENT.md) defines named viewer/admin permissions, optional viewer credentials, session capacity/expiry, independent policy generation, queued-write/SSE revocation, and confirmed local-admin recovery. Unclassified API routes deny; route-relative ASGI prefix handling is shared by authorization and the existing security gates. The UI exposes the current role and read-only navigation; session changes clear secret editors. Network management identity providers are not implemented. HTTP traffic is unencrypted; HTTPS can be provided by a reverse proxy. The Secure session-cookie option requires HTTPS. SNMPv2c and unprotected v3 modes are identified as unencrypted.
 
 Docker NAT can change observed source addresses. Reachability, notification source addresses, and source-CIDR matching depend on the deployment platform and routing; Linux host networking and Docker Desktop can differ. Advanced per-switch source-IP fidelity and multiple switch instances are later work. [R12]
 

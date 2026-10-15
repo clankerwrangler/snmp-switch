@@ -20,7 +20,7 @@ sh scripts/init-key.sh
 docker compose up --build -d
 ```
 
-Open **http://localhost:8000** and create the administrator password. Later visits use that password; there are no default credentials. Physical lab edits persist automatically. Switch settings apply to running configuration; choose **Save configuration** to retain them across reboot or process restart. The `switchlab-data` volume stores the lab and startup configuration; restoring it requires both the database and `secrets/config.key`.
+Open **http://localhost:8000** and create the administrator password. Later visits use that password; there are no default credentials. An administrator can optionally enable a shared read-only viewer under **Settings → Manage viewer access**; it starts disabled. See [management access](specification/docs/MANAGEMENT.md). Physical lab edits persist automatically. Switch settings apply to running configuration; choose **Save configuration** to retain them across reboot or process restart. The `switchlab-data` volume stores the lab and startup configuration; restoring it requires both the database and `secrets/config.key`.
 
 Compose publishes HTTP TCP 8000, SNMP UDP 161, and CoA/Disconnect UDP 3799 on localhost by default. For LAN access, create `.env` beside `compose.yaml` with an IPv4 address assigned to the host, then run `docker compose up -d` again:
 
@@ -54,6 +54,7 @@ For native LAN access, use the host's LAN address with `--host`. EAP-TLS and PEA
 
 - [Setup and identity](specification/docs/IDENTITY_SETUP.md)
 - [RADIUS access, accounting, and dynamic authorization](specification/docs/RADIUS.md)
+- [Local management accounts and permissions](specification/docs/MANAGEMENT.md)
 - [API schema](docs/openapi.json); interactive documentation is at `/docs` on the running instance.
 - [Technical specification](specification/TECHNICAL_SPECIFICATION.md) and [supported MIB objects](specification/docs/mib-coverage.csv)
 - [Executed validation](docs/VALIDATION.md) and [formal models and checks](specification/README.md)

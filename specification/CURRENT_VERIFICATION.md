@@ -1,10 +1,48 @@
 # Current finite model verification
 
-The 55-configuration normal catalog is supported by separate completed checks,
-not one combined 55-config run. All passing graphs below finished with zero
+The 57-configuration normal catalog is supported by separate completed checks,
+not one combined 57-config run. All passing graphs below finished with zero
 queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
+
+## Local management access follow-up (2026-10-15)
+
+`ManagementAccess` checks authenticated/current-generation local issuance,
+viewer read-only permissions, queued-token execution rechecks, logout/expiry,
+stream revocation, independent administrator recovery, and a finite route-relative
+API boundary. The initial graph completed before product implementation
+(22,361 generated / 3,695 distinct states). The final routing refinement completed
+**593,101 generated / 36,950 distinct states**, depth 14, with zero queued states.
+The first provisional routing fix preceded that concrete refinement; those lines
+were restored, the refinement checked, and the final fix reapplied. The earlier
+abstract result is not relabeled as prior proof of concrete path handling.
+
+`ManagementResources` completed before the worker/capacity corrections:
+**3,002 generated / 475 distinct states**, depth 10, with zero queued states.
+The normal runner reproduced both final counts with unchanged model inputs.
+Its finite two-slot/three-worker graph retains worker ownership after request
+cancellation; its two-session graph prevents viewer admission from evicting an
+administrator. Concrete limits, token replacement, and fault handling remain
+application obligations. Neither graph establishes liveness or a Python refinement.
+
+Local source-overlay controls produced actual invariant counterexamples for
+omitted execution rechecks (`WritesAuthorized`), raw-path routing classification
+(`RoutingBoundary`), request-count-based worker admission (`BoundedWork`), and
+FIFO viewer eviction (`AdminRecovery`). Early model construction/parse errors
+are retained failures, not successful behavioral controls. These four overlays
+are task-local evidence, not entries in the existing reusable mutation catalog.
+
+Reproduce the current two graphs from the repository root:
+
+```sh
+python specification/run_tlc.py --jar /path/to/tla2tools-1.7.4.jar --models ManagementAccess ManagementResources --output specification/logs/management-1
+```
+
+This is a two-configuration follow-up, not a combined 57-configuration run.
+Framework path spelling, real lock/worker ownership, API policy persistence,
+redaction, and browser recovery are covered separately in
+[implementation validation](../docs/VALIDATION.md#local-management-access).
 
 ## Snapshot count follow-up (2026-10-15)
 

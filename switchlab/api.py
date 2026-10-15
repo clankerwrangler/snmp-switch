@@ -10,18 +10,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
-from argon2 import PasswordHasher
-from argon2.exceptions import VerificationError
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette._utils import get_route_path
 from pydantic import Field, ValidationError, create_model, model_validator
 
 from .engine import CommandError, Engine
 from .models import Configuration, Credential, CredentialAuth, AccessGroup, PollingAccess, WritingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, RadiusSettings, RadiusServer, RadiusMaterial, SupplicantProfile, SupplicantTemplate, AccountingSettings, DynamicSettings, DynamicSender, initial_configuration
 from .snmp import SnmpAdapter
 from .storage import Store, StorageFault, RollbackFailed, CommitUncertain
+from .management import Management, RoutePermissions, ROLE_PERMISSIONS, ACTION_PERMISSIONS, PUBLIC_ROUTES, ViewerConflict, SessionCapacity
 
 
 class Revision(Record):
@@ -73,6 +73,22 @@ class Import(Revision):
 
 class Login(Record):
     password: str = Field(min_length=1, max_length=1024, repr=False)
+
+
+class SignIn(Login):
+    provider: Literal["local-admin", "local-viewer"] = "local-admin"
+
+
+class ViewerWrite(Record):
+    expected_generation: int = Field(ge=0, strict=True)
+    enabled: bool = Field(strict=True)
+    password: str | None = Field(default=None, min_length=1, max_length=1024, repr=False)
+
+    @model_validator(mode="after")
+    def password_not_null(self):
+        if "password" in self.model_fields_set and self.password is None:
+            raise ValueError("Omit password to keep the existing credential")
+        return self
 
 
 def patch_model(name, model, fields):
@@ -146,9 +162,8 @@ class SessionAuthentication(Revision):
 
 
 def create_app(store=None, configuration=None):
-    sessions = {}
     buckets = defaultdict(deque)
-    password_hasher = PasswordHasher()
+    route_permissions = RoutePermissions()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -161,6 +176,7 @@ def create_app(store=None, configuration=None):
             store = Store(os.environ.get("SWITCHLAB_DB", "data/switch.db"), Path(key_path).read_bytes().strip())
         task = adapter = None
         try:
+            app.state.management = Management(store)
             saved = store.load()
             cfg = saved or configuration or initial_configuration(int(os.environ.get("SWITCHLAB_PORT_COUNT", "24")))
             if saved is None and configuration is None:
@@ -223,11 +239,29 @@ def create_app(store=None, configuration=None):
                 await app.state.engine.close_authentication()
             if adapter is not None:
                 adapter.close()
+            if hasattr(app.state, "management"):
+                await app.state.management.close()
             if owned:
                 store.close()
                 store = None
 
-    app = FastAPI(title="Switch Lab API", version="1.0.0", lifespan=lifespan)
+    def enforce(request, permission):
+        manager = app.state.management
+        session = manager.current(request.cookies.get("switchlab_session"))
+        if session is None:
+            raise HTTPException(401, "Sign in required")
+        if not manager.permits(session, permission):
+            raise HTTPException(403, "Permission denied")
+        return session
+
+    async def authorize(request: Request):
+        path = get_route_path(request.scope)
+        if path.startswith("/api/") and (request.method, path) not in PUBLIC_ROUTES:
+            enforce(request, route_permissions.required(request.method, path))
+
+    app = FastAPI(title="Switch Lab API", version="1.0.0", lifespan=lifespan,
+                  dependencies=[Depends(authorize)])
+    app.state.route_permissions = route_permissions
 
     @app.exception_handler(StorageFault)
     @app.exception_handler(RollbackFailed)
@@ -250,7 +284,7 @@ def create_app(store=None, configuration=None):
 
     @app.middleware("http")
     async def security(request, call_next):
-        path = request.url.path
+        path = get_route_path(request.scope)
         if path.startswith("/api/"):
             if not hasattr(app.state, "engine"):
                 return JSONResponse({"detail": "Initializing"}, 503)
@@ -268,16 +302,19 @@ def create_app(store=None, configuration=None):
                 return JSONResponse({"detail": "Rate limit exceeded"}, 429)
             if request.method != "GET" or group != "auth":
                 bucket.append(now)
-            if path not in ("/api/v1/auth/status", "/api/v1/auth/setup", "/api/v1/auth/login"):
-                session = sessions.get(request.cookies.get("switchlab_session"))
-                if not session or session["expires"] < now:
+            if (request.method, path) not in PUBLIC_ROUTES:
+                manager = app.state.management
+                session = manager.current(request.cookies.get("switchlab_session"))
+                if session is None:
                     return JSONResponse({"detail": "Sign in required"}, 401)
+                if not manager.permits(session, route_permissions.required(request.method, path)):
+                    return JSONResponse({"detail": "Permission denied"}, 403)
                 if request.method not in ("GET", "HEAD", "OPTIONS"):
-                    if not secrets.compare_digest(request.headers.get("x-csrf-token", ""), session["csrf"]):
+                    if not secrets.compare_digest(request.headers.get("x-csrf-token", ""), session.csrf):
                         return JSONResponse({"detail": "CSRF token required"}, 403)
             if request.method not in ("GET", "HEAD", "OPTIONS"):
                 origin = request.headers.get("origin")
-                if origin and origin != str(request.base_url).rstrip("/"):
+                if origin and origin != str(request.base_url.replace(path="/")).rstrip("/"):
                     return JSONResponse({"detail": "Cross-origin write rejected"}, 403)
         response = await call_next(request)
         response.headers.update({"X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin",
@@ -291,48 +328,67 @@ def create_app(store=None, configuration=None):
 
     @app.get("/api/v1/auth/status")
     async def auth_status(request: Request):
-        session = sessions.get(request.cookies.get("switchlab_session"))
-        active = session is not None and session["expires"] > time.monotonic()
-        return {"setup_required": not bool(store.administrator_hash()), "authenticated": active,
-                "csrf_token": session["csrf"] if active else None}
+        manager = app.state.management
+        session = manager.current(request.cookies.get("switchlab_session"))
+        identity = session.public() if session else {"provider": None, "role": None, "permissions": []}
+        return {"setup_required": not bool(store.administrator_hash()), "authenticated": session is not None,
+                "csrf_token": session.csrf if session else None, "providers": manager.providers(), **identity}
 
-    def issue_session():
-        now = time.monotonic()
-        for k in list(sessions):
-            if sessions[k]["expires"] < now:
-                del sessions[k]
-        if len(sessions) >= 20:
-            sessions.pop(next(iter(sessions)))
-        token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-        sessions[token] = {"csrf": csrf, "expires": now+28800}
-        response = JSONResponse({"csrf_token": csrf})
+    def issue_session(request, provider="local-admin", generation=0):
+        try:
+            token, session = app.state.management.issue(provider, generation, request.cookies.get("switchlab_session"))
+        except SessionCapacity as exc:
+            raise HTTPException(429, str(exc)) from None
+        response = JSONResponse({"csrf_token": session.csrf, **session.public()})
         response.set_cookie("switchlab_session", token, httponly=True, secure=os.environ.get("SWITCHLAB_SECURE_COOKIES") == "1", samesite="strict", max_age=28800)
         return response
 
     @app.post("/api/v1/auth/setup")
-    async def setup(body: Login):
-        if store.administrator_hash() or not store.create_administrator(password_hasher.hash(body.password)):
+    async def setup(body: Login, request: Request):
+        if store.administrator_hash():
             raise HTTPException(409, "Administrator already configured")
-        return issue_session()
+        hashed = await app.state.management.hash_password(body.password)
+        if not store.create_administrator(hashed):
+            raise HTTPException(409, "Administrator already configured")
+        return issue_session(request)
 
     @app.post("/api/v1/auth/login")
-    async def login(body: Login):
-        saved = store.administrator_hash()
-        try:
-            if saved is None or not password_hasher.verify(saved, body.password):
-                raise HTTPException(401, "Invalid credentials")
-        except VerificationError:
+    async def login(body: SignIn, request: Request):
+        generation = await app.state.management.authenticate(body.provider, body.password)
+        if generation is None:
             raise HTTPException(401, "Invalid credentials")
-        return issue_session()
+        # No await between the final credential/generation check and issuance.
+        return issue_session(request, body.provider, generation)
 
+    route_permissions.add("POST", "/api/v1/auth/logout", "session:logout")
     @app.post("/api/v1/auth/logout")
     async def logout(request: Request):
-        sessions.pop(request.cookies.get("switchlab_session"), None)
+        app.state.management.sessions.pop(request.cookies.get("switchlab_session"), None)
         response = JSONResponse({"signed_out": True})
         response.delete_cookie("switchlab_session")
         return response
 
+    route_permissions.add("GET", "/api/v1/management/viewer", "security:write")
+    @app.get("/api/v1/management/viewer")
+    async def viewer_settings():
+        return store.viewer_policy().public()
+
+    route_permissions.add("PUT", "/api/v1/management/viewer", "security:write")
+    @app.put("/api/v1/management/viewer")
+    async def viewer_update(body: ViewerWrite, request: Request):
+        hashed = await app.state.management.hash_password(body.password) if body.password is not None else None
+        async with app.state.adapter.io_lock:
+            enforce(request, "security:write")
+            try:
+                result = store.configure_viewer(body.expected_generation, body.enabled, hashed)
+            except ViewerConflict as exc:
+                raise HTTPException(409, str(exc)) from None
+            app.state.management.revoke_viewers()
+        return result.public()
+
     def mutation(method, path, model, action, transform=None):
+        permission = ACTION_PERMISSIONS[action]
+        route_permissions.add(method, "/api/v1"+path, permission)
         async def handler(request: Request, body):
             data = body.model_dump(exclude_unset=True)
             expected = data.pop("expected_revision", None)
@@ -341,6 +397,7 @@ def create_app(store=None, configuration=None):
             adapter = app.state.adapter
             # The gate, reconfiguration and all send paths share this boundary.
             async with adapter.io_lock:
+                enforce(request, permission)
                 previous = app.state.engine.state
                 result = await app.state.engine.execute(action, payload, expected, request.headers.get("idempotency-key"), expected_config)
                 if action == "reboot" and app.state.engine.state is not previous:
@@ -403,6 +460,7 @@ def create_app(store=None, configuration=None):
     mutation("POST", "/notifications/targets/{id}/test", Revision, "test-notification", lambda d,p: {"target_id":p["id"]})
     mutation("POST", "/scenarios/import", Import, "import", lambda d,p: d["scenario"])
 
+    route_permissions.add("GET", "/api/v1/state", "state:read")
     @app.get("/api/v1/state")
     async def state():
         return {**app.state.engine.snapshot(), "snmp_status": app.state.adapter.status(),
@@ -411,30 +469,36 @@ def create_app(store=None, configuration=None):
                             if app.state.engine.storage_fault else
                             getattr(app.state, "startup_warning", None) or app.state.background_error)}
 
+    route_permissions.add("GET", "/api/v1/snmp/status", "state:read")
     @app.get("/api/v1/snmp/status")
     async def snmp_status():
         return app.state.adapter.status()
 
+    route_permissions.add("GET", "/api/v1/scenarios/export", "scenario:export")
     @app.get("/api/v1/scenarios/export")
     async def export():
         return app.state.engine.export()
 
+    route_permissions.add("GET", "/api/v1/events", "state:read")
     @app.get("/api/v1/events")
     async def events(after: int = 0, limit: int = 200):
         s = app.state.engine.state
         return {"events": [e for e in s.events if e["id"] > after][:max(1,min(limit,2000))], "latest": s.event_id,
                 "oldest": s.events[0]["id"] if s.events else 0}
 
+    route_permissions.add("GET", "/api/v1/events/stream", "state:read")
     @app.get("/api/v1/events/stream")
     async def stream(request: Request, after: int = 0):
         async def generate():
             cursor = after
             while not await request.is_disconnected():
-                session = sessions.get(request.cookies.get("switchlab_session"))
-                if not session or session["expires"] < time.monotonic():
+                session = app.state.management.current(request.cookies.get("switchlab_session"))
+                if not app.state.management.permits(session, "state:read"):
                     break
                 batch = [e for e in app.state.engine.state.events if e["id"] > cursor]
                 for event in batch:
+                    if not app.state.management.permits(app.state.management.current(request.cookies.get("switchlab_session")), "state:read"):
+                        return
                     yield f"id: {event['id']}\ndata: {json.dumps(event)}\n\n"
                     cursor = event["id"]
                 if not batch:
@@ -442,6 +506,7 @@ def create_app(store=None, configuration=None):
                 await asyncio.sleep(1)
         return StreamingResponse(generate(), media_type="text/event-stream")
 
+    route_permissions.add("GET", "/api/v1/vlans/{vid}/deletion-preview", "state:read")
     @app.get("/api/v1/vlans/{vid}/deletion-preview")
     async def preview(vid: int):
         s = app.state.engine.state
@@ -453,11 +518,13 @@ def create_app(store=None, configuration=None):
     for family, key in (("switch","switch"), ("ports","ports"), ("endpoints","endpoints"), ("vlans","vlans"), ("fdb","fdb"),
                         ("snmp/settings","snmp"), ("snmp/credentials","credentials"), ("snmp/groups","groups"), ("snmp/views","views"), ("notifications/targets","targets")):
         def register_read(family, key):
+            route_permissions.add("GET", "/api/v1/"+family, "state:read")
             async def collection():
                 snapshot = app.state.engine.snapshot(diagnostics=False)
                 return {"revision": snapshot["revision"], "data": snapshot[key]}
             app.add_api_route("/api/v1/"+family, collection, methods=["GET"], name="read_"+key)
             if key in ("ports", "endpoints", "vlans"):
+                route_permissions.add("GET", "/api/v1/"+family+"/{id}", "state:read")
                 async def item(id: str):
                     snapshot = app.state.engine.snapshot(diagnostics=False)
                     if id not in snapshot[key]:
