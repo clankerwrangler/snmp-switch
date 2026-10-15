@@ -1,10 +1,27 @@
 # Current finite model verification
 
-The 54-configuration normal catalog is supported by separate completed checks,
-not one combined 54-config run. All passing graphs below finished with zero
+The 55-configuration normal catalog is supported by separate completed checks,
+not one combined 55-config run. All passing graphs below finished with zero
 queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
+
+## Snapshot count follow-up (2026-10-15)
+
+`SnapshotCounts` checks one-pass aggregation over three optional FDB rows and two
+ports, including source changes and detached published counts. Before the
+implementation change, TLC completed **4,547,502 generated / 158,895 distinct
+states**, depth 7, with no error. The normal runner reproduced the result.
+Removing the count increment fails `PartialCounts`; this negative control is not
+a timeout or parse failure. TLC 2.19 (`tla2tools-1.7.4.jar`) and Java 21 were used.
+
+```sh
+python specification/run_tlc.py --jar /path/to/tla2tools-1.7.4.jar --models SnapshotCounts
+```
+
+Run from the repository root. This finite aggregation check does not replace
+API serialization, redaction, or runtime tests. Application measurements and
+checks are in [implementation validation](../docs/VALIDATION.md#snapshot-read-cost).
 
 ## Port inventory follow-up (2026-09-16)
 

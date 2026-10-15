@@ -9,6 +9,7 @@ import json
 import ipaddress
 import math
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass, field, replace
 
 from .mib import entity_inventory, plan_set, current_vlan_ports
@@ -1155,9 +1156,10 @@ class Engine:
             lease_deadline_ms=session.lease_deadline_ms, idle_deadline_ms=s.session_deadlines(session)[0],
             reauthentication_deadline_ms=s.session_deadlines(session)[2])
             for session in s.radius_sessions.values()]
+        learned_counts = Counter(r["port_id"] for r in s.fdb.values())
         for pid, p in data["ports"].items():
             p.update(carrier=s.carrier(pid), operational_up=s.up(pid), attachments=s.attached(pid),
-                     learned_count=sum(1 for r in s.fdb.values() if r["port_id"] == pid), counters=s.counters[pid].copy())
+                     learned_count=learned_counts[pid], counters=s.counters[pid].copy())
         return data
 
     def export(self):

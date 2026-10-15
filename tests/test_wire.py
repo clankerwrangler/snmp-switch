@@ -124,7 +124,7 @@ async def test_independent_notification_receiver_capture_order_and_gate(engine):
     port=transport.get_extra_info('sockname')[1]
     await e.execute('credential-save',{'label':'traps','community':'fixture-traps'})
     cid=next(iter(e.state.cfg.credentials))
-    await e.execute('target-save',{'address':'127.0.0.1','port':port,'credential_id':cid})
+    await e.execute('target-save',{'address':'127.0.0.1','source_address':'127.0.0.1','port':port,'credential_id':cid})
     a,poll_port=await start(e)
     try:
         await a.drain_one()

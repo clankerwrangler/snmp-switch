@@ -15,6 +15,7 @@ and [application validation](../docs/VALIDATION.md) for implementation tests.
 | `SetTransactions.tla` | Existing switch/access state; simultaneous candidate validation, original error positions, atomic commit/rejection, and stale queued-request denial | SET planner and engine transaction |
 | `GroupedAccess.tla` | Canonical communities/users/groups, policy projection into the existing access/SET owners, normalized migration, atomic saves, and shared-generation invalidation | Schema loading, group/credential commands, and incoming authorization |
 | `EntityInventory.tla` | Surviving physical/alias/interface identity, independent filtered snapshots, and actual-row-change timestamps | Read-only ENTITY projection and management uptime |
+| `SnapshotCounts.tla` | One-pass per-port counts over captured rows, with unchanged published results after source mutations | API snapshot learned counts; two ports and three optional rows |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original MP/security record association, exact ownership through admission, consumption/discard, expiry, reuse, and response failure | Pinned response-lifetime integration |
 | `RadiusAuthorization.tla` | Current authorization captures, lease/VLAN invalidation, and link/accounting independence | Per-port/MAC authorization and existing runtime admission |
 | `RadiusDynamicAuthorization.tla` | Conjunctive session selection, all-or-none CoA/Disconnect, and cached duplicate decisions | Existing engine transaction and dynamic-request handling |
@@ -163,7 +164,7 @@ restart remain implementation-test obligations.
 ## Finite scope
 
 `configs/` is the executable source of bounds, selected actions, invariants, and
-fairness. There are 54 normal configurations and one explicit unreduced SET
+fairness. There are 55 normal configurations and one explicit unreduced SET
 diagnostic. The normal suite contains both general finite graphs and scripted
 traces; these do not collectively prove an unrestricted production-sized system.
 
