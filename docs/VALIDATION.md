@@ -1,5 +1,46 @@
 # Implementation validation
 
+## Snapshot read cost
+
+The 2026-10-15 review replaces one full FDB scan per port with one request-local
+count aggregation. No cross-request cache, serialization/redaction path, lock,
+listener, saved configuration, or mutation behavior changes. The maintained
+regression checks exact counts after moves/deletes/clear, detached prior results,
+and bounded FDB traversals; it fails against the original snapshot method.
+
+Synthetic local measurements use 256 ports and 16,384 learned addresses. Each
+route includes authentication middleware, snapshot construction, and response
+serialization through FastAPI TestClient. The table reports seven-sample medians
+on the same fixture, not production latency or network RTT:
+
+| Path | Before | After | Response size |
+| --- | ---: | ---: | ---: |
+| Full `Engine.snapshot()` construction | 210.85 ms | 9.60 ms | Not serialized |
+| Authenticated `GET /api/v1/state` | 735.96 ms | 411.15 ms | 3,290,914 bytes |
+| Authenticated `GET /api/v1/ports` | 297.13 ms | 27.15 ms | 165,951 bytes |
+
+The route comparison substitutes only the baseline snapshot method into the
+same application. Full-state serialization remains substantial; payload shape
+and size are unchanged. Source, measurements, and guards are retained under
+`/workspace/.scratch/review-app-services-20261015/`. The scoped
+[aggregation model](../specification/CURRENT_VERIFICATION.md#snapshot-count-follow-up-2026-10-15)
+passed before implementation, with an intended invariant failure when counting
+is disabled. No deployment, device, or external network checks ran.
+
+The final synthetic/loopback-only Python suite passed **1,349 tests and 139
+subtests in 474.06 s**, with 14 missing-Net-SNMP skips and 157 upstream warnings.
+The guard recorded zero nonloopback attempts. One existing notification fixture
+now explicitly chooses its loopback source address; runtime defaults are unchanged.
+Earlier runs with an over-strict socket guard or the unspecified-source fixture
+are retained as failed attempts, not passing validation.
+
+The canonical full Chromium browser/BER check passed in **72.109 s**, including
+all existing workflows and mobile layouts, with no page errors. Child processes,
+loopback listener, and private synthetic state were cleaned. An earlier run under
+concurrent test load exceeded the unchanged 165-second limit; its failure remains
+in the evidence. The successful retry used a coordinated quiet slot, not weaker
+assertions or a longer timeout. No Switch Lab UI source changed.
+
 ## Port inventory
 
 Add/Delete now use the existing revision-checked command, storage, projection,

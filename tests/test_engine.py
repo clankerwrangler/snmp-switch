@@ -1516,3 +1516,26 @@ def test_port_allocator_legacy_sparse_migration_and_current_loss_fail_closed(sto
     with pytest.raises(ValueError): store.load()
     raw["schema_version"] = 5
     with pytest.raises(ValidationError, match="requires port allocators"): Configuration.model_validate(raw)
+
+
+def test_snapshot_learned_counts_are_linear_and_fresh(engine):
+    class Rows(dict):
+        traversals = 0
+        def values(self):
+            self.traversals += 1
+            return super().values()
+
+    ports = list(engine.state.cfg.ports)
+    rows = Rows({(1, str(i)): {"port_id": ports[i % 3], "expires_at_ms": 300000}
+                 for i in range(1200)})
+    engine.state.fdb = rows
+    before = engine.snapshot(diagnostics=False)
+    assert [p["learned_count"] for p in before["ports"].values()] == [400, 400, 400, 0]
+    assert rows.traversals <= 3  # Snapshot cost must not scan the FDB once per port.
+    rows[(1, "0")]["port_id"] = ports[3]
+    del rows[(1, "1")]
+    after = engine.snapshot(diagnostics=False)
+    assert [p["learned_count"] for p in after["ports"].values()] == [399, 399, 400, 1]
+    assert [p["learned_count"] for p in before["ports"].values()] == [400, 400, 400, 0]
+    rows.clear()
+    assert all(p["learned_count"] == 0 for p in engine.snapshot(diagnostics=False)["ports"].values())
