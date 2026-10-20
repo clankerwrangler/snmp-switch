@@ -1,6 +1,6 @@
 # SNMP identity setup
 
-**Documentation revision 2.1.** This guide defines identity requirements and illustrative configuration fragments. For runnable setup instructions, see the [application README](../../README.md).
+**Documentation revision 2.2.** This guide defines identity requirements and illustrative configuration fragments. For runnable setup instructions, see the [application README](../../README.md).
 
 ## Development and public defaults
 
@@ -36,7 +36,7 @@ The UI, API, and switch simulation start with identity unset. The SNMP listener 
 In **SNMP**:
 
 1. Edit **SNMP identity** and enter the full numeric **System object ID (`sysObjectID`)**. A PEN alone is not a complete value. The field starts empty; no registration certificate or ownership lookup is required.
-2. Add a v2c community with **Access**, or add a v3 group and assign users to it. Select independent read/write views and optional source networks in the community or group form. New incoming access is denied by default. The [credential reference](../TECHNICAL_SPECIFICATION.md#71-credentials) describes security levels and shared policy.
+2. Add a v2c community with **Access**, or add a v3 group and assign users to it. For v3, configure authentication and encryption in the user form as described in [SNMPv3 security](#snmpv3-security). Select independent read/write views and optional source networks in the community or group form. New incoming access is denied by default. The [credential reference](../TECHNICAL_SPECIFICATION.md#71-credentials) describes security levels and shared policy.
 3. Open **Configure** in **SNMP service**, verify the listener address/port, and select **Enable SNMP**. Fresh Docker configurations use `0.0.0.0:161`; native configurations use `127.0.0.1:161`. Saved settings take precedence. With Compose, the saved port must match `SWITCHLAB_SNMP_PORT`; native managers use the listener directly. The operating system must permit binding that port.
 4. Check **Listener status**. For traps, add a destination in **Trap destinations** and select or create its credential in the destination form. Trap transport does not require incoming access.
 5. Choose **Save configuration** to retain the applied switch settings across reboot or process restart. Unsaved changes are discarded; physical lab clients and connections persist automatically.
@@ -52,6 +52,26 @@ Input is parsed as an SNMP-compatible numeric OBJECT IDENTIFIER. Any syntactical
 Clearing the identity stops the listener and sender safely before the clear is acknowledged; it does not stop the simulation. Unsent notification work is discarded with a reason. Events produced while disabled remain local history and are not replayed as traps on activation. A malformed identity in legacy configuration is disabled with a repairable setup warning. A corrupt or incomplete stored startup/lab configuration fails initialization rather than enabling permissive defaults.
 
 Changing the advertised OID does not enable vendor-specific MIBs, change notifications or port behavior, flush the FDB, reboot the simulation, or regenerate the SNMPv3 engine identity. Lab scenario imports do not replace deployment identity.
+
+## SNMPv3 security
+
+In **SNMP → SNMPv3 users**, choose **+ User** or **Edit**, then select **Security level**:
+
+| Security level | Protection |
+|---|---|
+| `noAuthNoPriv` | No authentication or encryption. SNMP data is plaintext. |
+| `authNoPriv` | Authentication without encryption. SNMP data is authenticated plaintext. |
+| `authPriv` | Authentication and encryption. This is the default for new users. |
+
+**Authentication algorithm** appears for authenticated levels. Choose **SHA-224**, **SHA-256** (default), **SHA-384**, **SHA-512**, or the legacy **MD5** and **SHA-1** options. **Encryption algorithm** appears only for `authPriv`. Choose **AES-128** (default), legacy **DES**, or **AES-192 (extension)** / **AES-256 (extension)**. MD5, SHA-1, and DES are legacy compatibility choices. Unencrypted levels expose SNMP data in transit.
+
+AES-128 follows RFC 3826. AES-192 and AES-256 use PySNMP's Cisco/Reeder key-localization extensions (`USM_PRIV_CFB192_AES` and `USM_PRIV_CFB256_AES`), not its Blumenthal variants. These extensions are not defined by RFC 3826; select them only when the manager or trap receiver supports the same variant.
+
+Set the manager or trap receiver to the same username, security level, algorithms, and passphrases. Each active passphrase requires at least eight characters. When editing the same SNMP version, blank passphrase fields keep saved secrets. Changing the security level clears unsaved passphrase drafts. Inactive algorithm selections remain stored but are not used on the wire. Only visible algorithm selections are applied; inactive saved selections remain unchanged.
+
+Choose a **Group** for incoming access. A user's level must meet the group's **Minimum security level**; lowering the group minimum does not lower that user's configured protection. Group read/write views and source networks still apply. A user with **None (traps only)** has no incoming access. Trap destinations reuse the selected user's security settings; **Create new** in a destination form offers the same algorithm controls. Web administrator/viewer roles are separate from SNMP groups.
+
+Choose **Apply** to update running settings, then **Save configuration** to retain them after restart.
 
 ## OID interpretation
 

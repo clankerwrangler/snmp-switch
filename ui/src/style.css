@@ -21,3 +21,5 @@
 /* Session identity and essential read-only actions remain reachable on mobile. */
 .sidebar{overflow-y:auto}.session-role{font-size:11px;line-height:1.5;color:#d3ed83;margin-bottom:14px}
 @media(max-width:680px){.sidebar-bottom{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;padding:14px 0 0}.sidebar-bottom .mini-status{display:none}.sidebar-bottom .session-role{width:100%;margin:0}.sidebar-bottom>button{font-size:12px;padding:8px 0}.auth-form select{background:white}}
+
+.credential-keys{grid-column:1/-1;min-width:0}.credential-keys .form-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.credential-keys [hidden]{display:none}.credential-keys .security-warning{margin:0 0 16px;color:#956929}#credential-protocol>label,.inline-protocol>label{min-width:0}#credential-protocol select,.inline-protocol select{min-width:0}@media(max-width:680px){.credential-keys .form-grid{grid-template-columns:minmax(0,1fr)}}
