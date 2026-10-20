@@ -40,7 +40,7 @@ For selected configurations:
 python3 ./run_tlc.py --jar /path/to/tla2tools.jar --models SetResponseEntry StorageRecovery
 ```
 
-The normal catalog contains 57 configurations. Current verification joins separate completed checks; it does not claim one combined 57-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
+The normal catalog contains 58 configurations. Current verification joins separate completed checks; it does not claim one combined 58-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
 
 ```sh
 python3 ./tests/check_mutations.py --jar /path/to/tla2tools.jar
@@ -54,6 +54,7 @@ Both entry points regenerate ignored scenario/config inputs through their existi
 |---|---|
 | `Switch.tla` | Core state, VLAN sets, stable ENTITY joins, invariants, and source progress |
 | `ReadAccess.tla` | Shared credentials and independent polling/writing/target references |
+| `SnmpSecurity.tla` | Protocol selections, effective keys, profile compatibility, and response-size arithmetic |
 | `GroupedAccess.tla` | Community/user/group policy, normalized migration, atomic saves, and shared revocation |
 | `SetTransactions.tla` | Final-candidate SET, original-position errors, authorization, and generations |
 | `RadiusAuthorization.tla`, `RadiusDynamicAuthorization.tla` | Current grants and atomic duplicate-safe dynamic requests; separate bounded safety graphs |

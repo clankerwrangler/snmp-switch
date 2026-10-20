@@ -106,7 +106,7 @@ def merge_credential(cfg, previous, fields):
     else:
         require(not group_present, "SNMPv2c communities cannot select a group", 422)
     if previous is None or converting:
-        for key in ("community", "username", "security_level", "auth_key", "priv_key"):
+        for key in ("community", "username", "security_level", "auth_protocol", "priv_protocol", "auth_key", "priv_key"):
             saved.pop(key, None)
         if version == "2c":
             fields.update(username="", security_level="noAuthNoPriv", auth_key=None, priv_key=None)
@@ -1132,6 +1132,8 @@ class Engine:
             if c["version"] == "2c":
                 c.pop("username")
                 c.pop("security_level")
+                c.pop("auth_protocol")
+                c.pop("priv_protocol")
                 c["has_community"] = bool(community)
             else:
                 if c["security_level"] != "noAuthNoPriv":
