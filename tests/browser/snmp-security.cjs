@@ -2,9 +2,9 @@
 const assert = require('node:assert/strict');
 
 module.exports = async function snmpSecurityChecks({page,state,saveForm,editCredential,grouped,groupId,screenshot}) {
-  const level=()=>page.getByLabel('Security level',{exact:true});
-  const auth=()=>page.getByLabel('Authentication algorithm',{exact:true});
-  const priv=()=>page.getByLabel('Encryption algorithm',{exact:true});
+  const level=()=>page.getByRole('combobox',{name:'Security level',exact:true});
+  const auth=()=>page.locator('dialog select[name=auth_protocol]');
+  const priv=()=>page.locator('dialog select[name=priv_protocol]');
   const warning=()=>page.locator('dialog .security-warning');
   const cancel=async()=>{await page.getByRole('button',{name:'Cancel',exact:true}).click();await page.locator('dialog').waitFor({state:'hidden'});};
   const fits=async()=>{
@@ -66,7 +66,7 @@ module.exports = async function snmpSecurityChecks({page,state,saveForm,editCred
     }
     await cancel();
     await page.locator(`button[data-action=group][data-id="${groupId}"]`).click();await fits();
-    assert.equal(await page.getByLabel('Minimum security level',{exact:true}).inputValue(),original.minimum_security_level);
+    assert.equal(await page.getByRole('combobox',{name:'Minimum security level',exact:true}).inputValue(),original.minimum_security_level);
     await screenshot(`snmp-security-group-${name}.png`,false);await cancel();
   }
   // Applying a disabled level omits its algorithms and preserves saved selections.
