@@ -292,9 +292,19 @@ function listenerStatus(){
   if(s.reason==='credentials_required'&&s.writing_reason==='set_access_required')return 'Incoming access required';
   return 'Initializing';
 }
+const securityLevels=['noAuthNoPriv','authNoPriv','authPriv'];
+const securityLabels:Record<string,string>={noAuthNoPriv:'No auth or encryption',authNoPriv:'Authenticated plaintext',authPriv:'Auth + encryption'};
+const authProtocols:Record<string,string>={md5:'MD5 (legacy)',sha1:'SHA-1 (legacy)',sha224:'SHA-224',sha256:'SHA-256',sha384:'SHA-384',sha512:'SHA-512'};
+const privProtocols:Record<string,string>={des:'DES (legacy)',aes128:'AES-128',aes192:'AES-192 (extension)',aes256:'AES-256 (extension)'};
+const securityOptions=(current:string)=>securityLevels.map(v=>opt(v,`${v} — ${securityLabels[v]}`,v===current)).join('');
+function credentialSecurity(c:any){
+  if(c.security_level==='noAuthNoPriv')return securityLabels.noAuthNoPriv;
+  const auth=authProtocols[c.auth_protocol??'sha256'];
+  return c.security_level==='authPriv'?`${auth} · ${privProtocols[c.priv_protocol??'aes128']}`:`${auth} · No encryption (plaintext)`;
+}
 function credentialSection(version:string){
   const users=version==='3',rows=values(state.credentials).filter(c=>c.version===version);
-  return `<section class="card"><div class="card-head"><div><h2>${users?'SNMPv3 users':'SNMPv2c communities'}</h2></div>${button(users?'+ User':'+ Community',users?'user':'credential')}</div><div class="detail-body">${rows.map(c=>`<div class="setting-row"><div><b>${esc(c.label)}</b><small>${users?`${esc(c.username)} · ${esc(c.security_level)} · `:''}${c.enabled?'enabled':'disabled'}</small><small>${users?`${esc(state.groups[c.group_id]?.label??'No group')} · `:''}${esc(accessLabel(policyOf(c)))}</small></div><div>${button('Edit','credential',c.id)}${button('Delete','delete-credential',c.id,'danger')}</div></div>`).join('')||`<p class="muted">No ${users?'users':'communities'} configured.</p>`}</div></section>`;
+  return `<section class="card"><div class="card-head"><div><h2>${users?'SNMPv3 users':'SNMPv2c communities'}</h2></div>${button(users?'+ User':'+ Community',users?'user':'credential')}</div><div class="detail-body">${rows.map(c=>`<div class="setting-row"><div><b>${esc(c.label)}</b><small>${users?`${esc(c.username)} · ${esc(credentialSecurity(c))} · `:''}${c.enabled?'enabled':'disabled'}</small><small>${users?`${esc(state.groups[c.group_id]?.label??'No group')} · `:''}${esc(accessLabel(policyOf(c)))}</small></div><div>${button('Edit','credential',c.id)}${button('Delete','delete-credential',c.id,'danger')}</div></div>`).join('')||`<p class="muted">No ${users?'users':'communities'} configured.</p>`}</div></section>`;
 }
 function generalSettings(){const s=state.switch;return `<div class="settings-grid"><section class="card"><div class="card-head"><div><h2>Switch settings</h2></div>${button('Edit','switch-settings')}</div><div class="detail-body">${[['System name',s.name],['Contact',s.contact||'—'],['Location',s.location||'—'],['Bridge base MAC',s.base_mac],['MAC aging time',`${s.aging_seconds}s`],['Dynamic FDB capacity',s.fdb_limit]].map(([label,value])=>`<div class="kv"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div></section><section class="card"><div class="card-head"><div><h2>Management reboot</h2><p>Clear dynamic MAC entries, counters and simulation time.</p></div></div><div class="detail-body"><p class="hint">Saved switch settings are restored; clients and attachments are retained.</p>${button('Reboot switch…','reboot','','danger')}</div></section>${can('security:write')?`<section class="card" id="viewer-access"><div class="card-head"><h2>Local viewer access</h2></div><div class="detail-body"><p class="hint">Optional read-only access to this switch.</p>${button('Manage viewer access','viewer-access')}</div></section>`:''}</div>`;}
 async function editViewerAccess(){
@@ -361,15 +371,34 @@ function editIdentity(){const s=state.switch;form('SNMP identity',`<div class="f
 function credentialData(d:Record<string,FormDataEntryValue>){
   const payload:any={label:d.label,version:d.version};
   if(d.version==='2c'){if(d.community)payload.community=d.community;}
-  else{payload.username=d.username;payload.security_level=d.security_level;if(d.auth_key)payload.auth_key=d.auth_key;if(d.priv_key)payload.priv_key=d.priv_key;}
+  else{payload.username=d.username;payload.security_level=d.security_level;if(d.auth_protocol)payload.auth_protocol=d.auth_protocol;if(d.priv_protocol)payload.priv_protocol=d.priv_protocol;if(d.auth_key)payload.auth_key=d.auth_key;if(d.priv_key)payload.priv_key=d.priv_key;}
   return payload;
 }
 function credentialProtocol(container:HTMLElement,version:string,c?:any){
   if(version==='2c'){container.innerHTML=input('Community','community','','password','autocomplete="new-password"');return;}
-  container.innerHTML=`${input('Username','username',c?.username??'')}${select('Security level','security_level',['noAuthNoPriv','authNoPriv','authPriv'].map(v=>opt(v,v,v===(c?.security_level??'authPriv'))).join(''))}<div class="credential-keys form-grid"></div>`;
+  container.innerHTML=`${input('Username','username',c?.username??'')}${select('Security level','security_level',securityOptions(c?.security_level??'authPriv'))}<div class="credential-keys"><div data-security="auth" class="form-grid">${select('Authentication algorithm','auth_protocol',Object.entries(authProtocols).map(([v,label])=>opt(v,label,v===(c?.auth_protocol??'sha256'))).join(''))}<div class="credential-secret"></div></div><div data-security="priv" class="form-grid">${select('Encryption algorithm','priv_protocol',Object.entries(privProtocols).map(([v,label])=>opt(v,label,v===(c?.priv_protocol??'aes128'))).join(''))}<div class="credential-secret"></div></div><p class="hint security-warning" role="status"></p></div>`;
   const level=container.querySelector<HTMLSelectElement>('[name=security_level]')!;
-  const keys=container.querySelector<HTMLDivElement>('.credential-keys')!;
-  const renderKeys=()=>{keys.innerHTML=(level.value!=='noAuthNoPriv'?input('Authentication passphrase (SHA-256)','auth_key','','password','autocomplete="new-password"'):'')+(level.value==='authPriv'?input('Privacy passphrase (AES-128)','priv_key','','password','autocomplete="new-password"'):'');};
+  const auth=container.querySelector<HTMLSelectElement>('[name=auth_protocol]')!,priv=container.querySelector<HTMLSelectElement>('[name=priv_protocol]')!;
+  const warning=container.querySelector<HTMLElement>('.security-warning')!;
+  const showWarning=()=>{
+    const notices=[];
+    if(level.value==='noAuthNoPriv')notices.push('No authentication or encryption. SNMP data is sent in plaintext.');
+    else if(level.value==='authNoPriv')notices.push('No encryption. Authenticated SNMP data is sent in plaintext.');
+    const legacy=[];
+    if(level.value!=='noAuthNoPriv'&&['md5','sha1'].includes(auth.value))legacy.push(auth.value==='md5'?'MD5':'SHA-1');
+    if(level.value==='authPriv'&&priv.value==='des')legacy.push('DES');
+    if(legacy.length)notices.push(`${legacy.join(' and ')} ${legacy.length===1?'is':'are'} legacy; use only for compatibility.`);
+    warning.textContent=notices.join(' ');warning.hidden=!notices.length;
+  };
+  const renderKeys=()=>{
+    for(const [use,active,label] of [['auth',level.value!=='noAuthNoPriv','Authentication passphrase'],['priv',level.value==='authPriv','Privacy passphrase']] as const){
+      const section=container.querySelector<HTMLElement>(`[data-security=${use}]`)!;
+      section.hidden=!active;section.querySelector<HTMLSelectElement>('select')!.disabled=!active;
+      section.querySelector('.credential-secret')!.innerHTML=active?input(label,`${use}_key`,'','password','autocomplete="new-password"'):'';
+    }
+    showWarning();
+  };
+  auth.addEventListener('change',showWarning);priv.addEventListener('change',showWarning);
   level.addEventListener('change',renderKeys);renderKeys();
 }
 function accessEditor(container:HTMLElement,policy:any){
@@ -449,7 +478,7 @@ function editCredential(id?:string,initialVersion='2c'){
 function editGroup(id?:string){
   const g=id?state.groups[id]:undefined,members=values(state.credentials).filter(c=>c.version==='3'&&c.group_id===id);
   let readAccess=()=>({});
-  form(g?'Edit group':'Add group',`${input('Label','label',g?.label??'','text','required')}${select('Minimum security level','minimum_security_level',['noAuthNoPriv','authNoPriv','authPriv'].map(v=>opt(v,v,v===(g?.minimum_security_level??'authPriv'))).join(''))}<div id="group-access"></div><p>Members: ${esc(members.map(c=>`${c.label} (${c.security_level}${c.enabled?'':', disabled'})`).join(', ')||'none')}.</p><p class="hint" id="group-members-hint"></p><p class="hint">Changes apply to every member; each user keeps its configured security level.</p>`,async (f,commit)=>{
+  form(g?'Edit group':'Add group',`${input('Label','label',g?.label??'','text','required')}${select('Minimum security level','minimum_security_level',securityOptions(g?.minimum_security_level??'authPriv'))}<div id="group-access"></div><p>Members: ${esc(members.map(c=>`${c.label} (${c.security_level}${c.enabled?'':', disabled'})`).join(', ')||'none')}.</p><p class="hint" id="group-members-hint"></p><p class="hint">Changes apply to every member; each user keeps its configured security level.</p>`,async (f,commit)=>{
     const d=data(f);await commit(id?`/snmp/groups/${id}`:'/snmp/groups',id?'PUT':'POST',{label:d.label,minimum_security_level:d.minimum_security_level,...readAccess()});
   });
   readAccess=accessEditor(dialog.querySelector<HTMLDivElement>('#group-access')!,g);
