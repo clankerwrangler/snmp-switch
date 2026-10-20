@@ -103,7 +103,7 @@ async def test_protocol_get_set_and_notification(engine, level, auth, priv):
         error, status, _, bindings = await query(port, manager_user(level, auth, priv))
         assert not error and not status and int(bindings[0][1]) == value
         cid = next(iter(engine.state.cfg.credentials))
-        tid = (await engine.execute("target-save", {"address": "127.0.0.1", "credential_id": cid,
+        tid = (await engine.execute("target-save", {"address": "127.0.0.1", "source_address": "127.0.0.1", "credential_id": cid,
             "port": transport.transport.get_extra_info("sockname")[1]}))["id"]
         await adapter.reconcile()
         await engine.execute("test-notification", {"target_id": tid})
@@ -344,7 +344,7 @@ async def test_live_rotation_uses_fresh_profile_for_requests_and_targets(engine)
     ntfrcv.NotificationReceiver(receiver, lambda eng, ref, ce, cn, bindings, ctx: delivered.put_nowait(bindings))
     try:
         cid = next(iter(engine.state.cfg.credentials))
-        tid = (await engine.execute("target-save", {"address": "127.0.0.1", "credential_id": cid,
+        tid = (await engine.execute("target-save", {"address": "127.0.0.1", "source_address": "127.0.0.1", "credential_id": cid,
             "port": transport.transport.get_extra_info("sockname")[1]}))["id"]
         await adapter.reconcile()
         async def trap():
