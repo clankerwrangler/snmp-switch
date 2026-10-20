@@ -2908,6 +2908,30 @@
             "title": "Security Level",
             "default": "noAuthNoPriv"
           },
+          "auth_protocol": {
+            "type": "string",
+            "enum": [
+              "md5",
+              "sha1",
+              "sha224",
+              "sha256",
+              "sha384",
+              "sha512"
+            ],
+            "title": "Auth Protocol",
+            "default": "sha256"
+          },
+          "priv_protocol": {
+            "type": "string",
+            "enum": [
+              "des",
+              "aes128",
+              "aes192",
+              "aes256"
+            ],
+            "title": "Priv Protocol",
+            "default": "aes128"
+          },
           "community": {
             "anyOf": [
               {
@@ -3030,6 +3054,42 @@
               }
             ],
             "title": "Security Level"
+          },
+          "auth_protocol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "md5",
+                  "sha1",
+                  "sha224",
+                  "sha256",
+                  "sha384",
+                  "sha512"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Protocol"
+          },
+          "priv_protocol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "des",
+                  "aes128",
+                  "aes192",
+                  "aes256"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priv Protocol"
           },
           "community": {
             "anyOf": [

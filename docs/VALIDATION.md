@@ -1,5 +1,42 @@
 # Implementation validation
 
+## Configurable SNMPv3 security
+
+The 2026-10-20 update adds per-user authentication and privacy selections to the
+existing three security levels and shared trap-credential form. SHA-256/AES-128
+remain the defaults, including when older saved records omit the new fields.
+MD5, SHA-1, and DES are marked as legacy; AES-192/256 are identified as
+Cisco/Reeder extensions. The [setup guide](../specification/docs/IDENTITY_SETUP.md#snmpv3-security)
+owns configuration, and [finite model results](../specification/CURRENT_VERIFICATION.md#snmp-protocol-selection-follow-up-2026-10-20)
+are separate from executable checks.
+
+The 54-case focused suite passed with the strict loopback guard in 29.74 s,
+recording zero nonloopback attempts. Real loopback GET, SET, and decoded
+traps cover 31 effective profiles: one unauthenticated, six authenticated
+plaintext, and 24 authentication/privacy combinations. Wrong active keys reject
+SET without changing state. Tests also cover inactive key suppression, atomic
+invalid-input rejection, encrypted persistence, missing-only defaults in old
+split records, restart identity/policy preservation, and scenario secret exclusion.
+Live authentication/privacy rotation invalidates queued SETs, rejects the old
+manager, and rebuilds the selected target with decoded traps before and after.
+
+Response admission is checked against actual encoded messages and pinned PySNMP
+cipher output: all eight DES alignments, selected digest widths, exact and adjacent byte
+budgets, and real peer-advertised 484-byte commit/rejection boundaries. Rejected
+oversize requests make no configuration change. The implementation accounts for
+DES's full padding block when plaintext is already aligned.
+
+The frozen-lockfile, script-disabled Linux UI build passed TypeScript and Vite;
+all four packaged asset hashes match its receipt. The maintained full Chromium
+browser/BER flow passed in **86.836 s**, including algorithm controls in user and
+inline trap forms, inactive sparse fields, plaintext/legacy warnings, secret-draft
+clearing, unchanged group policy, and desktop/mobile layout. No page errors
+occurred; child processes, loopback listener, and synthetic private state were
+cleaned. Two earlier attempts failed in the new helper: nested-label matching,
+then a missing state-refresh wait after the existing stale-group test. Exact
+selectors and the existing readiness wait corrected the helper; product assets,
+assertions, and timeouts were unchanged across those attempts.
+
 ## Local management access
 
 The 2026-10-15 follow-up adds named administrator/viewer permissions and one
