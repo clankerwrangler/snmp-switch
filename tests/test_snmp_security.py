@@ -22,7 +22,7 @@ from switchlab.engine import Engine
 from switchlab.models import CredentialAuth, Configuration
 from switchlab.snmp import SnmpAdapter
 from switchlab.storage import compose_configuration, split_configuration
-from test_wire import start, free_port
+from test_wire import start
 
 AUTH = {
     "md5": config.USM_AUTH_HMAC96_MD5,
@@ -160,7 +160,7 @@ async def test_sparse_selection_preserves_policy_secrets_and_saved_state(engine)
         assert engine.state.cfg.groups == groups and engine.state.credential_generations[cid] != generation
         await adapter.reconcile()
         assert adapter.configured[cid] == expected and (adapter.engine_id, adapter.boots) == (identity, boots)
-        assert not engine.state.cfg.groups[before["group_id"]].polling.networks == []
+        assert engine.state.cfg.groups[before["group_id"]].polling.networks == ["127.0.0.0/8"]
         await engine.execute("save-startup")
         saved = engine.state.cfg.model_copy(deep=True)
         await engine.execute("credential-save", {"id": cid, "auth_protocol": "md5"})
@@ -233,3 +233,194 @@ def test_defaults_and_active_passphrase_validation():
         else:
             with pytest.raises(ValidationError):
                 CredentialAuth.model_validate(fields)
+
+
+async def memory_exchange(engine, store, auth, priv):
+    from test_snmp_lifetime import ApplicationExchange
+    await engine.execute("switch-edit", {"identity": {"sys_object_id": "1.3.6.1.4.1.32473.1"}})
+    await engine.execute("snmp-settings", {"enabled": True})
+    gid = (await engine.execute("group-save", {"label": "Boundary group", "minimum_security_level": "authPriv",
+        "polling": {"enabled": True}, "writing": {"enabled": True, "view_id": "all"}}))["id"]
+    cid = (await engine.execute("credential-save", {**credential(auth=auth, priv=priv),
+            "username": "lifetime-probe", "group_id": gid}))["id"]
+    def install_manager(snmp, level, security_engine=None):
+        config.add_v3_user(snmp, "lifetime-probe", securityEngineId=security_engine,
+                           **parameters("authPriv", auth, priv))
+    with patch("test_snmp_lifetime.user", side_effect=install_manager):
+        exchange = ApplicationExchange(engine, store, 3)
+    exchange.credential_id = cid
+    return await exchange.start()
+
+
+def name_request(length, count=1):
+    from pysnmp.proto.api import v2c
+    from test_snmp_lifetime import request
+    pdu = request()
+    v2c.apiPDU.set_varbinds(pdu,
+        [((1,3,6,1,2,1,17,7,1,4,3,1,1,1), a.OctetString(b"x" * length))] * count +
+        [((1,3,6,1,2,1,2,2,1,7,101), a.Integer32(2))])
+    return pdu
+
+
+@pytest.mark.parametrize("auth,priv", [("sha512", "des"), ("md5", "des"), ("sha512", "aes128"), ("md5", "aes128")])
+async def test_budget_matches_actual_ber_digest_and_cipher_padding(engine, store, auth, priv):
+    from pyasn1.codec.ber import encoder
+    from switchlab.snmp import response_budget
+    x = await memory_exchange(engine, store, auth, priv)
+    try:
+        alignments = set()
+        # Eight adjacent legal name widths visit all DES block alignments.
+        for width in range(24, 32):
+            x.send(name_request(width, 13))
+            pending = next(iter(x.adapter.pending_sets.values()))
+            args, whole = pending.args, pending.whole_message
+            await x.settle()
+            wire = x.sink.sent[0][0]
+            message = decoder.decode(wire, asn1Spec=SNMPv3Message())[0]
+            usm = decoder.decode(message["msgSecurityParameters"].asOctets(), asn1Spec=UsmSecurityParameters())[0]
+            assert len(usm["msgAuthenticationParameters"]) == DIGEST[auth]
+            if priv == "des":
+                assert len(message["msgData"]["encryptedPDU"]) % 8 == 0
+            # Replace only the actual response's clocks by the largest legal
+            # encodings. This independently preserves the real cipher/digest
+            # output instead of estimating their lengths in the test.
+            usm["msgAuthoritativeEngineBoots"] = usm["msgAuthoritativeEngineTime"] = 2147483647
+            message["msgSecurityParameters"] = encoder.encode(usm)
+            expected = len(encoder.encode(message))
+            assert expected > 484
+            incoming = decoder.decode(whole, asn1Spec=SNMPv3Message())[0]
+            for maximum in (expected - 1, expected, expected + 1):
+                incoming["msgGlobalData"]["msgMaxSize"] = maximum
+                assert response_budget(args, encoder.encode(incoming), engine.state.cfg.credentials[x.credential_id]) == (maximum >= expected)
+            from pysnmp.proto.api import v2c
+            from pysnmp.proto.mpmod.rfc3412 import ScopedPDU
+            response = v2c.apiPDU.get_response(args[8])
+            v2c.apiPDU.set_varbinds(response, v2c.apiPDU.get_varbinds(args[8]))
+            scope = ScopedPDU()
+            scope["contextEngineId"], scope["contextName"] = args[5], args[6]
+            scope["data"].setComponentByType(response.tagSet, response)
+            alignments.add(len(encoder.encode(scope)) % 8)
+            if priv == "des":
+                scope_length = len(encoder.encode(scope))
+                assert len(message["msgData"]["encryptedPDU"]) == scope_length + 8 - scope_length % 8
+            x.decode()
+        assert alignments == set(range(8))
+        x.empty()
+    finally:
+        await x.close()
+
+
+@pytest.mark.parametrize("field,value", [("auth_protocol", "sha512"), ("priv_protocol", "des")])
+async def test_protocol_rotation_retires_queued_set(engine, store, field, value):
+    from test_snmp_lifetime import request
+    x = await memory_exchange(engine, store, "sha256", "aes128")
+    try:
+        generation = engine.state.credential_generations[x.credential_id]
+        async with x.adapter.io_lock:
+            x.send(request())
+            pending = next(iter(x.adapter.pending_sets.values()))
+            await asyncio.sleep(0)
+            assert pending.ticket.phase == "queued"
+            await engine.execute("credential-save", {"id": x.credential_id, field: value})
+            await x.adapter._reconcile()
+        await x.settle()
+        assert engine.state.credential_generations[x.credential_id] != generation
+        assert pending.ticket.phase == "terminal"
+        assert not x.sink.sent and next(iter(engine.state.cfg.ports.values())).admin_up
+        x.empty()
+    finally:
+        await x.close()
+
+
+async def test_live_rotation_uses_fresh_profile_for_requests_and_targets(engine):
+    adapter, port = await start(engine, **credential(), writing={"enabled": True, "view_id": "all"})
+    receiver = snmp_engine.SnmpEngine()
+    delivered = asyncio.Queue()
+    transport = udp.UdpTransport().open_server_mode(("127.0.0.1", 0))
+    await transport._lport
+    config.add_transport(receiver, udp.DOMAIN_NAME, transport)
+    config.add_v3_user(receiver, USER, securityEngineId=a.OctetString(adapter.engine_id),
+                       **parameters("authPriv", "sha256", "aes128"))
+    ntfrcv.NotificationReceiver(receiver, lambda eng, ref, ce, cn, bindings, ctx: delivered.put_nowait(bindings))
+    try:
+        cid = next(iter(engine.state.cfg.credentials))
+        tid = (await engine.execute("target-save", {"address": "127.0.0.1", "credential_id": cid,
+            "port": transport.transport.get_extra_info("sockname")[1]}))["id"]
+        await adapter.reconcile()
+        async def trap():
+            await engine.execute("test-notification", {"target_id": tid})
+            await adapter.drain_one()
+            bindings = await asyncio.wait_for(delivered.get(), 2)
+            assert str(bindings[1][1]) == "1.3.6.1.6.3.1.1.5.1"
+        await trap()
+        old_sender = adapter.send_transports[tid][1]
+        assert not (await query(port, manager_user("authPriv", "sha256", "aes128")))[0]
+        identity = adapter.engine_id
+        await engine.execute("credential-save", {"id": cid, "auth_protocol": "md5", "priv_protocol": "des"})
+        await adapter.reconcile()
+        assert adapter.engine_id == identity and adapter.send_transports[tid][1] is not old_sender
+        config.delete_v3_user(receiver, USER, securityEngineId=a.OctetString(adapter.engine_id))
+        config.add_v3_user(receiver, USER, securityEngineId=a.OctetString(adapter.engine_id),
+                           **parameters("authPriv", "md5", "des"))
+        await trap()
+        error, status, _, _ = await query(port, manager_user("authPriv", "sha256", "aes128"), 2)
+        assert error or status
+        assert next(iter(engine.state.cfg.ports.values())).admin_up
+        error, status, _, bindings = await query(port, manager_user("authPriv", "md5", "des"), 2)
+        assert not error and not status and int(bindings[0][1]) == 2
+        assert not next(iter(engine.state.cfg.ports.values())).admin_up
+    finally:
+        receiver.close_dispatcher()
+        adapter.close()
+
+
+@pytest.mark.parametrize("auth,fit,oversize", [("sha512", 21, 22), ("md5", 26, 27)])
+async def test_des_peer_budget_rejects_before_commit_at_boundary(engine, store, auth, fit, oversize):
+    from pysnmp.proto.api import v2c
+    x = await memory_exchange(engine, store, auth, "des")
+    try:
+        maximum = x.manager.get_mib_builder().import_symbols(
+            "__SNMP-FRAMEWORK-MIB", "snmpEngineMaxMessageSize")[0]
+        maximum.syntax = maximum.syntax.clone(484)
+        for width, expected_status in [(fit, 0), (oversize, 1)]:
+            before = engine.state
+            x.send(name_request(width, 7))
+            pending = next(iter(x.adapter.pending_sets.values()))
+            assert len(pending.whole_message) <= 484
+            await x.settle()
+            assert len(x.sink.sent[0][0]) <= 484
+            response = x.decode()
+            assert int(v2c.apiPDU.get_error_status(response)) == expected_status
+            if expected_status:
+                assert v2c.apiPDU.get_varbinds(response) == []
+                assert engine.state is before
+            else:
+                assert engine.state.revision == before.revision + 1
+                assert engine.state.cfg.vlans[1].name == "x" * width
+                assert not next(iter(engine.state.cfg.ports.values())).admin_up
+            x.empty()
+    finally:
+        await x.close()
+
+
+async def test_legacy_split_restart_preserves_policy_and_identity(engine):
+    gid = (await engine.execute("group-save", {"label": "Existing policy", "minimum_security_level": "authPriv",
+        "polling": {"enabled": True, "view_id": "interfaces", "networks": ["192.0.2.0/24"]},
+        "writing": {"enabled": False, "view_id": None, "networks": ["198.51.100.0/24"]}}))["id"]
+    cid = (await engine.execute("credential-save", {**credential(), "group_id": gid}))["id"]
+    await engine.execute("save-startup")
+    expected = engine.state.cfg.model_copy(deep=True)
+    saved = engine.store.get("startup_configuration")
+    saved["credentials"][cid].pop("auth_protocol")
+    saved["credentials"][cid].pop("priv_protocol")
+    with engine.store.transaction():
+        engine.store.put("startup_configuration", saved)
+        engine.store.put("engine_identity", "80000000047363726174636841")
+        engine.store.put("engine_boots", 17)
+    restarted = Engine(engine.state.cfg, engine.store)
+    assert restarted.state.cfg == expected and restarted.store.load() == expected
+    assert not restarted.snapshot()["configuration_status"]["unsaved"]
+    assert restarted.store.get("engine_identity") == "80000000047363726174636841"
+    assert restarted.store.get("engine_boots") == 17
+    assert restarted.state.cfg.credentials[cid].group_id == gid
+    assert restarted.state.cfg.groups[gid] == expected.groups[gid]

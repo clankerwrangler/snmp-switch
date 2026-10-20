@@ -38,14 +38,17 @@ python specification/run_tlc.py --jar /path/to/tla2tools-1.7.4.jar --models Snmp
 Three task-local source-overlay controls produced TLC invariant counterexamples:
 inactive key registration failed `InactiveMaterialAbsent`; fixed SHA-256 digest
 sizing and omitted full-block DES padding each failed `BudgetBoundary` (exit 12).
-The overlays and results are under `specification/logs/snmp-security-controls/`.
+The overlays and results are under `model-runs/snmp-security-controls/` in the
+durable scratch evidence root identified next.
 These controls are not additions to the maintained mutation catalog.
 
 These are separate completed checks, not a whole-catalog run. The normal catalog
 now contains 58 configurations. Local receipts for this checkpoint are
-`specification/logs/snmp-security-before/verification.json` and
-`specification/logs/snmp-sizing-des-before/verification.json`; ignored logs are
-not required to reproduce the checks.
+`/workspace/.scratch/snmpv3-backend-evidence/model-runs/snmp-security-before/verification.json`
+and `model-runs/snmp-sizing-des-before/verification.json` under the same evidence
+root. Exact initial/final inputs, source overlays, logs, and raw test output are
+retained there outside the temporary worktree. Local ignored logs are not
+required to reproduce the checks.
 
 ## Local management access follow-up (2026-10-15)
 
