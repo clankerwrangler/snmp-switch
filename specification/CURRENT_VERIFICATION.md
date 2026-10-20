@@ -1,10 +1,51 @@
 # Current finite model verification
 
-The 57-configuration normal catalog is supported by separate completed checks,
-not one combined 57-config run. All passing graphs below finished with zero
+The 58-configuration normal catalog is supported by separate completed checks,
+not one combined 58-config run. All passing graphs below finished with zero
 queued states; scripted checks include completion assertions. Counts overlap
 across configurations. These results concern the [models](CURRENT_MODEL.md), not
 application, wire, or operating-system correctness.
+
+## SNMP protocol selection follow-up (2026-10-20)
+
+Before protocol-field, registration, and compatibility edits, `SnmpSecurity`
+completed **6,051 generated / 3,459 distinct states**. Existing `GroupOwnership`
+(**32/24**) and `GroupQueuedSet` (**378/324**) also passed unchanged. All queues
+were empty and temporal checks completed.
+
+The response-size edit was initially applied under an abstract contract that
+left BER sizing to implementation tests. It was restored before the concrete
+sizing refinement, then reapplied only after the final refinement passed.
+That final graph completed **236,739 generated / 120,099 distinct states**, depth
+7, with an empty queue and complete temporal checking. A provisional arithmetic
+check omitted DES's full block when the plaintext was aligned; the final model
+and implementation use the pinned cipher's mandatory 1..8 padding octets.
+Two intermediate parse/semantic failures are failures, not passing checks.
+
+The graph checks 72 selected profiles, inactive key/protocol suppression,
+opaque matching credentials, unchanged policy, selection persistence, and
+response budget arithmetic at 15 scope lengths and adjacent byte budgets.
+It does not prove cryptography, full BER encoding, SQLite, or a refinement of
+Python. Actual GET/SET/notification, malformed input, redaction, and storage
+compatibility checks remain application obligations.
+
+Reproduce from the repository root:
+
+```sh
+python specification/run_tlc.py --jar /path/to/tla2tools-1.7.4.jar --models SnmpSecurity GroupOwnership GroupQueuedSet --output specification/logs/snmp-security-1
+```
+
+Three task-local source-overlay controls produced TLC invariant counterexamples:
+inactive key registration failed `InactiveMaterialAbsent`; fixed SHA-256 digest
+sizing and omitted full-block DES padding each failed `BudgetBoundary` (exit 12).
+The overlays and results are under `specification/logs/snmp-security-controls/`.
+These controls are not additions to the maintained mutation catalog.
+
+These are separate completed checks, not a whole-catalog run. The normal catalog
+now contains 58 configurations. Local receipts for this checkpoint are
+`specification/logs/snmp-security-before/verification.json` and
+`specification/logs/snmp-sizing-des-before/verification.json`; ignored logs are
+not required to reproduce the checks.
 
 ## Local management access follow-up (2026-10-15)
 

@@ -88,7 +88,15 @@ def compose_configuration(lab, startup, *, legacy=False):
     # restriction is dropped and no complete saved fragment gets defaulted.
     if legacy:
         raw = Configuration.migrate_port_inventory(raw)
-    cfg = Configuration.model_validate(copy.deepcopy(raw))
+    raw = copy.deepcopy(raw)
+    # Pre-selection v5 split records used the fixed SHA-256/AES-128 profile.
+    # Fill only these additive fields; all policy/key shape checks stay strict.
+    if isinstance(raw.get("credentials"), dict):
+        for credential in raw["credentials"].values():
+            if isinstance(credential, dict):
+                credential.setdefault("auth_protocol", "sha256")
+                credential.setdefault("priv_protocol", "aes128")
+    cfg = Configuration.model_validate(raw)
     _complete_shape(raw, cfg.model_dump(mode="json"))
     return cfg
 

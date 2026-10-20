@@ -26,11 +26,29 @@ def wire_name(identifier):
     return hashlib.sha256(identifier.encode()).hexdigest()[:28]
 
 
-def response_budget(args, whole_message):
+# AES-192/256 use PySNMP's Reeder/Cisco key extension, not its separately
+# registered Blumenthal variants. MD5, SHA-1, and DES are legacy lab options.
+AUTH_PROTOCOLS = {
+    "md5": config.USM_AUTH_HMAC96_MD5,
+    "sha1": config.USM_AUTH_HMAC96_SHA,
+    "sha224": config.USM_AUTH_HMAC128_SHA224,
+    "sha256": config.USM_AUTH_HMAC192_SHA256,
+    "sha384": config.USM_AUTH_HMAC256_SHA384,
+    "sha512": config.USM_AUTH_HMAC384_SHA512,
+}
+PRIV_PROTOCOLS = {
+    "des": config.USM_PRIV_CBC56_DES,
+    "aes128": config.USM_PRIV_CFB128_AES,
+    "aes192": config.USM_PRIV_CFB192_AES,
+    "aes256": config.USM_PRIV_CFB256_AES,
+}
+
+
+def response_budget(args, whole_message, credential):
     """Size a detached worst-case SET echo without consuming response state.
 
-    Supported cryptography is the existing SHA-256/AES-CFB profile. Original
-    community request IDs come from wire BER, not PySNMP's rewritten callback ID.
+    Use the accepted request's digest length and the current privacy algorithm.
+    Original community request IDs come from wire BER, not the callback ID.
     """
     # These pinned layout imports belong only to the guarded replacement SET path.
     from pysnmp.proto.mpmod.rfc3412 import ScopedPDU, SNMPv3Message
@@ -61,7 +79,7 @@ def response_budget(args, whole_message):
     # Future clock ticks cannot increase these maximum legal INTEGER widths.
     usm["msgAuthoritativeEngineBoots"] = usm["msgAuthoritativeEngineTime"] = 2147483647
     usm["msgUserName"] = incoming_usm["msgUserName"]
-    usm["msgAuthenticationParameters"] = bytes(24 if int(level) > 1 else 0)
+    usm["msgAuthenticationParameters"] = bytes(len(incoming_usm["msgAuthenticationParameters"]))
     usm["msgPrivacyParameters"] = bytes(8 if int(level) == 3 else 0)
     message = SNMPv3Message()
     message["msgVersion"] = 3
@@ -71,8 +89,11 @@ def response_budget(args, whole_message):
     message["msgGlobalData"]["msgSecurityModel"] = 3
     message["msgSecurityParameters"] = encoder.encode(usm)
     if int(level) == 3:
-        # AES CFB preserves the encoded scoped-PDU length; no privacy dry run.
-        message["msgData"]["encryptedPDU"] = bytes(len(scope_bytes))
+        # Pinned DES adds 1..8 padding octets; AES CFB preserves length.
+        length = len(scope_bytes)
+        if credential.priv_protocol == "des":
+            length += 8 - length % 8
+        message["msgData"]["encryptedPDU"] = bytes(length)
     else:
         message["msgData"]["plaintext"] = scope
     maximum = min(local, int(incoming["msgGlobalData"]["msgMaxSize"]))
@@ -262,9 +283,10 @@ class SnmpAdapter:
                     config.add_v1_system(self.snmp, wire_name(k), c["community"], securityName=wire_name(k))
                 else:
                     config.add_v3_user(self.snmp, c["username"],
-                        authProtocol=config.USM_AUTH_HMAC192_SHA256 if c["security_level"] != "noAuthNoPriv" else config.USM_AUTH_NONE,
-                        authKey=c["auth_key"], privProtocol=config.USM_PRIV_CFB128_AES if c["security_level"] == "authPriv" else config.USM_PRIV_NONE,
-                        privKey=c["priv_key"])
+                        authProtocol=AUTH_PROTOCOLS[c["auth_protocol"]] if c["security_level"] != "noAuthNoPriv" else config.USM_AUTH_NONE,
+                        authKey=c["auth_key"] if c["security_level"] != "noAuthNoPriv" else None,
+                        privProtocol=PRIV_PROTOCOLS[c["priv_protocol"]] if c["security_level"] == "authPriv" else config.USM_PRIV_NONE,
+                        privKey=c["priv_key"] if c["security_level"] == "authPriv" else None)
                 config.add_vacm_user(self.snmp, 2 if c["version"] == "2c" else 3,
                         wire_name(k) if c["version"] == "2c" else c["username"], c["security_level"], notifySubTree=(1,3,6))
             self.configured = current
@@ -440,7 +462,7 @@ class SnmpAdapter:
                         information = {"oid": counter.name, "val": counter.syntax}
                         status = "genErr"
                     elif (len(bindings) > self.engine.state.cfg.snmp.max_varbinds or
-                          not response_budget(request.args, request.whole_message)):
+                          not response_budget(request.args, request.whole_message, credential)):
                         status, empty = "tooBig", True
                     elif policy is None or not policy.writing.enabled or policy.writing.view_id not in self.engine.state.cfg.views:
                         status = "authorizationError"

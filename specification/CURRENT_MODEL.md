@@ -13,6 +13,7 @@ and [application validation](../docs/VALIDATION.md) for implementation tests.
 | `Switch.tla` | Endpoint/port/VLAN references, independent VLAN learning, legal FDB entries, generation-checked activity, link events, live/issued port identities, and stable ENTITY joins | Runtime scheduling, invalidation, port/VLAN edits, and MIB projection |
 | `ReadAccess.tla` | Shared credential/view/target references, independent read/write grants, current read authorization, coherent snapshots, and atomic inline creation | Authentication, source filtering, credential saves, and per-PDU reads |
 | `SetTransactions.tla` | Existing switch/access state; simultaneous candidate validation, original error positions, atomic commit/rejection, and stale queued-request denial | SET planner and engine transaction |
+| `SnmpSecurity.tla` | Three levels, six authentication protocols, four privacy protocols, inactive key suppression, selection round-trip, and digest/padding size arithmetic | Credential validation, USM registration, persistence, and SET response budget |
 | `GroupedAccess.tla` | Canonical communities/users/groups, policy projection into the existing access/SET owners, normalized migration, atomic saves, and shared-generation invalidation | Schema loading, group/credential commands, and incoming authorization |
 | `EntityInventory.tla` | Surviving physical/alias/interface identity, independent filtered snapshots, and actual-row-change timestamps | Read-only ENTITY projection and management uptime |
 | `ManagementAccess.tla` | Named local roles, authenticated/current-generation issuance, queued writes, stream revocation and route-relative API classification | HTTP middleware/dependencies, policy changes and per-yield stream checks |
@@ -79,6 +80,15 @@ Stock-USM normal-management acceptance is opaque authentication at the configure
 user protection profile; the group minimum applies afterward. A lower group
 minimum does not enable a weaker normal request. This is not a second application
 floor, and discovery/REPORT exceptions are outside that relation.
+
+`SnmpSecurity` checks SHA-256/AES-128 defaults, retained inactive selections,
+NONE/no-key effective registration, no privacy-only level, opaque active-secret
+agreement, and unchanged group policy. It separately checks response-size
+arithmetic with authentication digest lengths 12/16/24/32/48, AES length
+preservation, and the pinned DES implementation's mandatory 1..8 padding octets.
+Nested finite BER length accounting includes short/long length boundaries;
+complete message encoding and real cryptographic acceptance remain application
+checks. Failed-save and reload steps check selection ownership, not SQLite.
 
 Normalized migration preserves saved policies, opaque keys, identities, and
 targets in separate per-user groups. A later policy edit checks their isolation.
@@ -176,7 +186,7 @@ remain implementation tests. No remote AAA transport is present.
 ## Finite scope
 
 `configs/` is the executable source of bounds, selected actions, invariants, and
-fairness. There are 57 normal configurations and one explicit unreduced SET
+fairness. There are 58 normal configurations and one explicit unreduced SET
 diagnostic. The normal suite contains both general finite graphs and scripted
 traces; these do not collectively prove an unrestricted production-sized system.
 
@@ -192,6 +202,7 @@ traces; these do not collectively prove an unrestricted production-sized system.
 | Storage | Four Boolean-pair policies, three incarnation tokens, one queued item/four work kinds; 200 recovery branches, one retained/removed/replacement identity trace, and five legacy-seeding outcomes. |
 | RADIUS authorization | One client, two VLANs, three generation tokens, two-tick leases; automatic/manual ticks and independent accounting availability. |
 | RADIUS dynamic requests | Two clients, two VLANs, two session incarnations; one immutable request and its retained decision, optional conjunctive session selector, and per-client applicability. |
+| SNMP security | One credential, 72 selected profiles, three unchanged opaque group policies, 12 request match combinations, 15 scope lengths, and three adjacent response budgets. |
 | Groups | Two credentials, three groups, two views plus no-view, two opaque key bundles, three security levels, two source classes, two targets, one pending PDU. Eight normalized ownership cases and 54 queued/current-boundary traces replace detailed schema, conversion, form, and security-input cross-products. |
 
 Generation tokens are not reused while captured by outstanding work. Abstract

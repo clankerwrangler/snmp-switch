@@ -461,6 +461,8 @@ class WritingAccess(PollingAccess):
 
 
 SecurityLevel = Literal["noAuthNoPriv", "authNoPriv", "authPriv"]
+AuthProtocol = Literal["md5", "sha1", "sha224", "sha256", "sha384", "sha512"]
+PrivProtocol = Literal["des", "aes128", "aes192", "aes256"]
 
 
 class CredentialAuth(Record):
@@ -468,6 +470,8 @@ class CredentialAuth(Record):
     version: Literal["2c", "3"] = "2c"
     username: str = Field(default="", max_length=32)
     security_level: SecurityLevel = "noAuthNoPriv"
+    auth_protocol: AuthProtocol = "sha256"
+    priv_protocol: PrivProtocol = "aes128"
     community: str | None = Field(default=None, max_length=255, repr=False)
     auth_key: str | None = Field(default=None, max_length=255, repr=False)
     priv_key: str | None = Field(default=None, max_length=255, repr=False)
@@ -489,9 +493,9 @@ class CredentialAuth(Record):
             if not self.username:
                 raise ValueError("A v3 username is required")
             if self.security_level != "noAuthNoPriv" and len(self.auth_key or "") < 8:
-                raise ValueError("SHA-256 passphrase requires at least 8 characters")
+                raise ValueError("Authentication passphrase requires at least 8 characters")
             if self.security_level == "authPriv" and len(self.priv_key or "") < 8:
-                raise ValueError("AES-128 passphrase requires at least 8 characters")
+                raise ValueError("Privacy passphrase requires at least 8 characters")
         return self
 
 
