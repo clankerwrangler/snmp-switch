@@ -756,6 +756,7 @@ const path = require('node:path');
   const beforeStale=await state();await failure('snmp/groups',409,'Configuration changed while editing');
   assert.deepEqual((await state()).groups,beforeStale.groups);assert.deepEqual((await state()).credentials,beforeStale.credentials);
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await clockRefresh(); // Publish the competing revision after dismissing the stale form.
   await require('./browser/snmp-security.cjs')({page,state,saveForm,editCredential,grouped,groupId,screenshot});
   // Only presentation is synthetic here: the actual application remains disabled/unset.
   const statusURL=new URL('/api/v1/state',fixtureURL).href;
