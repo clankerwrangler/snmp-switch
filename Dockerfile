@@ -5,7 +5,7 @@ RUN npm install -g pnpm@11.19.0 && pnpm install --frozen-lockfile --ignore-scrip
 COPY ui/ ./
 RUN node node_modules/typescript/bin/tsc --noEmit && node node_modules/vite/bin/vite.js build --configLoader native
 
-FROM python:3.13-slim AS python-base
+FROM python:3.13.18-slim-trixie@sha256:ae14d4ce8771606477a81446e7ef429edd6762305fc50c84507c1041fa8285d1 AS python-base
 
 FROM python-base AS eap-build
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential libssl-dev openssl patch pkg-config ca-certificates && rm -rf /var/lib/apt/lists/*
