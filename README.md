@@ -20,6 +20,18 @@ sh scripts/init-key.sh
 docker compose up --build -d
 ```
 
+Run Switch Lab only during a work or test session. Compose does not restart it automatically. Later sessions reuse the existing image and saved data:
+
+```sh
+docker compose up -d --no-build --pull never switchlab
+```
+
+Stop the application after each session:
+
+```sh
+docker compose stop switchlab
+```
+
 Open **http://localhost:8000** and create the administrator password. Later visits use that password; there are no default credentials. An administrator can optionally enable a shared read-only viewer under **Settings → Manage viewer access**; it starts disabled. See [management access](specification/docs/MANAGEMENT.md). Physical lab edits persist automatically. Switch settings apply to running configuration; choose **Save configuration** to retain them across reboot or process restart. The `switchlab-data` volume stores the lab and startup configuration; restoring it requires both the database and `secrets/config.key`.
 
 Compose publishes HTTP TCP 8000, SNMP UDP 161, and CoA/Disconnect UDP 3799 on localhost by default. For LAN access, create `.env` beside `compose.yaml` with an IPv4 address assigned to the host, then run `docker compose up -d` again:
