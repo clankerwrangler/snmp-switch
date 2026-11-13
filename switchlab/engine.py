@@ -16,32 +16,8 @@ from .mib import entity_inventory, plan_set, current_vlan_ports
 from .storage import split_configuration, compose_configuration, reconciled_startup
 from .radius import AccessResult, Authorization, NasIdentity, RadiusError, authorization, resolve_nas_identity, access_attributes, mab_username, encode_attributes
 from .models import Configuration, Credential, CredentialAuth, Community, UsmUser, AccessGroup, PollingAccess, WritingAccess, incoming_policy, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, RadiusServer, RadiusMaterial, SupplicantProfile, SupplicantTemplate, DynamicSender, RadiusOptions, AccountingOptions, DynamicOptions, update_options, check_collection_limit, configuration_error, uid
-
-
-def _clock_origin():
-    from pathlib import Path
-    try:
-        return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-    except OSError:
-        return "process:" + uid()
-
-
-ACCOUNTING_CLOCK_ORIGIN = _clock_origin()
-
-
-def accounting_elapsed_clock():
-    return time.clock_gettime(time.CLOCK_BOOTTIME) if hasattr(time, "CLOCK_BOOTTIME") else time.monotonic()
-
-
-class CommandError(Exception):
-    def __init__(self, status: int, message: str):
-        self.status, self.message = status, message
-        super().__init__(message)
-
-
-def require(condition, message, status=409):
-    if not condition:
-        raise CommandError(status, message)
+from .common import ACCOUNTING_CLOCK_ORIGIN, CommandError, accounting_elapsed_clock, require
+from .dynamic_authorization import DynamicAuthorization
 
 
 def event_resource_label(record):
@@ -1003,31 +979,7 @@ class Engine:
         self._closing = False  # RADIUS shutdown has begun: no new authentication work
         self._server_health = {}
         self._auth_clock = time.monotonic
-        self._das_clock = accounting_elapsed_clock
-        self._das_wall = time.time
-        self._das_protocol = None
-        self._das_closing = False
-        self._das_pending = {}
-        self._das_drops = {}
-        self._das_error = None
-        self._das_cache = store.radius_decisions() if store else {}
-        self._das_high_water = store.get("radius_replay_high_water", 0) if store else 0
-        self._das_generations = store.get("radius_sender_generations", {}) if store else {}
-        if not isinstance(self._das_high_water, (int,float)) or not math.isfinite(self._das_high_water) or self._das_high_water < 0:
-            raise ValueError("Invalid dynamic authorization clock state")
-        for fingerprint,record in self._das_cache.items():
-            if (not isinstance(fingerprint,str) or len(fingerprint)!=64 or
-                    not isinstance(record.get("generation"),str) or not isinstance(record.get("sender_id"),str) or
-                    not isinstance(record.get("expires_wall"),(int,float)) or not math.isfinite(record["expires_wall"]) or
-                    not isinstance(record.get("expires_elapsed"),(int,float)) or not math.isfinite(record["expires_elapsed"]) or
-                    not isinstance(record.get("clock_origin"),str)):
-                raise ValueError("Invalid dynamic authorization receipt")
-            if record.get("response") is not None:
-                response = base64.b64decode(record["response"],validate=True)
-                if not 20 <= len(response) <= 4096:raise ValueError("Invalid dynamic authorization response")
-            if record.get("clock_origin") != ACCOUNTING_CLOCK_ORIGIN:
-                record["expires_elapsed"] = self._das_clock() + max(0,record["expires_wall"]-self._das_wall())
-                record["clock_origin"] = ACCOUNTING_CLOCK_ORIGIN
+        self.dynamic = DynamicAuthorization(self, store)
         self.idempotency = store.get("idempotency", {}) if store else {}
         for item in self.idempotency.values():
             operation = item.get("result", {}).get("advance")
@@ -1055,11 +1007,11 @@ class Engine:
         self.state.event("boot")
         self.state.queue_accounting(7)
         self.state.revision += 1
-        generations = self._next_dynamic_generations(self.state.cfg)
-        metadata = {"radius_sender_generations": generations} if generations != self._das_generations else None
+        generations = self.dynamic.next_generations(self.state.cfg)
+        metadata = {"radius_sender_generations": generations} if generations != self.dynamic.generations else None
         if store:
             store.commit(self.state, self.idempotency, **({"radius_metadata":metadata} if metadata else {}))
-        self._das_generations = generations
+        self.dynamic.generations = generations
 
     @staticmethod
     def check_endpoint_capacity(cfg):
@@ -1068,6 +1020,10 @@ class Engine:
     @staticmethod
     def check_source_capacity(cfg):
         require(sum(len(e.sources) for e in cfg.endpoints.values()) <= cfg.switch.source_limit, "Source capacity reached", 429)
+
+    @property
+    def closed(self):
+        return self._closed
 
     @property
     def storage_fault(self):
@@ -1147,8 +1103,7 @@ class Engine:
                     queued_notifications=len(s.outbox), storage_status=self.storage_status())
         data["configuration_status"] = dict(unsaved=s.configuration_dirty, startup_revision=s.startup_revision)
         data["advance"] = self.advance_status()
-        data["radius"]["dynamic_status"] = dict(ready=bool(self._das_protocol and self._dynamic_current(self._das_protocol)),
-            clock_safe=self.dynamic_clock_safe(), reason=self._das_error, cached=len(self._das_cache), pending=len(self._das_pending), drops=self._das_drops.copy())
+        data["radius"]["dynamic_status"] = self.dynamic.status()
         data["radius"]["accounting_status"] = dict(queued=len(s.accounting_outbox), drops=s.accounting_drops.copy(),
             records=[{name: record[name] for name in ("id", "sequence", "session_id", "status_type", "simulation_ms", "status", "attempts", "late")} for record in s.accounting_outbox[:100]])
         data["authentication_clients"] = [dict(port_id=pid, mac=mac, **{k:v for k,v in status.items() if not k.startswith("_")}) for (pid, mac), status in s.radius_status.items()]
@@ -1267,190 +1222,6 @@ class Engine:
                 break
             if attempt.id not in self._authentication_tasks:
                 self._authentication_tasks[attempt.id] = asyncio.create_task(self.authenticate(*key, attempt.id))
-
-    @staticmethod
-    def _sender_signature(sender):
-        return hashlib.sha256(json.dumps([sender.address, sender.secret, sender.enabled]).encode()).hexdigest()
-
-    def _next_dynamic_generations(self, cfg):
-        result = {}
-        for sender in cfg.radius.dynamic_authorization.senders:
-            signature = self._sender_signature(sender)
-            previous = self._das_generations.get(sender.id)
-            result[sender.id] = previous if previous and previous.get("signature")==signature else dict(signature=signature,generation=uid())
-        return result
-
-    def _publish_dynamic_metadata(self, changes):
-        if "radius_sender_generations" in changes:self._das_generations = changes["radius_sender_generations"]
-        if "radius_replay_high_water" in changes:self._das_high_water = changes["radius_replay_high_water"]
-        if changes.get("das_put") or changes.get("das_delete"):
-            cache = self._das_cache.copy()
-            cache.update(changes.get("das_put", {}))
-            for key in changes.get("das_delete", ()):cache.pop(key, None)
-            self._das_cache = cache
-
-    def _commit_dynamic_metadata(self, changes):
-        self.require_storage()
-        if self.store:
-            with self.store.transaction():self.store._radius_metadata(changes)
-        self._publish_dynamic_metadata(changes)
-
-    def dynamic_drop(self, reason):
-        self._das_drops[reason] = self._das_drops.get(reason,0) + 1
-
-    def dynamic_clock_safe(self):
-        wall = self._das_wall()
-        return math.isfinite(wall) and wall >= self._das_high_water
-
-    def _dynamic_binding(self):
-        settings = self.state.cfg.radius.dynamic_authorization
-        return settings.enabled, settings.host, settings.port
-
-    def _dynamic_current(self, protocol):
-        return (not self._closed and not self._das_closing and not self.storage_fault and
-                protocol is self._das_protocol and protocol.transport is not None and protocol.binding == self._dynamic_binding())
-
-    def _dynamic_expired(self, record, *, wall=None, elapsed=None):
-        wall = self._das_wall() if wall is None else wall
-        elapsed = self._das_clock() if elapsed is None else elapsed
-        return wall > record["expires_wall"] or elapsed > record["expires_elapsed"]
-
-    def _dynamic_record(self, pending, response, disposition):
-        return dict(sender_id=pending["sender_id"], generation=pending["generation"],
-            response=base64.b64encode(response).decode() if response is not None else None,
-            expires_wall=pending["expires_wall"], expires_elapsed=pending["expires_elapsed"],
-            clock_origin=ACCOUNTING_CLOCK_ORIGIN, disposition=disposition)
-
-    async def reconcile_dynamic(self):
-        from .radius import DynamicListener
-        binding = self._dynamic_binding()
-        if self._das_protocol is not None and (self._das_protocol.binding != binding or self._das_closing or self._closed):
-            if self._das_protocol.transport is not None:self._das_protocol.transport.close()
-            self._das_protocol = None
-        if not binding[0] or self._closed or self._das_closing or self.storage_fault:return
-        if self._das_protocol is None:
-            protocol = DynamicListener(self,binding)
-            try:
-                transport,_ = await asyncio.get_running_loop().create_datagram_endpoint(lambda:protocol,local_addr=(binding[1],binding[2]))
-            except OSError:
-                self._das_error = "bind-failed"
-                return
-            if binding != self._dynamic_binding() or self._das_closing or self._closed:
-                transport.close();return
-            self._das_protocol = protocol;self._das_error = None
-
-    async def prune_dynamic(self):
-        async with self.lock:
-            if self.storage_fault or not self.dynamic_clock_safe():return
-            for fingerprint,pending in list(self._das_pending.items()):
-                if pending["task"].done() and self._dynamic_expired(pending):
-                    self._retire_expired_dynamic(fingerprint,pending)
-                    if self._das_pending.get(fingerprint) is pending:del self._das_pending[fingerprint]
-            if not self.dynamic_clock_safe():return
-            expired = [key for key,record in self._das_cache.items() if self._dynamic_expired(record)]
-            if not expired:return
-            wall = self._das_wall()
-            # If the elapsed clock expired first after a wall-clock regression,
-            # retire only behind a persisted strictly-after-expiry watermark.
-            high = max([self._das_high_water, wall] + [math.nextafter(self._das_cache[key]["expires_wall"], math.inf) for key in expired])
-            self._commit_dynamic_metadata({"radius_replay_high_water":high, "das_delete":expired})
-
-    def receive_dynamic(self, protocol, data, address):
-        from .radius import verify_dynamic_request
-        if not self._dynamic_current(protocol):return
-        ip = ipaddress.ip_address(address[0])
-        if isinstance(ip,ipaddress.IPv6Address) and ip.ipv4_mapped is not None:ip=ip.ipv4_mapped
-        peer = (str(ip), address[1])
-        sender = next((sender for sender in self.state.cfg.radius.dynamic_authorization.senders if sender.enabled and sender.address == peer[0]), None)
-        if sender is None:self.dynamic_drop("untrusted-source");return
-        try:request = verify_dynamic_request(bytes(data), sender.secret.encode())
-        except RadiusError:self.dynamic_drop("invalid-packet");return
-        if not self.dynamic_clock_safe():self.dynamic_drop("clock-unsafe");return
-        if abs(self._das_wall()-request.timestamp)>300:self.dynamic_drop("timestamp-window");return
-        fingerprint = hashlib.sha256(json.dumps(["radius-das",*peer]).encode()+request.packet).hexdigest()
-        generation = self._das_generations[sender.id]["generation"]
-        cached = self._das_cache.get(fingerprint)
-        if cached is not None:
-            if cached["generation"] != generation:self.dynamic_drop("retired-generation");return
-            if self._dynamic_expired(cached):self.dynamic_drop("expired-duplicate");return
-            if cached["response"] is not None:
-                try:protocol.transport.sendto(base64.b64decode(cached["response"]),address)
-                except (OSError,RuntimeError):self.dynamic_drop("transport-error")
-            return
-        if fingerprint in self._das_pending:return
-        if len(set(self._das_cache)|set(self._das_pending)) >= 4096:self.dynamic_drop("cache-full");return
-        pending = dict(request=request, peer=peer, address=address, sender_id=sender.id, generation=generation,
-            epoch=self.state.epoch, protocol=protocol, expires_wall=request.timestamp+300,
-            expires_elapsed=self._das_clock()+max(0,request.timestamp+300-self._das_wall()))
-        self._das_pending[fingerprint] = pending
-        pending["task"] = asyncio.create_task(self._handle_dynamic(fingerprint,pending))
-
-    def _retire_expired_dynamic(self, fingerprint, pending):
-        high = max(self._das_high_water, self._das_wall(), math.nextafter(pending["expires_wall"], math.inf))
-        changes = {"radius_replay_high_water":high}
-        if fingerprint not in self._das_cache:
-            changes["das_put"] = {fingerprint:self._dynamic_record(pending,None,"expired-reservation")}
-        self._commit_dynamic_metadata(changes)
-
-    async def _handle_dynamic(self, fingerprint, pending):
-        from .radius import plan_dynamic_request, dynamic_response
-        keep_reservation = False
-        try:
-            async with self.lock:
-                wall, elapsed = self._das_wall(), self._das_clock()
-                if self._dynamic_expired(pending, wall=wall, elapsed=elapsed):
-                    # Do not forget the elapsed lifetime even if wall time moved
-                    # backwards while this request waited for serialization.
-                    keep_reservation = True
-                    self._retire_expired_dynamic(fingerprint,pending)
-                    keep_reservation = False
-                    return
-                self.require_storage()
-                sender = next((sender for sender in self.state.cfg.radius.dynamic_authorization.senders if sender.id==pending["sender_id"] and sender.enabled),None)
-                current = self._das_generations.get(pending["sender_id"])
-                if (not self._dynamic_current(pending["protocol"]) or sender is None or current is None or
-                        current["generation"]!=pending["generation"] or self.state.epoch!=pending["epoch"] or
-                        not math.isfinite(wall) or wall < self._das_high_water or
-                        abs(wall-pending["request"].timestamp)>300):
-                    return
-                existing = self._das_cache.get(fingerprint)
-                if existing is not None:return
-                request = pending["request"]
-                plan = plan_dynamic_request(request,self.state)
-                code = (41 if request.code==40 else 44) if plan.error_cause is None else (42 if request.code==40 else 45)
-                response = dynamic_response(request,code,sender.secret.encode(),error_cause=plan.error_cause)
-                record = self._dynamic_record(pending,response,"ack" if plan.error_cause is None else "nak")
-                updates = {"das_put":{fingerprint:record}, "radius_replay_high_water":max(self._das_high_water,wall)}
-                if plan.error_cause is None:
-                    self._execute("radius-dynamic",plan,radius_updates=updates)
-                else:self._commit_dynamic_metadata(updates)
-            if (self._dynamic_current(pending["protocol"]) and self.dynamic_clock_safe() and not self._dynamic_expired(record) and
-                    self._das_generations.get(sender.id,{}).get("generation")==pending["generation"] and
-                    abs(self._das_wall()-pending["request"].timestamp)<=300):
-                pending["protocol"].transport.sendto(response,pending["address"])
-        except (CommandError, RadiusError):
-            self.dynamic_drop("processing-failed")
-        except Exception:
-            self.dynamic_drop("storage-or-transport-failed")
-        finally:
-            if self._das_pending.get(fingerprint) is pending and not keep_reservation and not self._das_closing:
-                del self._das_pending[fingerprint]
-
-    async def close_dynamic(self):
-        self._das_closing = True
-        async with self.lock:
-            # Handlers keep these reservations while closing, even when they
-            # acquire the lock first. Failed persistence leaves ownership intact.
-            retired = {fingerprint:self._dynamic_record(item,None,"retired") for fingerprint,item in self._das_pending.items() if fingerprint not in self._das_cache}
-            if retired:self._commit_dynamic_metadata({"das_put":retired})
-        if self._das_protocol is not None and self._das_protocol.transport is not None:self._das_protocol.transport.close()
-        self._das_protocol = None
-        pending = list(self._das_pending.items())
-        for _,item in pending:
-            if not item["task"].cancelling():item["task"].cancel()
-        await asyncio.gather(*(item["task"] for _,item in pending),return_exceptions=True)
-        for fingerprint,item in pending:
-            if self._das_pending.get(fingerprint) is item:del self._das_pending[fingerprint]
 
     def accounting_expired(self, record):
         return (record.get("clock_origin") != ACCOUNTING_CLOCK_ORIGIN or
@@ -1753,17 +1524,7 @@ class Engine:
             if action not in ("save-startup", "reboot", "port-create", "port-delete") and split_configuration(old.cfg)[1] != split_configuration(s.cfg)[1]:
                 idem[key]["configuration_incarnation"] = s.configuration_incarnation
             idem = dict(list(idem.items())[-256:])
-        updates = dict(radius_updates or {})
-        generations = self._next_dynamic_generations(s.cfg)
-        if generations != self._das_generations:
-            updates["radius_sender_generations"] = generations
-        retired = {}
-        for fingerprint,pending in self._das_pending.items():
-            current = generations.get(pending["sender_id"])
-            if action in ("reboot", "radius-shutdown") or current is None or current["generation"] != pending["generation"]:
-                if fingerprint not in self._das_cache:
-                    retired[fingerprint] = self._dynamic_record(pending, None, "retired")
-        if retired:updates.setdefault("das_put", {}).update(retired)
+        updates = self.dynamic.transaction_updates(action, s.cfg, radius_updates)
         if self.store:
             try:
                 self.store.commit(s, idem, durable=durable, **({"radius_metadata":updates} if updates else {}),
@@ -1773,7 +1534,7 @@ class Engine:
                     self._cancel_inactive_authentication()
                 raise
         self.state, self.idempotency = s, idem
-        self._publish_dynamic_metadata(updates)
+        self.dynamic.publish(updates)
         self._sync_server_health()
         self._cancel_inactive_authentication()
         return result

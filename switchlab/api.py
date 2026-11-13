@@ -200,7 +200,7 @@ def create_app(store=None, configuration=None):
             app.state.engine = Engine(cfg, store)
             adapter = app.state.adapter = SnmpAdapter(app.state.engine, store)
             await app.state.adapter.reconcile()
-            await app.state.engine.reconcile_dynamic()
+            await app.state.engine.dynamic.reconcile()
             app.state.background_error = None
 
             async def background():
@@ -211,8 +211,8 @@ def create_app(store=None, configuration=None):
                     elapsed = int((now-last)*1000)
                     last = now
                     try:
-                        await app.state.engine.reconcile_dynamic()
-                        await app.state.engine.prune_dynamic()
+                        await app.state.engine.dynamic.reconcile()
+                        await app.state.engine.dynamic.prune()
                         await app.state.engine.service_authentication()
                         await app.state.engine.service_accounting()
                         if app.state.engine.storage_fault:
@@ -234,7 +234,7 @@ def create_app(store=None, configuration=None):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
             if hasattr(app.state, "engine"):
-                await app.state.engine.close_dynamic()
+                await app.state.engine.dynamic.close()
                 await app.state.engine.close_radius()
             if adapter is not None:
                 adapter.close()
@@ -404,7 +404,7 @@ def create_app(store=None, configuration=None):
                     adapter.configured = {}
                     adapter.cold_sent = False
                 await adapter._reconcile()
-                await app.state.engine.reconcile_dynamic()
+                await app.state.engine.dynamic.reconcile()
             # Reconciliation may commit coldStart; return the current write revision.
             response = {**result, "revision": app.state.engine.state.revision, "configuration_revision": app.state.engine.state.configuration_revision}
             if action == "advance" and response.get("advance", {}).get("status") == "waiting":

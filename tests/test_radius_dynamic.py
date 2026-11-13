@@ -18,10 +18,10 @@ def configured_engine(store=None):
     cfg.vlans[20]=Vlan(vid=20,name='Dynamic',fdb_id=1020)
     cfg.radius.dynamic_authorization.enabled=True
     sender=DynamicSender(label='Synthetic sender',address='192.0.2.4',secret=SECRET.decode());cfg.radius.dynamic_authorization.senders=[sender]
-    engine=Engine(cfg,store);wall=[1000.0];elapsed=[10.0];engine._das_wall=lambda:wall[0];engine._das_clock=lambda:elapsed[0]
+    engine=Engine(cfg,store);wall=[1000.0];elapsed=[10.0];engine.dynamic.wall=lambda:wall[0];engine.dynamic.clock=lambda:elapsed[0]
     session=AccessSession('session-one',pid,MAC,'mab',Authorization(1,'port-default'),nas_identity=NasIdentity(b'Switch Lab'),user_name=b'user')
     engine.state.radius_sessions[(pid,MAC)]=session
-    protocol=DynamicListener(engine,engine._dynamic_binding());protocol.transport=Transport();engine._das_protocol=protocol
+    protocol=DynamicListener(engine.dynamic,engine.dynamic.binding());protocol.transport=Transport();engine.dynamic.protocol=protocol
     return engine,protocol,pid,sender,wall,elapsed
 
 
@@ -31,8 +31,8 @@ def request(values=(),code=43,identifier=7,timestamp=1000):
 
 async def send(engine,protocol,packet,peer=('192.0.2.4',40000)):
     before=len(protocol.transport.messages)
-    engine.receive_dynamic(protocol,packet,peer)
-    tasks=[item['task'] for item in engine._das_pending.values()]
+    engine.dynamic.receive(protocol,packet,peer)
+    tasks=[item['task'] for item in engine.dynamic.pending.values()]
     if tasks:await asyncio.gather(*tasks)
     return [data for data,address in protocol.transport.messages[before:]]
 
@@ -46,7 +46,7 @@ async def test_authenticated_atomic_coa_persists_before_reply_and_replays_withou
     packet=request(vlan()+((24,b'private-state'),(33,b'proxy')))
     messages=await send(engine,protocol,packet);assert len(messages)==1 and messages[0][0]==44
     assert engine.state.session_vid(engine.state.radius_sessions[(pid,MAC)])==20
-    assert len(store.radius_decisions())==1 and not engine._das_pending
+    assert len(store.radius_decisions())==1 and not engine.dynamic.pending
     expected=signed_response(packet,44,((24,b'private-state'),(33,b'proxy')),ma=True,secret=SECRET)
     assert messages[0]==expected
     before=engine.state
@@ -101,23 +101,23 @@ async def test_inflight_duplicate_joins_one_reservation(store):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store);packet=request(vlan())
     await engine.lock.acquire()
     try:
-        engine.receive_dynamic(protocol,packet,('192.0.2.4',40000))
-        engine.receive_dynamic(protocol,packet+b'padding',('192.0.2.4',40000))
-        assert len(engine._das_pending)==1 and not protocol.transport.messages
+        engine.dynamic.receive(protocol,packet,('192.0.2.4',40000))
+        engine.dynamic.receive(protocol,packet+b'padding',('192.0.2.4',40000))
+        assert len(engine.dynamic.pending)==1 and not protocol.transport.messages
     finally:engine.lock.release()
-    await asyncio.gather(*(item['task'] for item in engine._das_pending.values()))
-    assert len(protocol.transport.messages)==1 and len(engine._das_cache)==1
+    await asyncio.gather(*(item['task'] for item in engine.dynamic.pending.values()))
+    assert len(protocol.transport.messages)==1 and len(engine.dynamic.cache)==1
 
 
 @pytest.mark.asyncio
 async def test_sender_secret_aba_keeps_old_fingerprint_retired(store):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store);packet=request(code=40)
-    engine.receive_dynamic(protocol,packet,('192.0.2.4',40000))
+    engine.dynamic.receive(protocol,packet,('192.0.2.4',40000))
     await engine.execute('dynamic-sender-save',{'id':sender.id,'secret':'replacement'})
     await engine.execute('dynamic-sender-save',{'id':sender.id,'secret':SECRET.decode()})
-    if engine._das_pending:await asyncio.gather(*(item['task'] for item in engine._das_pending.values()))
+    if engine.dynamic.pending:await asyncio.gather(*(item['task'] for item in engine.dynamic.pending.values()))
     assert engine.state.radius_sessions and not protocol.transport.messages
-    assert len(engine._das_cache)==1 and len(store.radius_decisions())==1
+    assert len(engine.dynamic.cache)==1 and len(store.radius_decisions())==1
     before=engine.state;assert await send(engine,protocol,packet+b'padding')==[] and engine.state is before
 
 
@@ -125,10 +125,10 @@ async def test_sender_secret_aba_keeps_old_fingerprint_retired(store):
 async def test_restart_cached_disconnect_cannot_remove_replacement(store):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store);packet=request(code=40)
     first=await send(engine,protocol,packet);assert first[0][0]==41 and not engine.state.radius_sessions
-    restored=Engine(store.load(),store);restored._das_wall=lambda:1001.;restored._das_clock=lambda:11.
+    restored=Engine(store.load(),store);restored.dynamic.wall=lambda:1001.;restored.dynamic.clock=lambda:11.
     replacement=AccessSession('replacement',pid,MAC,'mab',Authorization(1,'port-default'),nas_identity=NasIdentity(b'Switch Lab'))
     restored.state.radius_sessions[(pid,MAC)]=replacement
-    p=DynamicListener(restored,restored._dynamic_binding());p.transport=Transport();restored._das_protocol=p
+    p=DynamicListener(restored.dynamic,restored.dynamic.binding());p.transport=Transport();restored.dynamic.protocol=p
     before=restored.state;assert await send(restored,p,packet)==first
     assert restored.state is before and restored.state.radius_sessions[(pid,MAC)].id=='replacement'
 
@@ -136,15 +136,15 @@ async def test_restart_cached_disconnect_cannot_remove_replacement(store):
 @pytest.mark.asyncio
 async def test_timestamp_equality_future_retention_and_backward_clock(store):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store);packet=request(identifier=1,timestamp=1300)
-    first=await send(engine,protocol,packet);assert first and len(engine._das_cache)==1
+    first=await send(engine,protocol,packet);assert first and len(engine.dynamic.cache)==1
     wall[0]=1600.;elapsed[0]=610.;assert await send(engine,protocol,packet)==first
-    wall[0]=1600.1;elapsed[0]=610.1;await engine.prune_dynamic()
-    assert not engine._das_cache and store.get('radius_replay_high_water')>=1600.1
-    wall[0]=1400.;before=engine.state;assert not engine.dynamic_clock_safe()
+    wall[0]=1600.1;elapsed[0]=610.1;await engine.dynamic.prune()
+    assert not engine.dynamic.cache and store.get('radius_replay_high_water')>=1600.1
+    wall[0]=1400.;before=engine.state;assert not engine.dynamic.clock_safe()
     assert await send(engine,protocol,packet)==[] and engine.state is before
     await engine.execute('switch-edit',{'location':'unrelated service remains usable'})
     assert engine.state.cfg.switch.location=='unrelated service remains usable'
-    wall[0]=1600.1;assert engine.dynamic_clock_safe()
+    wall[0]=1600.1;assert engine.dynamic.clock_safe()
     assert await send(engine,protocol,packet)==[]
 
 
@@ -156,7 +156,7 @@ async def test_invalid_source_integrity_time_never_allocate_or_match(store):
     assert await send(engine,protocol,bad)==[]
     assert await send(engine,protocol,request(timestamp=699))==[]
     assert await send(engine,protocol,request(timestamp=1301))==[]
-    assert not engine._das_cache and not engine._das_pending and engine.state is before
+    assert not engine.dynamic.cache and not engine.dynamic.pending and engine.state is before
 
 
 @pytest.mark.asyncio
@@ -168,7 +168,7 @@ async def test_real_sql_failure_has_no_ack_effect_or_receipt(store,monkeypatch):
         raise sqlite3.OperationalError('synthetic post-insert failure')
     monkeypatch.setattr(store,'_radius_metadata',fail)
     assert await send(engine,protocol,request(vlan()))==[]
-    assert engine.state is before and not engine._das_cache and not store.radius_decisions()
+    assert engine.state is before and not engine.dynamic.cache and not store.radius_decisions()
     assert not store.db.in_transaction and not store.fault_reason
 
 
@@ -177,30 +177,30 @@ async def test_expired_pending_reservation_never_gets_a_new_lifetime(store):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store)
     packet=request(vlan(),timestamp=1300)
     await engine.lock.acquire()
-    engine.receive_dynamic(protocol,packet,('192.0.2.4',40000))
-    task=next(iter(engine._das_pending.values()))['task']
+    engine.dynamic.receive(protocol,packet,('192.0.2.4',40000))
+    task=next(iter(engine.dynamic.pending.values()))['task']
     wall[0]=1600.1;elapsed[0]=610.1;wall[0]=1000.
     engine.lock.release();await task
     assert not protocol.transport.messages
     before=engine.state
     assert await send(engine,protocol,packet)==[] and engine.state is before
-    assert store.get('radius_replay_high_water')>1600 and not engine.dynamic_clock_safe()
+    assert store.get('radius_replay_high_water')>1600 and not engine.dynamic.clock_safe()
 
 
 @pytest.mark.asyncio
 async def test_failed_expired_reservation_retirement_keeps_ownership(store,monkeypatch):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store);packet=request(timestamp=1300)
-    await engine.lock.acquire();engine.receive_dynamic(protocol,packet,('192.0.2.4',40000))
-    task=next(iter(engine._das_pending.values()))['task'];elapsed[0]=610.1
+    await engine.lock.acquire();engine.dynamic.receive(protocol,packet,('192.0.2.4',40000))
+    task=next(iter(engine.dynamic.pending.values()))['task'];elapsed[0]=610.1
     original=store._radius_metadata
     def fail(changes):original(changes);raise sqlite3.OperationalError('synthetic retirement failure')
     monkeypatch.setattr(store,'_radius_metadata',fail)
     engine.lock.release();await task
-    assert len(engine._das_pending)==1 and not engine._das_cache and not store.db.in_transaction
+    assert len(engine.dynamic.pending)==1 and not engine.dynamic.cache and not store.db.in_transaction
     assert await send(engine,protocol,packet)==[]
     monkeypatch.setattr(store,'_radius_metadata',original)
-    await engine.prune_dynamic()
-    assert not engine._das_pending and store.get('radius_replay_high_water')>1600
+    await engine.dynamic.prune()
+    assert not engine.dynamic.pending and store.get('radius_replay_high_water')>1600
 
 
 @pytest.mark.asyncio
@@ -208,19 +208,19 @@ async def test_closing_pending_request_retains_tombstone_before_waiter_removal(s
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store)
     packet=request(code=40)
     await engine.lock.acquire()
-    engine.receive_dynamic(protocol,packet,('192.0.2.4',40000))
-    pending_task=next(iter(engine._das_pending.values()))['task']
+    engine.dynamic.receive(protocol,packet,('192.0.2.4',40000))
+    pending_task=next(iter(engine.dynamic.pending.values()))['task']
     await asyncio.sleep(0)  # The handler waits ahead of close_dynamic on the lock.
-    closing=asyncio.create_task(engine.close_dynamic())
+    closing=asyncio.create_task(engine.dynamic.close())
     await asyncio.sleep(0)
     engine.lock.release()
     await closing
-    assert protocol.transport.closed and pending_task.done() and not engine._das_pending
+    assert protocol.transport.closed and pending_task.done() and not engine.dynamic.pending
     assert engine.state.radius_sessions and not protocol.transport.messages
     assert len(store.radius_decisions())==1
-    restored=Engine(engine.state.cfg,store);restored._das_wall=lambda:1001.;restored._das_clock=lambda:11.
+    restored=Engine(engine.state.cfg,store);restored.dynamic.wall=lambda:1001.;restored.dynamic.clock=lambda:11.
     restored.state.radius_sessions[(pid,MAC)]=AccessSession('replacement',pid,MAC,'mab',Authorization(1,'port-default'),nas_identity=NasIdentity(b'Switch Lab'))
-    new_protocol=DynamicListener(restored,restored._dynamic_binding());new_protocol.transport=Transport();restored._das_protocol=new_protocol
+    new_protocol=DynamicListener(restored.dynamic,restored.dynamic.binding());new_protocol.transport=Transport();restored.dynamic.protocol=new_protocol
     before=restored.state
     assert await send(restored,new_protocol,packet)==[] and restored.state is before
 
@@ -229,34 +229,34 @@ async def test_closing_pending_request_retains_tombstone_before_waiter_removal(s
 async def test_full_replay_cache_drops_new_work_without_evicting_cached_reply(store,monkeypatch):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store)
     packet=request(vlan());first=await send(engine,protocol,packet)
-    original=next(iter(engine._das_cache));record=engine._das_cache[original]
-    for i in range(4095):engine._das_cache[f'{i:064x}']={**record,'response':None}
-    assert len(engine._das_cache)==4096
+    original=next(iter(engine.dynamic.cache));record=engine.dynamic.cache[original]
+    for i in range(4095):engine.dynamic.cache[f'{i:064x}']={**record,'response':None}
+    assert len(engine.dynamic.cache)==4096
     def forbidden(*args,**kwargs):raise AssertionError('Cache-full input must not reach session matching')
     monkeypatch.setattr('switchlab.radius.plan_dynamic_request',forbidden)
     before=engine.state
     assert await send(engine,protocol,request(code=40,identifier=8))==[]
-    assert engine._das_drops['cache-full']==1 and not engine._das_pending and engine.state is before
+    assert engine.dynamic.drops['cache-full']==1 and not engine.dynamic.pending and engine.state is before
     assert await send(engine,protocol,packet)==first and engine.state is before
-    assert engine._das_cache[original] is record and len(engine._das_cache)==4096
+    assert engine.dynamic.cache[original] is record and len(engine.dynamic.cache)==4096
 
 
 @pytest.mark.asyncio
 async def test_failed_close_retirement_preserves_reservation_until_successful_retry(store,monkeypatch):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store)
-    await engine.lock.acquire();engine.receive_dynamic(protocol,request(code=40),('192.0.2.4',40000))
+    await engine.lock.acquire();engine.dynamic.receive(protocol,request(code=40),('192.0.2.4',40000))
     await asyncio.sleep(0)
     original=store._radius_metadata
     def fail(changes):original(changes);raise sqlite3.OperationalError('synthetic close retirement failure')
     monkeypatch.setattr(store,'_radius_metadata',fail)
-    closing=asyncio.create_task(engine.close_dynamic());await asyncio.sleep(0);engine.lock.release()
+    closing=asyncio.create_task(engine.dynamic.close());await asyncio.sleep(0);engine.lock.release()
     with pytest.raises(sqlite3.OperationalError):await closing
     assert not store.db.in_transaction and not store.fault_reason
-    assert len(engine._das_pending)==1 and not store.radius_decisions()
+    assert len(engine.dynamic.pending)==1 and not store.radius_decisions()
     assert not protocol.transport.messages and engine.state.radius_sessions
     monkeypatch.setattr(store,'_radius_metadata',original)
-    await engine.close_dynamic()
-    assert not engine._das_pending and len(store.radius_decisions())==1 and protocol.transport.closed
+    await engine.dynamic.close()
+    assert not engine.dynamic.pending and len(store.radius_decisions())==1 and protocol.transport.closed
 
 
 @pytest.mark.asyncio
@@ -267,26 +267,26 @@ async def test_startup_trust_restore_keeps_durable_replay_and_new_generation(sto
     first=await send(engine,protocol,packet)
     assert first[0][0] == 41
     receipt=copy.deepcopy(store.radius_decisions())
-    first_generation=engine._das_generations[sender.id]["generation"]
+    first_generation=engine.dynamic.generations[sender.id]["generation"]
     with store.transaction():
         store.put("admin_hash","synthetic-manager-hash")
         store.put("engine_identity","40000102030405060708090a0b")
         store.put("engine_boots",9)
     await engine.execute("dynamic-sender-save",{"id":sender.id,"secret":"unsaved-trust"})
-    middle_generation=engine._das_generations[sender.id]["generation"]
+    middle_generation=engine.dynamic.generations[sender.id]["generation"]
     assert first_generation != middle_generation
     highwater=store.get("radius_replay_high_water",0)
     if restore == "process":
-        engine=Engine(store.load(),store);engine._das_wall=lambda:1001.;engine._das_clock=lambda:11.
+        engine=Engine(store.load(),store);engine.dynamic.wall=lambda:1001.;engine.dynamic.clock=lambda:11.
     else: await engine.execute("reboot")
-    assert engine._das_generations[sender.id]["generation"] not in (first_generation,middle_generation)
+    assert engine.dynamic.generations[sender.id]["generation"] not in (first_generation,middle_generation)
     assert engine.state.cfg.radius.dynamic_authorization.senders[0].secret == SECRET.decode()
     assert store.radius_decisions() == receipt and store.get("radius_replay_high_water",0) >= highwater
     assert store.get("admin_hash") == "synthetic-manager-hash" and store.get("engine_boots") == 9
     assert store.get("engine_identity") == "40000102030405060708090a0b"
     replacement=AccessSession("replacement",pid,MAC,"mab",Authorization(1,"port-default"),nas_identity=NasIdentity(b"Switch Lab"))
     engine.state.radius_sessions[(pid,MAC)] = replacement
-    p=DynamicListener(engine,engine._dynamic_binding());p.transport=Transport();engine._das_protocol=p
+    p=DynamicListener(engine.dynamic,engine.dynamic.binding());p.transport=Transport();engine.dynamic.protocol=p
     before=engine.state
     assert await send(engine,p,packet) == [] and engine.state is before
     assert engine.state.radius_sessions[(pid,MAC)].id == "replacement"

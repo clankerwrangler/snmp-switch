@@ -1012,9 +1012,10 @@ def plan_dynamic_request(request: _DynamicRequest, runtime) -> _DynamicPlan:
 
 
 class DynamicListener(asyncio.DatagramProtocol):
-    def __init__(self, engine, binding):
-        self.engine, self.binding, self.transport = engine, binding, None
+    """UDP endpoint for one DynamicAuthorization owner and one binding."""
+    def __init__(self, owner, binding):
+        self.owner, self.binding, self.transport = owner, binding, None
     def connection_made(self, transport):self.transport = transport
     def connection_lost(self, exc):self.transport = None
-    def error_received(self, exc):self.engine.dynamic_drop("transport-error")
-    def datagram_received(self, data, address):self.engine.receive_dynamic(self, data, address)
+    def error_received(self, exc):self.owner.drop("transport-error")
+    def datagram_received(self, data, address):self.owner.receive(self, data, address)
