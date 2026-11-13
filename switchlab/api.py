@@ -241,10 +241,13 @@ def create_app(store=None, configuration=None):
                         await result
                 except Exception as error:
                     failures.append(error)
-            if task is not None:
+            async def stop_background():
+                # A loop that already died reports its error here, like any other step.
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+            if task is not None:
+                await step(stop_background)
             if hasattr(app.state, "engine"):
                 await step(app.state.engine.dynamic.close)
                 await step(app.state.engine.close_radius)

@@ -1011,7 +1011,8 @@ def test_failed_owned_startup_closes_without_replacing_durable_configuration(tmp
         db.close()
 
 
-def test_shutdown_cleanup_continues_after_a_failed_step(tmp_path, monkeypatch):
+def observed_shutdown(tmp_path, monkeypatch):
+    """An owned-store app whose cleanup steps record that they ran."""
     from cryptography.fernet import Fernet
     import switchlab.api as api_module
     from switchlab.dynamic_authorization import DynamicAuthorization
@@ -1027,24 +1028,59 @@ def test_shutdown_cleanup_continues_after_a_failed_step(tmp_path, monkeypatch):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             stores.append(self)
+    def record(name, original):
+        async def wrapper(self, *args, **kwargs):
+            closed.append(name)
+            return await original(self, *args, **kwargs)
+        return wrapper
+    monkeypatch.setattr(api_module, 'Store', ObservedStore)
+    monkeypatch.setattr(DynamicAuthorization, 'close', record('dynamic', DynamicAuthorization.close))
+    monkeypatch.setattr(Engine, 'close_radius', record('radius', Engine.close_radius))
+    monkeypatch.setattr(Management, 'close', record('management', Management.close))
+    return api_module, stores, closed
+
+
+def test_shutdown_cleanup_continues_after_a_failed_step(tmp_path, monkeypatch):
+    from switchlab.dynamic_authorization import DynamicAuthorization
+    api_module, stores, closed = observed_shutdown(tmp_path, monkeypatch)
     async def failing_close(self):
         closed.append('dynamic')
         raise OSError('Synthetic retirement failure')
-    radius_close, management_close = Engine.close_radius, Management.close
-    async def close_radius(self, *args, **kwargs):
-        closed.append('radius')
-        return await radius_close(self, *args, **kwargs)
-    async def close_management(self):
-        closed.append('management')
-        return await management_close(self)
-    monkeypatch.setattr(api_module, 'Store', ObservedStore)
     monkeypatch.setattr(DynamicAuthorization, 'close', failing_close)
-    monkeypatch.setattr(Engine, 'close_radius', close_radius)
-    monkeypatch.setattr(Management, 'close', close_management)
     # The first failure is still reported, after every later step has run.
     with pytest.raises(OSError, match='Synthetic retirement failure'):
         with TestClient(api_module.create_app()):
             pass
+    assert closed == ['dynamic', 'radius', 'management'] and stores[0].closed
+
+
+def test_shutdown_cleanup_continues_after_the_background_loop_died(tmp_path, monkeypatch):
+    import time as real_time
+    from types import SimpleNamespace
+    api_module, stores, closed = observed_shutdown(tmp_path, monkeypatch)
+    def failing_clock():
+        raise OSError('Synthetic clock failure')
+    # The loop reads the clock before its own error handling, so it dies at once.
+    monkeypatch.setattr(api_module, 'time', SimpleNamespace(monotonic=failing_clock, time=real_time.time))
+    with pytest.raises(OSError, match='Synthetic clock failure'):
+        with TestClient(api_module.create_app()):
+            real_time.sleep(0.2)
+    assert closed == ['dynamic', 'radius', 'management'] and stores[0].closed
+
+
+def test_startup_failure_stays_the_reported_error(tmp_path, monkeypatch):
+    from switchlab.dynamic_authorization import DynamicAuthorization
+    api_module, stores, closed = observed_shutdown(tmp_path, monkeypatch)
+    async def failing_reconcile(self):
+        raise ValueError('Synthetic startup failure')
+    async def failing_close(self):
+        closed.append('dynamic')
+        raise OSError('Synthetic retirement failure')
+    monkeypatch.setattr(api_module.SnmpAdapter, 'reconcile', failing_reconcile)
+    monkeypatch.setattr(DynamicAuthorization, 'close', failing_close)
+    with pytest.raises(ValueError, match='Synthetic startup failure'):
+        with TestClient(api_module.create_app()):
+            pytest.fail('Failed startup became a usable application')
     assert closed == ['dynamic', 'radius', 'management'] and stores[0].closed
 
 
