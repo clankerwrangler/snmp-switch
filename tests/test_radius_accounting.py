@@ -57,7 +57,8 @@ async def test_shutdown_never_grants_or_starts_after_accounting_off(configured,m
     async def delivery(record,targets,**kwargs):
         delivered.append(record['status_type'])
         if record['status_type']==8:
-            # The held initial Accept arrives while Accounting-Off is being delivered.
+            # Shutdown has already stopped the worker holding the initial Accept;
+            # releasing its exchange now must not produce a grant or Start.
             release.set();await asyncio.sleep(.05)
         return True,record['targets'][0]['id']
     monkeypatch.setattr('switchlab.radius.native_exchange',exchange)
@@ -66,6 +67,23 @@ async def test_shutdown_never_grants_or_starts_after_accounting_off(configured,m
     assert engine.state.radius_attempts and not engine.state.radius_sessions
     await engine.close_radius()
     assert delivered==[7,8]
+    assert not engine.state.radius_sessions and not engine.state.radius_attempts
+    assert not [r for r in engine.state.accounting_outbox if r['status_type']==1]
+
+
+@pytest.mark.asyncio
+async def test_shutdown_makes_a_late_initial_reply_stale(configured,monkeypatch):
+    cfg,pid,eid=configured;cfg.radius.accounting.enabled=True
+    cfg.radius.accounting.targets=[RadiusServer(label='Collector',address='192.0.2.5',secret='synthetic')]
+    engine=Engine(cfg);capture=await begin(engine,pid,eid);late=[]
+    async def delivery(record,targets,**kwargs):
+        if record['status_type']==8:
+            # The captured Accept is delivered while Accounting-Off is in flight.
+            late.append(await engine.execute('radius-result',{**capture,'result':controls()}))
+        return True,record['targets'][0]['id']
+    monkeypatch.setattr('switchlab.radius.accounting_delivery',delivery)
+    await engine.close_radius()
+    assert len(late)==1 and late[0]['accepted'] is False and late[0]['reason']=='stale-attempt'
     assert not engine.state.radius_sessions and not engine.state.radius_attempts
     assert not [r for r in engine.state.accounting_outbox if r['status_type']==1]
 
