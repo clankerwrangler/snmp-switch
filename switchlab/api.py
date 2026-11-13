@@ -213,8 +213,8 @@ def create_app(store=None, configuration=None):
                     try:
                         await app.state.engine.dynamic.reconcile()
                         await app.state.engine.dynamic.prune()
-                        await app.state.engine.service_authentication()
-                        await app.state.engine.service_accounting()
+                        await app.state.engine.authentication.service()
+                        await app.state.engine.accounting.service()
                         if app.state.engine.storage_fault:
                             continue
                         await app.state.engine.continue_advance()

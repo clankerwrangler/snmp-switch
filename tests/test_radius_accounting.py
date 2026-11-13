@@ -63,7 +63,7 @@ async def test_shutdown_never_grants_or_starts_after_accounting_off(configured,m
         return True,record['targets'][0]['id']
     monkeypatch.setattr('switchlab.radius.native_exchange',exchange)
     monkeypatch.setattr('switchlab.radius.accounting_delivery',delivery)
-    await engine.execute('advance',{'duration_ms':5000});await engine.service_authentication();await started.wait()
+    await engine.execute('advance',{'duration_ms':5000});await engine.authentication.service();await started.wait()
     assert engine.state.radius_attempts and not engine.state.radius_sessions
     await engine.close_radius()
     assert delivered==[7,8]
@@ -143,15 +143,15 @@ async def test_wire_head_serialization_and_original_retention(configured,monkeyp
     async def delivery(record,targets,**kwargs):
         entered.append(record['id']);await release.wait();return True,record['targets'][0]['id']
     monkeypatch.setattr('switchlab.radius.accounting_delivery',delivery)
-    await engine.service_accounting();await asyncio.sleep(0)
+    await engine.accounting.service();await asyncio.sleep(0)
     assert len(entered)==1 and engine.state.accounting_outbox[0]['status_type']==7
-    release.set();await asyncio.gather(*engine._accounting_tasks.values())
-    release=asyncio.Event();await engine.service_accounting();await asyncio.sleep(0)
-    assert len(entered)==2 and len(engine._accounting_tasks)==1
+    release.set();await asyncio.gather(*engine.accounting.tasks.values())
+    release=asyncio.Event();await engine.accounting.service();await asyncio.sleep(0)
+    assert len(entered)==2 and len(engine.accounting.tasks)==1
     first=engine.state.accounting_outbox[0]
-    engine._account_clock=lambda:first['generated_elapsed']+301
-    await engine.service_accounting()
-    await asyncio.gather(*engine._accounting_tasks.values(),return_exceptions=True)
+    engine.accounting.clock=lambda:first['generated_elapsed']+301
+    await engine.accounting.service()
+    await asyncio.gather(*engine.accounting.tasks.values(),return_exceptions=True)
     assert not engine.state.accounting_outbox and engine.state.accounting_drops['expired']>=4
     assert engine.state.radius_sessions
 
@@ -195,7 +195,7 @@ async def test_accounting_delivery_policy_is_independent_captured_and_generation
         try:await asyncio.Future()
         except asyncio.CancelledError:cancelled.set();raise
     monkeypatch.setattr('switchlab.radius.accounting_delivery',held)
-    await engine.service_accounting();await entered.wait()
+    await engine.accounting.service();await entered.wait()
     changes={'response_timeout_seconds':7,'attempts':2,'retry_backoff_seconds':0}
     await engine.execute('accounting-settings',changes)
     assert not set(ids)&{record['id'] for record in engine.state.accounting_outbox}
@@ -204,14 +204,14 @@ async def test_accounting_delivery_policy_is_independent_captured_and_generation
     assert engine.state.current_attempt((pid,capture['mac']),pending['attempt_id'])
     assert engine.state.cfg.radius.response_timeout_seconds==3 and engine.state.cfg.radius.attempts==3
     assert engine.state.accounting_outbox[-1]['delivery_policy']==changes
-    old_tasks=list(engine._accounting_tasks.values());await engine.service_accounting()
+    old_tasks=list(engine.accounting.tasks.values());await engine.accounting.service()
     await asyncio.gather(*old_tasks,return_exceptions=True);assert cancelled.is_set()
     new_ids=[record['id'] for record in engine.state.accounting_outbox]
     await engine.execute('accounting-settings',changes)
     await engine.execute('radius-settings',{'response_timeout_seconds':9})
     assert [record['id'] for record in engine.state.accounting_outbox]==new_ids
-    for task in engine._accounting_tasks.values():task.cancel()
-    await asyncio.gather(*engine._accounting_tasks.values(),return_exceptions=True)
+    for task in engine.accounting.tasks.values():task.cancel()
+    await asyncio.gather(*engine.accounting.tasks.values(),return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -258,7 +258,7 @@ async def test_accounting_waits_end_at_original_retention_before_retry_or_failov
     cfg.radius.accounting.targets=[RadiusServer(label=str(i),address=f'192.0.2.{5+i}',secret='synthetic') for i in range(2)]
     cfg.radius.accounting.response_timeout_seconds=60;cfg.radius.accounting.attempts=10;cfg.radius.accounting.retry_backoff_seconds=30
     engine=Engine(cfg);await grant(engine,pid,eid,controls());record=engine.state.accounting_outbox[-1]
-    record['generated_elapsed']=engine._account_clock()-299.97
+    record['generated_elapsed']=engine.accounting.clock()-299.97
     record['generated_wall']=time.time()-299.97;record['expires_wall']=record['generated_wall']+300
     loop=asyncio.get_running_loop();sent=[];connected=[]
     class UDP:
@@ -277,11 +277,11 @@ async def test_accounting_waits_end_at_original_retention_before_retry_or_failov
     monkeypatch.setattr(socket,'socket',lambda *args,**kwargs:UDP())
     monkeypatch.setattr(loop,'sock_connect',connect);monkeypatch.setattr(loop,'sock_sendto',sendto);monkeypatch.setattr(loop,'sock_recv',receive)
     start=loop.time()
-    result=await accounting_delivery(record,{target.id:target for target in cfg.radius.accounting.targets},ready=lambda:engine.accounting_current(record['id']) is not None,
-        elapsed=lambda:engine._account_clock()-record['generated_elapsed'],remaining=lambda:engine.accounting_remaining(record),on_event=event)
+    result=await accounting_delivery(record,{target.id:target for target in cfg.radius.accounting.targets},ready=lambda:engine.accounting.current(record['id']) is not None,
+        elapsed=lambda:engine.accounting.clock()-record['generated_elapsed'],remaining=lambda:engine.accounting.remaining(record),on_event=event)
     assert result is None and loop.time()-start<1
     assert len(connected)==1 and len(sent)==(0 if blocked=='connect' else 1)
-    assert engine.accounting_remaining(record)==0 and engine.state.radius_sessions
+    assert engine.accounting.remaining(record)==0 and engine.state.radius_sessions
 
 
 @pytest.mark.asyncio
@@ -310,13 +310,13 @@ async def test_startup_accounting_preserves_horizon_or_retires_revoked_records(c
     if change == "none":
         for record in original:
             assert retained[record["id"]] == record
-            assert engine.accounting_current(record["id"]) is not None
+            assert engine.accounting.current(record["id"]) is not None
     else:
         assert not set(retained) & {r["id"] for r in original}
         assert engine.state.accounting_drops["configuration-change"] >= len(original)
     assert engine.state.accounting_sequence >= sequence
     if change != "disable":
         assert engine.state.accounting_outbox[-1]["status_type"] == 7
-        assert engine.accounting_current(engine.state.accounting_outbox[-1]["id"]) is not None
+        assert engine.accounting.current(engine.state.accounting_outbox[-1]["id"]) is not None
     else: assert not engine.state.accounting_outbox
     assert not engine.state.radius_sessions

@@ -112,11 +112,11 @@ async def test_worker_holds_timeline_and_publishes_before_continuing(configured,
         return NativeObservation(AccessResult(2,(),PEER,bytes(16)),2,0,5,2,False,False)
     monkeypatch.setattr("switchlab.radius.native_exchange",exchange)
     waiting=await engine.execute("advance",{"duration_ms":5000})
-    await engine.service_authentication();await started.wait()
+    await engine.authentication.service();await started.wait()
     before=engine.state
     await engine.execute("advance",{"duration_ms":1000,"automatic":True})
     assert engine.state is before and engine.state.sim_ms==0 and not engine.state.fdb
-    release.set();await asyncio.gather(*engine._authentication_tasks.values())
+    release.set();await asyncio.gather(*engine.authentication.tasks.values())
     assert engine.state.sim_ms==0 and engine.state.radius_sessions
     await engine.continue_advance()
     assert engine.state.sim_ms==5000 and len(engine.state.fdb)==1
@@ -140,17 +140,17 @@ async def test_worker_bounds_and_cancellation_do_not_hold_engine_lock(configured
         except asyncio.CancelledError:
             await asyncio.sleep(.01);cancelled.append(args[4]);raise
     monkeypatch.setattr("switchlab.radius.native_exchange",exchange)
-    await engine.execute("advance",{"duration_ms":5000});await engine.service_authentication();await all_started.wait()
-    assert len(engine.state.radius_attempts)==len(engine._authentication_tasks)==8
-    tasks=list(engine._authentication_tasks.values())
+    await engine.execute("advance",{"duration_ms":5000});await engine.authentication.service();await all_started.wait()
+    assert len(engine.state.radius_attempts)==len(engine.authentication.tasks)==8
+    tasks=list(engine.authentication.tasks.values())
     if retirement == "shutdown": await engine.close_authentication()
     else:
         await engine.execute("port-delete", {"id":pid})
         await asyncio.gather(*tasks, return_exceptions=True)
         assert all(task.cancelled() for task in tasks)
-        await engine.service_authentication()  # Existing worker owner reaps completed tasks.
+        await engine.authentication.service()  # Existing worker owner reaps completed tasks.
         assert not engine.state.radius_attempts and not engine.state.jobs
-    assert len(cancelled)==8 and not engine._authentication_tasks and not engine.state.radius_sessions
+    assert len(cancelled)==8 and not engine.authentication.tasks and not engine.state.radius_sessions
     if retirement == "shutdown":
         with pytest.raises(CommandError):await engine.execute("advance",{"duration_ms":1})
 
@@ -166,12 +166,12 @@ async def test_retry_cooldown_is_a_causal_boundary_not_wall_time(configured,monk
         calls.append(engine.state.sim_ms)
         return NativeObservation(AccessResult(3 if len(calls)==1 else 2,(),PEER,bytes(16)),0,0,0,0,False,False)
     monkeypatch.setattr("switchlab.radius.native_exchange",exchange)
-    await engine.execute("advance",{"duration_ms":65000});await engine.service_authentication()
-    await asyncio.gather(*engine._authentication_tasks.values())
+    await engine.execute("advance",{"duration_ms":65000});await engine.authentication.service()
+    await asyncio.gather(*engine.authentication.tasks.values())
     assert calls==[0] and not engine.state.radius_sessions
     await engine.continue_advance()
     assert engine.state.sim_ms==60000 and engine.advance_status()["status"]=="waiting"
-    await engine.service_authentication();await asyncio.gather(*engine._authentication_tasks.values())
+    await engine.authentication.service();await asyncio.gather(*engine.authentication.tasks.values())
     await engine.continue_advance()
     assert calls==[0,60000] and engine.state.sim_ms==65000 and engine.state.radius_sessions
     await engine.close_authentication()

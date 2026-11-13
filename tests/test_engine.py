@@ -1303,11 +1303,11 @@ async def test_event_display_accounting_uses_captured_server_label(engine, monke
     async def delivery(captured, targets, **kwargs):
         assert targets[target["id"]].label == "Original collector"
         await e.execute("accounting-target-save", {"id":target["id"], "label":"Current collector"})
-        assert e.accounting_current(record["id"]) is not None
+        assert e.accounting.current(record["id"]) is not None
         await kwargs["on_event"]("attempting",target["id"])
         return True,target["id"]
     monkeypatch.setattr("switchlab.radius.accounting_delivery",delivery)
-    await e.deliver_accounting(record["id"])
+    await e.accounting.deliver(record["id"])
     rows=[row for row in e.state.events if row["kind"]=="accounting" and row.get("target_id")==target["id"]]
     assert [row["status"] for row in rows] == ["attempting","delivered"]
     assert all(row["server_label"]=="Original collector" for row in rows)

@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
 from switchlab.engine import Engine, CommandError
+from switchlab.radius_workers import server_signature
 from switchlab.models import Configuration, Endpoint, Source, RadiusMaterial, SupplicantProfile, initial_configuration
 from switchlab.radius import AccessResult
 PEER=("192.0.2.1",1812)
@@ -143,12 +144,12 @@ async def test_reauthentication_carries_original_private_state(configured):
     engine=Engine(cfg);first=await begin(engine,pid,eid)
     opaque=b"private-server-state"
     await engine.execute("radius-result",{**first,"result":AccessResult(2,((24,opaque),(29,(1).to_bytes(4,"big"))),PEER,bytes(16)),
-        "server_id":cfg.radius.servers[0].id,"server_signature":engine._server_signature(cfg.radius.servers[0])})
+        "server_id":cfg.radius.servers[0].id,"server_signature":server_signature(cfg.radius.servers[0])})
     capture=await begin(engine,pid,eid)
     async def exchange(*args,**kwargs):
         assert kwargs.get("state")==opaque
         return NativeObservation(AccessResult(3,(),PEER,bytes(16)),0,0,0,0,False,False)
-    await engine.authenticate(pid,capture["mac"],capture["attempt_id"],exchange=exchange)
+    await engine.authentication.authenticate(pid,capture["mac"],capture["attempt_id"],exchange=exchange)
     assert opaque.decode() not in json.dumps(engine.snapshot())
 
 
@@ -217,11 +218,11 @@ async def test_initial_state_absent_and_invalidated_work_never_calls_exchange(co
     engine=Engine(cfg);first=await begin(engine,pid,eid);calls=[]
     async def exchange(*args,**kwargs):
         calls.append(kwargs.get("state"));return NativeObservation(AccessResult(3,(),PEER,bytes(16)),0,0,0,0,False,False)
-    await engine.authenticate(pid,first["mac"],first["attempt_id"],exchange=exchange)
+    await engine.authentication.authenticate(pid,first["mac"],first["attempt_id"],exchange=exchange)
     assert calls==[None]
     capture=await begin(engine,pid,eid)
     await engine.execute("detach",{"id":eid});await engine.execute("attach",{"id":eid,"port_id":pid})
-    assert not (await engine.authenticate(pid,capture["mac"],capture["attempt_id"],exchange=exchange))["accepted"]
+    assert not (await engine.authentication.authenticate(pid,capture["mac"],capture["attempt_id"],exchange=exchange))["accepted"]
     assert calls==[None]
 
 

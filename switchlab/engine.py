@@ -18,6 +18,7 @@ from .radius import AccessResult, Authorization, NasIdentity, RadiusError, autho
 from .models import Configuration, Credential, CredentialAuth, Community, UsmUser, AccessGroup, PollingAccess, WritingAccess, incoming_policy, Endpoint, Port, SnmpSettings, Source, Target, View, Vlan, RadiusServer, RadiusMaterial, SupplicantProfile, SupplicantTemplate, DynamicSender, RadiusOptions, AccountingOptions, DynamicOptions, update_options, check_collection_limit, configuration_error, uid
 from .common import ACCOUNTING_CLOCK_ORIGIN, CommandError, accounting_elapsed_clock, require
 from .dynamic_authorization import DynamicAuthorization
+from .radius_workers import Accounting, Authentication, server_signature
 
 
 def event_resource_label(record):
@@ -169,15 +170,6 @@ class AccessSession:
     accounting_next_ms: int | None = None
     auth_server_id: str | None = None
     auth_server_signature: str | None = field(default=None, repr=False)
-
-
-@dataclass(repr=False)
-class AuthServerHealth:
-    signature: str
-    available: bool | None = None
-    failures: int = 0
-    probe_after: float = 0
-    probe_owner: str | None = None
 
 
 @dataclass
@@ -614,7 +606,7 @@ class Runtime:
             cumulative_octets=session.in_octets if session else None, cumulative_packets=session.in_packets if session else None,
             generated_wall=created, expires_wall=created+300, generated_elapsed=accounting_elapsed_clock(),
             clock_origin=ACCOUNTING_CLOCK_ORIGIN, status="queued", attempts=0, late=late, reason=reason,
-            targets=[dict(id=target.id, signature=Engine._server_signature(target)) for target in targets],
+            targets=[dict(id=target.id, signature=server_signature(target)) for target in targets],
             delivery_policy={name:getattr(settings,name) for name in
                 ("response_timeout_seconds","attempts","retry_backoff_seconds")})
         size = lambda item: len(json.dumps(item,sort_keys=True,separators=(",", ":")).encode())
@@ -627,14 +619,14 @@ class Runtime:
     def accounting_policy_matches(self, record):
         settings = self.cfg.radius.accounting
         return (settings.enabled and
-                record["targets"] == [dict(id=target.id, signature=Engine._server_signature(target))
+                record["targets"] == [dict(id=target.id, signature=server_signature(target))
                                       for target in settings.targets if target.enabled] and
                 record["delivery_policy"] == {name: getattr(settings, name) for name in
                     ("response_timeout_seconds", "attempts", "retry_backoff_seconds")})
 
     def reconcile_accounting(self, before):
         shape = lambda c: (c.enabled,c.response_timeout_seconds,c.attempts,c.retry_backoff_seconds,
-            [(target.id, target.enabled, Engine._server_signature(target)) for target in c.targets])
+            [(target.id, target.enabled, server_signature(target)) for target in c.targets])
         changed = shape(self.cfg.radius.accounting) != shape(before.cfg.radius.accounting)
         if changed:
             count = len(self.accounting_outbox)
@@ -971,14 +963,10 @@ class Engine:
         self.check_endpoint_capacity(cfg)
         self.check_source_capacity(cfg)
         self.lock = asyncio.Lock()
-        self._authentication_tasks = {}
-        self._accounting_tasks = {}
-        self._account_clock = accounting_elapsed_clock
-        self._account_wall = time.time
         self._closed = False
         self._closing = False  # RADIUS shutdown has begun: no new authentication work
-        self._server_health = {}
-        self._auth_clock = time.monotonic
+        self.authentication = Authentication(self)
+        self.accounting = Accounting(self)
         self.dynamic = DynamicAuthorization(self, store)
         self.idempotency = store.get("idempotency", {}) if store else {}
         for item in self.idempotency.values():
@@ -1026,6 +1014,11 @@ class Engine:
         return self._closed
 
     @property
+    def closing(self):
+        """RADIUS shutdown has begun; no new authentication work starts."""
+        return self._closing
+
+    @property
     def storage_fault(self):
         return (self.store.fault_reason or ("storage_closed" if self.store.closed else None)) if self.store else None
 
@@ -1068,9 +1061,8 @@ class Engine:
         if diagnostics:
             from .radius import eap_capability
             data["radius"]["eap_capability"] = eap_capability()
-        now = self._auth_clock()
-        data["radius"]["server_status"] = {sid: dict(status="unknown" if h.available is None else "available" if h.available else "probing" if h.probe_owner else "unavailable",
-            retry_after_seconds=max(0, h.probe_after - now)) for sid,h in self._server_health.items()}
+        data["radius"]["server_status"] = self.authentication.server_status()
+
         try:
             resolve_nas_identity(s.cfg)
             data["radius"]["nas_identity_ready"] = True
@@ -1137,242 +1129,25 @@ class Engine:
         async with self.lock:
             return self._execute(action, payload, expected, key, expected_config)
 
-    @staticmethod
-    def _server_signature(server):
-        value = [server.address, server.port, server.source_address, server.secret]
-        return hashlib.sha256(json.dumps(value).encode()).hexdigest()
-
-    def _sync_server_health(self):
-        current = {server.id: server for server in self.state.cfg.radius.servers}
-        for identity in list(self._server_health):
-            if identity not in current:
-                del self._server_health[identity]
-        for identity, server in current.items():
-            signature = self._server_signature(server)
-            if identity not in self._server_health or self._server_health[identity].signature != signature:
-                self._server_health[identity] = AuthServerHealth(signature)
-
-    def _take_server(self, server, attempt_id):
-        self._sync_server_health()
-        health = self._server_health.get(server.id)
-        if health is None or health.signature != self._server_signature(server):
-            return None
-        if health.available is False:
-            if self._auth_clock() < health.probe_after or health.probe_owner not in (None, attempt_id):
-                return None
-            health.probe_owner = attempt_id
-        return health
-
-    def _server_response(self, server_id, health, key, attempt_id):
-        # This synchronous callback observes a cryptographically verified packet,
-        # not a grant. It runs on the same event loop and never performs I/O.
-        if (self._closed or self.storage_fault or self._server_health.get(server_id) is not health or
-                self.state.current_attempt(key, attempt_id) is None):
-            return
-        health.available, health.failures, health.probe_after, health.probe_owner = True, 0, 0, None
-
-    def _server_exhausted(self, server_id, health, key, attempt_id):
-        if (self._closed or self.storage_fault or self._server_health.get(server_id) is not health or
-                self.state.current_attempt(key, attempt_id) is None):
-            return
-        health.failures += 1
-        health.available = False
-        health.probe_after = self._auth_clock() + (1, 2, 4, 8, 16, 30)[min(health.failures - 1, 5)]
-
-    def _release_server(self, server_id, health, attempt_id):
-        if self._server_health.get(server_id) is health and health.probe_owner == attempt_id:
-            health.probe_owner = None
-
-    def _cancel_inactive_authentication(self):
-        current = {a.id for a in self.state.radius_attempts.values()} if not self.storage_fault and not self._closed else set()
-        try:
-            running = asyncio.current_task()
-        except RuntimeError:
-            running = None
-        for identity, task in self._authentication_tasks.items():
-            if identity not in current and task is not running and not task.done() and not task.cancelling():
-                task.cancel()
-        for identity, task in self._accounting_tasks.items():
-            if self.accounting_current(identity) is None and task is not running and not task.done() and not task.cancelling():
-                task.cancel()
-
-    async def service_authentication(self):
-        """Bounded process tasks refer to Runtime attempts; they do not own grants."""
-        stopped = self.storage_fault or self._closed or self._closing
-        active = {attempt.id for attempt in self.state.radius_attempts.values()} if not stopped else set()
-        for identity, task in list(self._authentication_tasks.items()):
-            if identity not in active and not task.cancelling():
-                task.cancel()
-            if task.done():
-                try:
-                    task.result()
-                except (asyncio.CancelledError, CommandError):
-                    pass
-                finally:
-                    del self._authentication_tasks[identity]
-        if stopped:
-            return
-        # Avoid empty transactions on every refresh; the real transaction alone allocates IDs.
-        deadline = self.state.next_session_deadline()
-        if (deadline is not None and deadline <= self.state.sim_ms or
-                len(self.state.radius_attempts) < 8 and next(self.state.authentication_candidates(), None) is not None):
-            await self.execute("radius-discover")
-        for key, attempt in self.state.radius_attempts.items():
-            if len(self._authentication_tasks) >= 8:
-                break
-            if attempt.id not in self._authentication_tasks:
-                self._authentication_tasks[attempt.id] = asyncio.create_task(self.authenticate(*key, attempt.id))
-
-    def accounting_expired(self, record):
-        return (record.get("clock_origin") != ACCOUNTING_CLOCK_ORIGIN or
-                self._account_clock() > record["generated_elapsed"] + 300 or
-                self._account_wall() > record["expires_wall"] or self._account_wall() < record["generated_wall"])
-
-    def accounting_remaining(self, record):
-        if record.get("clock_origin") != ACCOUNTING_CLOCK_ORIGIN or self._account_wall() < record["generated_wall"]:
-            return 0
-        return max(0,min(record["generated_elapsed"]+300-self._account_clock(),record["expires_wall"]-self._account_wall()))
-
-    def accounting_current(self, record_id):
-        if self._closed or self.storage_fault or not self.state.cfg.radius.accounting.enabled:
-            return None
-        record = next((item for item in self.state.accounting_outbox if item["id"] == record_id), None)
-        if record is None or self.accounting_expired(record):return None
-        return record if self.state.accounting_policy_matches(record) else None
-
-    async def service_accounting(self):
-        for record_id, task in list(self._accounting_tasks.items()):
-            if self.accounting_current(record_id) is None and not task.cancelling():task.cancel()
-            if task.done():
-                try:task.result()
-                except (asyncio.CancelledError, CommandError):pass
-                finally:del self._accounting_tasks[record_id]
-        if self._closed or self.storage_fault:return
-        if any(self.accounting_expired(record) for record in self.state.accounting_outbox):await self.execute("accounting-prune")
-        heads = {}
-        records = self.state.accounting_outbox
-        lifecycle = next((record for record in records if record["status_type"] in (7,8)), None)
-        if lifecycle is not None:
-            earlier = [record for record in records if record["sequence"] < lifecycle["sequence"]]
-            records = earlier or [lifecycle]
-        for record in records:heads.setdefault(record["session_id"], record)
-        for record in heads.values():
-            if len(self._accounting_tasks) >= 8:break
-            if record["id"] not in self._accounting_tasks and self.accounting_current(record["id"]) is not None:
-                self._accounting_tasks[record["id"]] = asyncio.create_task(self.deliver_accounting(record["id"]))
-
-    async def deliver_accounting(self, record_id):
-        from .radius import accounting_delivery
-        record = self.accounting_current(record_id)
-        if record is None:return
-        captured = copy.deepcopy(record)
-        targets = {target.id: target.model_copy(deep=True) for target in self.state.cfg.radius.accounting.targets}
-        def server_context(target_id):
-            target = targets.get(target_id)
-            return {"server_label":target.label} if target is not None else {}
-        async def event(phase, target_id):
-            await self.execute("accounting-event", {"id":record_id, "phase":phase, "target_id":target_id, **server_context(target_id)})
-        outcome = await accounting_delivery(captured, targets, ready=lambda:self.accounting_current(record_id) is not None,
-            elapsed=lambda:max(0, self._account_clock()-captured["generated_elapsed"]),
-            remaining=lambda:self.accounting_remaining(captured), on_event=event)
-        if outcome is not None and self.accounting_current(record_id) is not None:
-            delivered, target_id = outcome
-            await self.execute("accounting-result", {"id":record_id, "delivered":delivered, "target_id":target_id, "reason":"exhausted", **server_context(target_id)})
-
     async def close_radius(self, deadline_seconds=5):
         """Shut RADIUS down in one order: stop authentication so no grant can follow,
         end sessions and queue Accounting-Off, drain accounting, then close."""
         self._closing = True
-        await self._stop_authentication()
+        await self.authentication.stop()
         if not self.storage_fault and not self._closed:
             await self.execute("radius-shutdown")
-            deadline = time.monotonic() + deadline_seconds
-            while self.state.accounting_outbox and time.monotonic() < deadline:
-                await self.service_accounting()
-                await asyncio.sleep(0.02)
+            await self.accounting.drain(deadline_seconds)
         self._closed = True
-        tasks = list(self._accounting_tasks.values())
-        for task in tasks:
-            if not task.cancelling():task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        self._accounting_tasks.clear()
+        await self.accounting.stop()
 
     async def close_authentication(self):
         """Close without the accounting drain (tests and storage faults)."""
         self._closed = True
-        await self._stop_authentication()
+        await self.authentication.stop()
 
-    async def _stop_authentication(self):
-        tasks = list(self._authentication_tasks.values())
-        for task in tasks:
-            if not task.cancelling():
-                task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        self._authentication_tasks.clear()
-
-    async def authenticate(self, port_id, address, attempt_id, *, exchange=None):
-        """Run one captured exchange without holding the simulation/SNMP lock."""
-        from .radius import native_exchange, mab_exchange
-        key = (port_id, address)
-        async with self.lock:
-            self.require_storage()
-            attempt = self.state.current_attempt(key, attempt_id)
-            if attempt is None:
-                return {"accepted": False, "reason": "stale-attempt"}
-            cfg = self.state.cfg.model_copy(deep=True)
-            profile = (next(src.supplicant for eid in self.state.attached(port_id)
-                           for src in cfg.endpoints[eid].sources if src.mac == address and src.supplicant is not None)
-                       if attempt.method != "mab" else None)
-        exchange = exchange or (mab_exchange if attempt.method == "mab" else native_exchange)
-        async def eap_events(events):
-            await self.execute("radius-pae-events", dict(port_id=port_id, mac=address, attempt_id=attempt_id, events=events))
-        failure = "server-unavailable"
-        for server in cfg.radius.servers:
-            if not server.enabled:
-                continue
-            async with self.lock:
-                self.require_storage()
-                current = self.state.current_attempt(key, attempt_id)
-                if current is None:
-                    return {"accepted": False, "reason": "stale-attempt"}
-                health = self._take_server(server, attempt_id)
-            if health is None:
-                continue
-            callback_active = [True]
-            try:
-                observed = await exchange(cfg.radius, server, profile, cfg.ports[port_id], address, attempt.session_id,
-                    state=attempt.state if (attempt.state_server_id == server.id and
-                        attempt.state_server_signature == self._server_signature(server)) else None,
-                    nas_identity=attempt.nas_identity, on_eap_events=eap_events,
-                    on_response=lambda sid=server.id, owner=health, live=callback_active:
-                        self._server_response(sid, owner, key, attempt_id) if live[0] else None)
-                if observed.result is not None or observed.challenges:
-                    self._server_response(server.id, health, key, attempt_id)
-                if observed.result is not None:
-                    result = await self.execute("radius-result", dict(port_id=port_id, mac=address,
-                        attempt_id=attempt_id, result=observed.result, server_id=server.id,
-                        server_signature=self._server_signature(server)))
-                    return {**result, "nas_code": observed.result.code, "peer_result": observed.peer_result,
-                            "challenges": observed.challenges, "eap_frames": observed.eap_frames}
-                if observed.tls_errors or observed.preparation_failed or observed.peer_result in (1, 3):
-                    failure = "certificate-validation-failure" if observed.tls_errors else "eap-method-failure"
-                    break
-                if observed.timed_out and observed.unanswered_retries >= cfg.radius.attempts:
-                    self._server_exhausted(server.id, health, key, attempt_id)
-                    failure = "invalid-reply" if observed.invalid_replies else "server-unavailable"
-                    continue
-                failure = "exchange-deadline" if observed.timed_out else "incomplete-exchange"
-                break
-            except RadiusError as error:
-                # Local capability/encoding/channel failures are not server outages.
-                failure = str(error)
-                break
-            finally:
-                callback_active[0] = False
-                self._release_server(server.id, health, attempt_id)
-        return await self.execute("radius-result", dict(port_id=port_id, mac=address,
-            attempt_id=attempt_id, result=None, failure=failure))
-
+    def _cancel_inactive_work(self):
+        self.authentication.cancel_inactive()
+        self.accounting.cancel_inactive()
     def set_locked(self, bindings, includes):
         """Plan and commit while the caller holds io_lock then this engine's lock.
 
@@ -1531,12 +1306,12 @@ class Engine:
                                   **({"save_startup":True} if action in ("save-startup", "port-create", "port-delete") else {}))
             except Exception:
                 if self.storage_fault:
-                    self._cancel_inactive_authentication()
+                    self._cancel_inactive_work()
                 raise
         self.state, self.idempotency = s, idem
         self.dynamic.publish(updates)
-        self._sync_server_health()
-        self._cancel_inactive_authentication()
+        self.authentication.sync_health()
+        self._cancel_inactive_work()
         return result
 
     def _apply(self, s, action, d, es, ps):
@@ -1613,7 +1388,7 @@ class Engine:
         if action == "accounting-prune":
             remaining = []
             for record in s.accounting_outbox:
-                if self.accounting_expired(record):
+                if self.accounting.expired(record):
                     s.accounting_drop("expired", record_id=record["id"])
                 else:remaining.append(record)
             s.accounting_outbox = remaining

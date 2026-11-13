@@ -16,8 +16,8 @@ def plain(method='mab',active=True):
 
 
 async def run_workers(engine):
-    await engine.service_authentication()
-    await asyncio.gather(*engine._authentication_tasks.values())
+    await engine.authentication.service()
+    await asyncio.gather(*engine.authentication.tasks.values())
 
 
 @pytest.mark.asyncio
@@ -46,9 +46,9 @@ async def test_no_supplicant_and_silent_source_never_trigger_mab(method,monkeypa
     cfg,pid,eid=plain(method,False);engine=Engine(cfg)
     async def prohibited(*args,**kwargs):raise AssertionError('No ordinary trigger')
     monkeypatch.setattr('switchlab.radius.mab_exchange',prohibited);monkeypatch.setattr('switchlab.radius.native_exchange',prohibited)
-    await engine.execute('advance',{'duration_ms':100000});await engine.service_authentication()
+    await engine.execute('advance',{'duration_ms':100000});await engine.authentication.service()
     assert engine.state.sim_ms==100000 and not engine.state.radius_sessions and not engine.state.radius_attempts
-    assert not engine._authentication_tasks and not engine.state.fdb
+    assert not engine.authentication.tasks and not engine.state.fdb
     await engine.close_authentication()
 
 
@@ -287,7 +287,7 @@ async def test_mab_bind_failure_remains_local_current_engine_failure(monkeypatch
     assert current["status"] == "failed" and current["nas_code"] is None and current["response"] is None
     assert not engine.state.radius_sessions and not engine.state.radius_attempts
     assert probe.sent == 0 and probe.trace.count("socket") == 1 and probe.closed
-    assert all(h.available is None and h.probe_owner is None for h in engine._server_health.values())
+    assert all(h.available is None and h.probe_owner is None for h in engine.authentication.health.values())
     assert "private-source-marker" not in json.dumps(engine.snapshot())
     assert "private-source-marker" not in json.dumps(list(engine.state.events))
     event=next(e for e in engine.state.events if e["kind"]=="authentication-failed")
