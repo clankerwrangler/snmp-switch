@@ -6,11 +6,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from run_tlc import config_module, find_java, prepare_inputs
+from run_tlc import config_module, find_java, fresh_output, prepare_inputs
 MUTATIONS = [('accept_obsolete_job', 'ScenarioAttachmentABA', 'Switch.tla', 'accepted == ValidJob(s, sk, j) /\\ Admitted(s, j.port, j.vlan)', 'accepted == CanEmit(s, sk) /\\ Admitted(s, j.port, j.vlan)'), ('flush_whole_port_on_vlan_edit', 'ScenarioSelectiveAndPvid', 'Switch.tla', 'Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members,\n                              !.untagged[p] = tags], {}, {p})', 'Mutate([s EXCEPT !.pvid[p] = native, !.allowed[p] = members,\n                              !.untagged[p] = tags,\n                              !.fdb = [k \\in FdbKeys |-> IF s.fdb[k].port = p THEN EmptyEntry ELSE s.fdb[k]]], {}, {p})'), ('omit_vlan1_admission_on_fallback', 'ScenarioDeleteFallback', 'Switch.tla', '(IF s.pvid[p] = v THEN {1} ELSE {})', '{}'), ('allow_unauthorized_set', 'SetAuthorization', 'SetTransactions.tla', 'ELSE IF ~auth THEN Reject("authorizationError",0)', 'ELSE IF FALSE THEN Reject("authorizationError",0)'), ('publish_failed_set_prefix', 'SetAtomicMixed', 'SetTransactions.tla', 'ELSE IF error.status # "noError" THEN Reject(error.status,error.index)', 'ELSE IF error.status # "noError" THEN\n               /\\ s\' = [s EXCEPT !.admin[P0] = FALSE]\n               /\\ result\' = [status |-> error.status,index |-> error.index] /\\ pending\' = NoPdu\n               /\\ UNCHANGED <<accessvars,registration,gate,activation>>'), ('entity_alias_uses_bridge_port', 'EntityInventory', 'Switch.tla', '[logicalIndex |-> 0, pointer |-> <<"ifIndex", IfIndex[PhysicalPort(i)]>>]]', '[logicalIndex |-> 0, pointer |-> <<"ifIndex", PhysicalPort(i)>>]]')]
 
 MUTATIONS += [
@@ -45,13 +44,12 @@ def main():
     parser.add_argument('--java', type=Path)
     parser.add_argument('--mutations', nargs='+', choices=[m[0] for m in MUTATIONS],
                         help='Selected controls; default: all current controls.')
-    parser.add_argument('--output', type=Path, help='Output directory; default: logs/mutations-<UTC time>.')
+    parser.add_argument('--output', type=Path, help='New output directory; default: logs/mutations-<UTC time>-<pid>. An existing one is refused.')
     args = parser.parse_args()
     jar = args.jar.resolve()
     java = find_java(parser, args.java, jar)
-    output = (args.output or ROOT / 'logs' / time.strftime('mutations-%Y%m%dT%H%M%SZ', time.gmtime())).resolve()
     prepare_inputs()
-    output.mkdir(parents=True, exist_ok=True)
+    output = fresh_output(parser, args.output, 'mutations-')
     missed = []
     selected = [m for m in MUTATIONS if not args.mutations or m[0] in args.mutations]
     for name, config, module, before, after in selected:

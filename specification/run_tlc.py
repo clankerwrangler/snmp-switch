@@ -2,6 +2,7 @@
 """Run bounded TLC checks; an incomplete search is never a pass."""
 from __future__ import annotations
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -30,6 +31,16 @@ def config_module(path):
     if not module.is_file():
         raise ValueError(f'{path.name}: missing module {module.name}')
     return module.name
+
+
+def fresh_output(parser, output, prefix):
+    """Create a new output directory; never reuse one, so earlier logs and TLC state survive."""
+    output = (output or ROOT / 'logs' / f'{prefix}{time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())}-{os.getpid()}').resolve()
+    try:
+        output.mkdir(parents=True)
+    except FileExistsError:
+        parser.error(f'{output} already exists; choose a new --output directory.')
+    return output
 
 
 def find_java(parser, java, jar):
@@ -79,7 +90,7 @@ def main() -> int:
     parser.add_argument('--models', nargs='*', help='Config stems; default: every normal configuration.')
     parser.add_argument('--timeout', type=int, default=600, help='Seconds per model.')
     parser.add_argument('--heap', default='2g')
-    parser.add_argument('--output', type=Path, help='Output directory; default: logs/<UTC time>.')
+    parser.add_argument('--output', type=Path, help='New output directory; default: logs/<UTC time>-<pid>. An existing one is refused.')
     parser.add_argument('--min-free-mib', type=int, default=1024, help='Stop a model if free disk space drops below this.')
     args = parser.parse_args()
     prepare_inputs()
@@ -98,8 +109,7 @@ def main() -> int:
         modules = {name: config_module(configs[name]) for name in names}
     except ValueError as error:
         parser.error(str(error))
-    output = (args.output or ROOT / 'logs' / time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())).resolve()
-    output.mkdir(parents=True, exist_ok=True)
+    output = fresh_output(parser, args.output, '')
     failed = []
     for name in names:
         cmd = [java, '-XX:+UseParallelGC', f'-Xmx{args.heap}', '-Dutil.ExecutionStatisticsCollector.id=',
