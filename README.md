@@ -69,7 +69,20 @@ For native LAN access, use the host's LAN address with `--host`. EAP-TLS and PEA
 - [Local management accounts and permissions](specification/docs/MANAGEMENT.md)
 - [API schema](docs/openapi.json); interactive documentation is at `/docs` on the running instance.
 - [Technical specification](specification/TECHNICAL_SPECIFICATION.md) and [supported MIB objects](specification/docs/mib-coverage.csv)
-- [Executed validation](docs/VALIDATION.md) and [formal models and checks](specification/README.md)
+- [Formal models and how to check them](specification/README.md)
+
+## Testing
+
+The test images hold everything the checks need. Run them from this directory:
+
+```sh
+docker build --target test -t switchlab-test .
+docker run --rm --cap-drop ALL --security-opt no-new-privileges --sysctl net.ipv4.ip_unprivileged_port_start=161 switchlab-test
+docker build --target browser-test -t switchlab-browser-test .
+docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges switchlab-browser-test
+```
+
+The first pair runs the Python suite, including real SNMP and RADIUS exchanges over loopback. The second drives the packaged UI in Chromium. [`.github/workflows/test.yml`](.github/workflows/test.yml) runs both, plus a clean-runtime release check and an isolated LAN check.
 
 ## License
 

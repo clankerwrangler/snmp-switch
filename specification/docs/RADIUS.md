@@ -259,7 +259,7 @@ Use the RADIUS page and selected-port client status to distinguish no supplicant
 profile conflict, unusable policy, native capability failure, NAS rejection,
 transport outage, and replay-clock gating. The [API schema](../../docs/openapi.json)
 contains the revision-checked settings, source/session actions, and advancement
-routes. [Validation](../../docs/VALIDATION.md) records actual tests and their limits.
+routes.
 
 MAB transport reasons identify the failing socket, bind, connect, send, receive,
 or close stage with a fixed error category. For example,

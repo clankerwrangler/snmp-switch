@@ -533,7 +533,7 @@ A clean-install release test must inspect the **effective** loaded configuration
 
 Use Net-SNMP polling tools and `snmptrapd`, or equivalent independently implemented clients, for integration tests. Check good/bad credentials, view traversal, empty tables, nonidentical indexes, duplicate MACs across VLANs, absent VLAN tags, table edits during a walk, response limits, and reboot. A reference script can assert the end-to-end MAC → FDB → bridge port → interface join without access to a NAC product. [R13]
 
-Model checking is finite and configuration-specific. The full-core fixture is intentionally small; focused fixtures and scripted traces cover larger combinations. Current SET checks compose bounded core and credential contracts; none is a formal refinement proof of the Python application. Passing TLC does not establish ASN.1 correctness, security implementation correctness, crash safety, unlimited-scale correctness, or NAC compatibility. Exact current configurations, outcomes, limits, and tool hashes are linked from `CURRENT_VERIFICATION.md`. Historical reports and evidence remain in Git with their original scope and measurements.
+Model checking is finite and configuration-specific. The full-core fixture is intentionally small; focused fixtures and scripted traces cover larger combinations. Current SET checks compose bounded core and credential contracts; none is a formal refinement proof of the Python application. Passing TLC does not establish ASN.1 correctness, security implementation correctness, crash safety, unlimited-scale correctness, or NAC compatibility. The bounds of each check are in its `configs/*.cfg` file.
 
 ### 12.1 Integrated validation
 
@@ -553,7 +553,7 @@ An end-to-end acceptance workflow is: explicitly select the development identity
 | ID-T06 | Restarting or upgrading retains an operator value or an intentionally unset state. A lab scenario import does not replace the deployment identity. Changing the advertised OID does not reset the SNMPv3 engine identity. |
 | ID-T07 | Changing identity does not change the supported MIB objects, trap definitions, link state, FDB, or endpoint behavior. A fresh public package cannot select the development value through hidden defaults. |
 
-These are required application tests, not results of formal verification. The [application validation report](../docs/VALIDATION.md) records executed checks and their limits.
+These are required application tests, not results of formal verification.
 
 ## References
 

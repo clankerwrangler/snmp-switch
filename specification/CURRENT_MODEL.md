@@ -2,9 +2,8 @@
 
 The TLA+ models describe bounded state transitions and invariants for Switch Lab.
 They are not a formal refinement proof of the Python application. See the
-[technical specification](TECHNICAL_SPECIFICATION.md) for application behavior,
-[verification report](CURRENT_VERIFICATION.md) for recorded results and commands,
-and [application validation](../docs/VALIDATION.md) for implementation tests.
+[technical specification](TECHNICAL_SPECIFICATION.md) for application behavior
+and the [specification README](README.md) for how to run the checks.
 
 ## Owners and checked relationships
 

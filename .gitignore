@@ -9,7 +9,3 @@ work/
 *.db*
 *.log
 .env
-
-# Local historical test output
-/docs/test-results.txt
-/docs/validation-results.json

@@ -7,7 +7,6 @@ This directory contains the current TLA+ contract, bounded TLC configurations, b
 - [Application README](../README.md): installation, essential configuration, and documentation links.
 - [Technical specification](TECHNICAL_SPECIFICATION.md): state, VLAN/SET/ENTITY behavior, API/UI, and storage recovery.
 - [Current model contract](CURRENT_MODEL.md): model ownership, selected profiles, finite bounds, and implementation boundaries.
-- [Current verification](CURRENT_VERIFICATION.md): checked scope, outcomes, tools, and reproduction.
 - [Object manifest](docs/mib-coverage.csv): 129 definitions, comprising 123 readable objects (ten writable) and six inaccessible indexes. Maximum MIB access and implemented access are separate.
 - [RADIUS setup and behavior](docs/RADIUS.md): access, accounting, dynamic requests, and the conditional PAE subset.
 - [Identity setup](docs/IDENTITY_SETUP.md): explicit identity configuration and public defaults.
@@ -24,7 +23,7 @@ SET models include original-position errors, current authorization and generatio
 
 ## Run the checks
 
-Use Python, a Java runtime suitable for the selected official TLA+ tools, and `tla2tools.jar`. The JAR is not bundled. Tool versions and integrity evidence are recorded in the current verification report.
+Use Python, a Java runtime suitable for the selected official TLA+ tools, and `tla2tools.jar`. The JAR is not bundled; the models are checked with [TLA+ tools v1.7.4](https://github.com/tlaplus/tlaplus/releases/tag/v1.7.4) (TLC 2.19) on Java 21.
 
 ```powershell
 python .\run_tlc.py --jar C:\tools\tla2tools.jar --timeout 600
@@ -40,13 +39,13 @@ For selected configurations:
 python3 ./run_tlc.py --jar /path/to/tla2tools.jar --models SetResponseEntry StorageRecovery
 ```
 
-The normal catalog contains 58 configurations. Current verification joins separate completed checks; it does not claim one combined 58-configuration run. The normal SET graph uses the checked equality quotient and its source/certificate guard. The retained unreduced timeout remains incomplete, not a pass. A timeout or parse failure is not a successful negative control.
+With no `--models`, the runner checks every normal configuration. The normal SET graph uses the checked equality quotient (`SetTokenEquivalence`); the unreduced `SetTransactions` graph is too large for a normal run and is selected only explicitly. A timeout or parse failure is not a pass, and not a successful negative control.
 
 ```sh
 python3 ./tests/check_mutations.py --jar /path/to/tla2tools.jar
 ```
 
-Both entry points regenerate ignored scenario/config inputs through their existing generators before checking. Edit the generators, not their outputs. Mutation checks then use temporary copies of current sources. Output under `logs/` stays local and ignored. Historical counterexamples and their exact inputs remain in Git; the current verification report explains how to inspect them. A fresh checkout does not need historical logs to run the current suite.
+Both entry points regenerate ignored scenario/config inputs through their existing generators before checking. Edit the generators, not their outputs. Mutation checks then use temporary copies of current sources. TLC output goes to `logs/`, which stays local and ignored.
 
 ## Main owners
 
@@ -67,4 +66,4 @@ Both entry points regenerate ignored scenario/config inputs through their existi
 | `run_tlc.py` | Bounded runner and current replacement/certificate checks |
 | `docs/make_mib_manifest.py` | Canonical object-manifest generator |
 
-Model checking is finite and configuration-specific. Semantic sets/maps do not prove ASN.1 encoding, cryptography, OS durability, unlimited-scale behavior, or NAC-product compatibility. The implementation has not been formally refined from these models. The current verification report identifies the exact assumptions and remaining boundaries.
+Model checking is finite and configuration-specific. Semantic sets/maps do not prove ASN.1 encoding, cryptography, OS durability, unlimited-scale behavior, or NAC-product compatibility. The implementation has not been formally refined from these models; [CURRENT_MODEL.md](CURRENT_MODEL.md) states each model's assumptions and boundaries.
