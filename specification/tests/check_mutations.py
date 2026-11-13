@@ -2,6 +2,7 @@
 """Check that each deliberate model defect is rejected by a violated property."""
 from __future__ import annotations
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -50,7 +51,7 @@ def main():
     java = find_java(parser, args.java, jar)
     prepare_inputs()
     output = fresh_output(parser, args.output, 'mutations-')
-    missed = []
+    results = []
     selected = [m for m in MUTATIONS if not args.mutations or m[0] in args.mutations]
     for name, config, module, before, after in selected:
         original = (ROOT / module).read_text()
@@ -63,7 +64,7 @@ def main():
             (work / module).write_text(original.replace(before, after))
             cfg = ROOT / 'configs' / f'{config}.cfg'
             shutil.copy2(cfg, work / 'check.cfg')
-            cmd =[java, '-Xmx1g', '-Dutil.ExecutionStatisticsCollector.id=', '-cp', str(jar),
+            cmd = [java, '-Xmx1g', '-Dutil.ExecutionStatisticsCollector.id=', '-cp', str(jar),
                    'tlc2.TLC', '-workers', '1', '-seed', '20260907', '-fp', '0',
                    '-config', 'check.cfg', config_module(cfg)]
             try:
@@ -71,13 +72,16 @@ def main():
                 text = run.stdout + run.stderr
                 detected = run.returncode != 0 and any(marker in text for marker in
                     ('is violated', 'Temporal properties were violated'))
-                status = 'DETECTED' if detected else 'NOT_DETECTED'
+                status = 'DETECTED' if detected else 'NOT_ESTABLISHED'
             except subprocess.TimeoutExpired:
-                text, detected, status = 'TIMEOUT: no rejection established.\n', False, 'TIMEOUT'
+                text, detected, status = 'TIMEOUT: no behavioral rejection established.\n', False, 'TIMEOUT'
             (output / f'mutation-{name}.log').write_text(text)
-            if not detected:
-                missed.append(name)
+            results.append(dict(mutation=name, configuration=config, status=status,
+                                behavioral_defect_detected=detected, log=f'mutation-{name}.log'))
             print(f'{name}: {status}', flush=True)
+    missed = [r['mutation'] for r in results if not r['behavioral_defect_detected']]
+    summary = dict(status='FAIL' if missed else 'PASS', results=results)
+    (output / 'verification.json').write_text(json.dumps(summary, indent=2) + '\n')
     print(f'{len(selected) - len(missed)}/{len(selected)} detected' + (f'; missed: {" ".join(missed)}' if missed else ''))
     return 1 if missed else 0
 if __name__ == '__main__':
