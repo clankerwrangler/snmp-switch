@@ -1,4 +1,5 @@
 ---------------------- MODULE SetResponseLifecycle ----------------------
+\* Sources: switchlab/snmp_lifetime.py
 EXTENDS Naturals, FiniteSets
 CONSTANTS NoEntry, NoTicket
 VARIABLE life

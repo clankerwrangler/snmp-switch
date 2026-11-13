@@ -1,4 +1,5 @@
 ---------------------- MODULE SetResponseScenarios ----------------------
+\* Sources: switchlab/snmp_lifetime.py switchlab/snmp.py switchlab/engine.py
 EXTENDS SetTransactions
 CONSTANTS NoEntry, NoTicket
 VARIABLES life, scenario, pc, frozen

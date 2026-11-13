@@ -17,7 +17,6 @@ and the [specification README](README.md) for how to run the checks.
 | `EntityInventory.tla` | Surviving physical/alias/interface identity, independent filtered snapshots, and actual-row-change timestamps | Read-only ENTITY projection and management uptime |
 | `ManagementAccess.tla` | Named local roles, authenticated/current-generation issuance, queued writes, stream revocation and route-relative API classification | HTTP middleware/dependencies, policy changes and per-yield stream checks |
 | `ManagementResources.tla` | Canceled requests retain worker slots; viewer admission never evicts administrators | Argon2 task ownership and bounded role-aware session allocation |
-| `SnapshotCounts.tla` | One-pass per-port counts over captured rows, with unchanged published results after source mutations | API snapshot learned counts; two ports and three optional rows |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original MP/security record association, exact ownership through admission, consumption/discard, expiry, reuse, and response failure | Pinned response-lifetime integration |
 | `RadiusAuthorization.tla` | Current authorization captures, lease/VLAN invalidation, and link/accounting independence | Per-port/MAC authorization and existing runtime admission |
 | `RadiusDynamicAuthorization.tla` | Conjunctive session selection, all-or-none CoA/Disconnect, and cached duplicate decisions | Existing engine transaction and dynamic-request handling |

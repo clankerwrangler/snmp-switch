@@ -1,4 +1,5 @@
 ------------------------- MODULE ManagementResources ------------------------
+\* Sources: switchlab/management.py
 EXTENDS Naturals, FiniteSets, Sequences
 Workers == 1..3
 Roles == {"viewer", "admin"}

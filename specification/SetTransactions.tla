@@ -1,4 +1,5 @@
 -------------------------- MODULE SetTransactions --------------------------
+\* Sources: switchlab/mib.py switchlab/snmp.py switchlab/engine.py
 EXTENDS TestSwitch
 CONSTANTS Credentials, Secrets, Views, Snapshots, Targets,
           NoCredential, NoView, NoRequest, NoResponse, NoPdu

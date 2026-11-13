@@ -1,4 +1,5 @@
 -------------------------- MODULE GroupedAccess --------------------------
+\* Sources: switchlab/models.py switchlab/storage.py switchlab/snmp.py switchlab/engine.py
 EXTENDS TestSwitch
 CONSTANTS Credentials, Secrets, Views, Snapshots, Targets, Groups,
           NoCredential, NoView, NoRequest, NoResponse, NoPdu, NoGroup, NoAudit

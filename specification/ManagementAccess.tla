@@ -1,4 +1,5 @@
 -------------------------- MODULE ManagementAccess --------------------------
+\* Sources: switchlab/api.py switchlab/management.py
 EXTENDS Naturals, FiniteSets, Sequences
 \* Finite segment-boundary abstraction of the framework routing helper. Concrete
 \* URL/root_path spelling and Origin handling are implementation-test obligations.

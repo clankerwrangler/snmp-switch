@@ -132,6 +132,7 @@ r.add('DeleteVlan(10)',f'~ValidJob(s,{K1},s.pending[{K1}])')
 r.add(f'ApplyActivity({K1})','Live(s)={}').add('FinishStep')
 
 header=r'''--------------------------- MODULE Scenarios ---------------------------
+\* Sources: switchlab/engine.py switchlab/mib.py switchlab/models.py
 EXTENDS TestSwitch
 CONSTANTS Scenario, E1, E2, M1, M2, M3
 VARIABLE pc

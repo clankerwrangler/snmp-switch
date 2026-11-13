@@ -58,12 +58,13 @@ Both entry points regenerate ignored scenario/config inputs through their existi
 | `SetTransactions.tla` | Final-candidate SET, original-position errors, authorization, and generations |
 | `RadiusAuthorization.tla`, `RadiusDynamicAuthorization.tla` | Current grants and atomic duplicate-safe dynamic requests; separate bounded safety graphs |
 | `EntityInventory.tla` | Inventory snapshots and change-clock behavior |
-| `SnapshotCounts.tla` | One-pass learned-address counts and detached read results |
 | `ManagementAccess.tla`, `ManagementResources.tla` | Local role/generation, queued write/stream and routing boundaries; worker ownership and session admission |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original response ownership, stage-aware finalization, and pre-admission association |
 | `StorageOutcomes.tla` | Confirmed/uncertain durability, faulted mutation/send gates, and existing-startup recovery |
 | `configs/*.cfg` | Finite graph and scripted scenario selections |
 | `run_tlc.py` | Bounded runner and current replacement/certificate checks |
 | `docs/make_mib_manifest.py` | Canonical object-manifest generator |
+
+Each module's second line, `\* Sources: ...`, names the application files it models; generated modules get it from their generator. `tests/test_specification_sources.py` fails when a module has no such line or names a file that no longer exists. When modeled code changes behavior, rerun the affected models; when it is removed, remove or merge its model in the same change.
 
 Model checking is finite and configuration-specific. Semantic sets/maps do not prove ASN.1 encoding, cryptography, OS durability, unlimited-scale behavior, or NAC-product compatibility. The implementation has not been formally refined from these models; [CURRENT_MODEL.md](CURRENT_MODEL.md) states each model's assumptions and boundaries.

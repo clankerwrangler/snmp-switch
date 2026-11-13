@@ -32,7 +32,7 @@ FROM runtime AS test
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends snmp snmptrapd && rm -rf /var/lib/apt/lists/*
 COPY tests ./tests
-COPY specification/docs/mib-coverage.csv ./specification/docs/mib-coverage.csv
+COPY specification ./specification
 COPY scripts/load_case.py ./scripts/load_case.py
 RUN pip install --no-cache-dir '.[test]'
 USER 10001:10001

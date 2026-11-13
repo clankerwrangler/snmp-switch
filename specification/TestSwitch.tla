@@ -1,4 +1,5 @@
 --------------------------- MODULE TestSwitch ---------------------------
+\* Sources: switchlab/engine.py switchlab/mib.py switchlab/models.py
 EXTENDS Switch
 
 SparsePorts == <<1, 65535>>

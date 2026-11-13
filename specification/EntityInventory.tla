@@ -1,4 +1,5 @@
 ------------------------- MODULE EntityInventory -------------------------
+\* Sources: switchlab/mib.py switchlab/engine.py
 EXTENDS TestSwitch
 
 \* Two opaque labels and a four-value clock exercise change, equal-tick writes,

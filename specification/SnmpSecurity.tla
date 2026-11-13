@@ -1,4 +1,5 @@
 -------------------------- MODULE SnmpSecurity --------------------------
+\* Sources: switchlab/models.py switchlab/snmp.py switchlab/storage.py
 EXTENDS Naturals, Integers, TLC
 \* One credential's selected protocols and effective USM registration. Keys are
 \* opaque; concrete cryptography, BER sizing, parsing and encrypted storage need

@@ -1,4 +1,5 @@
 ---------------------- MODULE StorageOutcomes ----------------------
+\* Sources: switchlab/storage.py switchlab/engine.py
 EXTENDS Naturals, FiniteSets
 CONSTANTS NoVersion, NoWork, NoRead, Tokens, FirstEffectiveIndex
 VARIABLES store, work, result, seen, scenario, workKind, deliveryStage, actualOutcome, pc, anchor

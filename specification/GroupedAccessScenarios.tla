@@ -1,4 +1,5 @@
 ---------------------- MODULE GroupedAccessScenarios ----------------------
+\* Sources: switchlab/models.py switchlab/storage.py switchlab/snmp.py switchlab/engine.py
 EXTENDS GroupedAccess
 VARIABLES fixture, origin, pc
 Combined == <<allvars,fixture,origin,pc>>

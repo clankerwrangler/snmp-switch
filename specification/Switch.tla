@@ -1,4 +1,5 @@
 ----------------------------- MODULE Switch -----------------------------
+\* Sources: switchlab/engine.py switchlab/mib.py switchlab/models.py
 EXTENDS Integers, FiniteSets, Sequences
 
 (***************************************************************************

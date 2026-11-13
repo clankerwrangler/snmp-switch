@@ -1,4 +1,5 @@
 ----------------------- MODULE SetTokenEquivalence -----------------------
+\* Sources: switchlab/mib.py switchlab/snmp.py switchlab/engine.py
 EXTENDS SetTransactions
 
 \* Equality observations of two independent opaque lifecycle token owners.

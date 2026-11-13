@@ -1,4 +1,5 @@
 --------------------------- MODULE ReadAccess ---------------------------
+\* Sources: switchlab/snmp.py switchlab/models.py switchlab/engine.py
 EXTENDS Naturals, FiniteSets
 
 (***************************************************************************

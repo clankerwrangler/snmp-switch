@@ -1,4 +1,5 @@
 ------------------ MODULE RadiusDynamicAuthorization ------------------
+\* Sources: switchlab/engine.py switchlab/radius.py switchlab/storage.py
 EXTENDS Integers, FiniteSets
 
 (***************************************************************************

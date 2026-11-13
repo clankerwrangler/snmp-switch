@@ -1,4 +1,5 @@
 ---------------------- MODULE SetResponseEntry ----------------------
+\* Sources: switchlab/snmp_lifetime.py
 EXTENDS SetResponseLifecycle, Sequences
 VARIABLES entry, pc, route, fault, kind
 EntryVars == <<life,entry,pc,route,fault,kind>>
