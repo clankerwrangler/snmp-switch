@@ -18,7 +18,7 @@ and the [specification README](README.md) for how to run the checks.
 | `ManagementAccess.tla` | Named local roles, authenticated/current-generation issuance, queued writes, stream revocation and route-relative API classification | HTTP middleware/dependencies, policy changes and per-yield stream checks |
 | `ManagementResources.tla` | Canceled requests retain worker slots; viewer admission never evicts administrators | Argon2 task ownership and bounded role-aware session allocation |
 | `SetResponseLifecycle.tla`, `SetResponseEntry.tla` | Original MP/security record association, exact ownership through admission, consumption/discard, expiry, reuse, and response failure | Pinned response-lifetime integration |
-| `RadiusAuthorization.tla` | Current authorization captures, lease/VLAN invalidation, and link/accounting independence | Per-port/MAC authorization and existing runtime admission |
+| `RadiusAuthorization.tla` | Current authorization captures, lease/VLAN invalidation, link/accounting independence, and no grant after shutdown's Accounting-Off | Per-port/MAC authorization, existing runtime admission, and `Engine.close_radius` |
 | `RadiusDynamicAuthorization.tla` | Conjunctive session selection, all-or-none CoA/Disconnect, and cached duplicate decisions | Existing engine transaction and dynamic-request handling |
 | `StorageOutcomes.tla` | Running policy, explicit startup saves, durable lab independence, atomic outcomes, faulted gates, and new-incarnation recovery | Store/Engine apply, save, reboot, and startup paths |
 | `SetTokenEquivalence.tla` | Finite token-allocation certificate and equality-only view of the unchanged SET graph | Model-checking reduction, not application behavior |

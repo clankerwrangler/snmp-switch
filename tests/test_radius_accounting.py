@@ -44,6 +44,45 @@ async def test_same_time_termination_prevents_post_stop_interim(configured):
     assert number(records[-1],49)==5 and not engine.state.radius_sessions
 
 
+@pytest.mark.asyncio
+async def test_shutdown_never_grants_or_starts_after_accounting_off(configured,monkeypatch):
+    from switchlab.radius import NativeObservation
+    cfg,pid,eid=configured;cfg.radius.servers=[RadiusServer(label='Synthetic',address=PEER[0],secret='synthetic-shared')]
+    cfg.radius.accounting.enabled=True
+    cfg.radius.accounting.targets=[RadiusServer(label='Collector',address='192.0.2.5',secret='synthetic')]
+    engine=Engine(cfg);started,release=asyncio.Event(),asyncio.Event();delivered=[]
+    async def exchange(*args,**kwargs):
+        started.set();await release.wait()
+        return NativeObservation(AccessResult(2,(),PEER,bytes(16)),2,0,5,2,False,False)
+    async def delivery(record,targets,**kwargs):
+        delivered.append(record['status_type'])
+        if record['status_type']==8:
+            # The held initial Accept arrives while Accounting-Off is being delivered.
+            release.set();await asyncio.sleep(.05)
+        return True,record['targets'][0]['id']
+    monkeypatch.setattr('switchlab.radius.native_exchange',exchange)
+    monkeypatch.setattr('switchlab.radius.accounting_delivery',delivery)
+    await engine.execute('advance',{'duration_ms':5000});await engine.service_authentication();await started.wait()
+    assert engine.state.radius_attempts and not engine.state.radius_sessions
+    await engine.close_radius()
+    assert delivered==[7,8]
+    assert not engine.state.radius_sessions and not engine.state.radius_attempts
+    assert not [r for r in engine.state.accounting_outbox if r['status_type']==1]
+
+
+@pytest.mark.asyncio
+async def test_shutdown_stops_existing_sessions_before_accounting_off(configured,monkeypatch):
+    cfg,pid,eid=configured;cfg.radius.accounting.enabled=True
+    cfg.radius.accounting.targets=[RadiusServer(label='Collector',address='192.0.2.5',secret='synthetic')]
+    engine=Engine(cfg);await grant(engine,pid,eid,controls());delivered=[]
+    async def delivery(record,targets,**kwargs):
+        delivered.append((record['status_type'],number(record,49) if record['status_type']==2 else None))
+        return True,record['targets'][0]['id']
+    monkeypatch.setattr('switchlab.radius.accounting_delivery',delivery)
+    await engine.close_radius()
+    assert delivered==[(7,None),(1,None),(2,11),(8,None)] and not engine.state.radius_sessions
+
+
 @pytest.mark.parametrize('values,expected,warning',[
     ([(85,(60).to_bytes(4,'big'))],60,None), ([(85,(59).to_bytes(4,'big'))],None,'invalid-server-interim-interval'),
     ([(85,bytes(4))],None,'invalid-server-interim-interval'), ([(85,b'x')],None,'invalid-server-interim-interval'),

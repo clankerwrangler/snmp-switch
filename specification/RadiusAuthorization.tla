@@ -1,5 +1,5 @@
 ----------------------- MODULE RadiusAuthorization -----------------------
-\* Sources: switchlab/engine.py switchlab/radius.py
+\* Sources: switchlab/engine.py switchlab/radius.py switchlab/api.py
 EXTENDS Integers, FiniteSets
 
 (***************************************************************************
@@ -7,6 +7,8 @@ EXTENDS Integers, FiniteSets
  Packets/EAP methods are abstract outcomes. A single retained request per
  client is enough to expose late-result races; it is not a transport limit.
  0 = no policy/request, -1 = inherit the port PVID. VLAN 1 is permanent.
+ phase: "running", then "off" once application shutdown has ended every grant
+ and queued Accounting-Off. Nothing may grant access after that.
 ****************************************************************************)
 CONSTANTS Clients, VLANs, Tokens, Lease
 ASSUME /\ IsFiniteSet(Clients) /\ Clients # {}
@@ -17,9 +19,9 @@ ASSUME /\ IsFiniteSet(Clients) /\ Clients # {}
        /\ Lease \in Nat \ {0}
 
 VARIABLES mode, link, available, pvid, policy, remaining,
-          generation, pending, paused, accountingUp
+          generation, pending, paused, accountingUp, phase
 vars == <<mode, link, available, pvid, policy, remaining,
-          generation, pending, paused, accountingUp>>
+          generation, pending, paused, accountingUp, phase>>
 Modes == {"auto", "force-authorized", "force-unauthorized"}
 Effective(c) == IF policy[c] = -1 THEN pvid ELSE policy[c]
 Fresh(c) == CHOOSE t \in Tokens \ {generation[c], pending[c]} : TRUE
@@ -32,6 +34,7 @@ Init == /\ mode = "auto" /\ link = TRUE
         /\ generation = [c \in Clients |-> CHOOSE t \in Tokens : TRUE]
         /\ pending = EmptyPolicy
         /\ paused = FALSE /\ accountingUp = TRUE
+        /\ phase = "running"
 
 TypeOK == /\ mode \in Modes /\ link \in BOOLEAN
           /\ available \subseteq VLANs /\ 1 \in available
@@ -41,18 +44,22 @@ TypeOK == /\ mode \in Modes /\ link \in BOOLEAN
           /\ generation \in [Clients -> Tokens]
           /\ pending \in [Clients -> (Tokens \cup {0})]
           /\ paused \in BOOLEAN /\ accountingUp \in BOOLEAN
+          /\ phase \in {"running", "off"}
 AuthorizationValid ==
     \A c \in Clients :
         /\ (policy[c] # 0 =>
               mode = "auto" /\ link /\ Effective(c) \in available)
         /\ ((policy[c] = 0) <=> (remaining[c] = 0))
+\* Accounting-Off is final: no session (and so no Accounting-Start) follows it.
+NoGrantAfterOff == phase = "off" => \A c \in Clients : policy[c] = 0
 
 Begin(c) ==
+    /\ phase = "running"
     /\ mode = "auto" /\ link /\ pending[c] = 0
     /\ pending' = [pending EXCEPT ![c] = generation[c]]
     \* A periodic exchange leaves an existing grant effective while pending.
     /\ UNCHANGED <<mode, link, available, pvid, policy, remaining,
-                    generation, paused, accountingUp>>
+                    generation, paused, accountingUp, phase>>
 
 Reply(c, result) ==
     /\ pending[c] # 0
@@ -66,32 +73,32 @@ Reply(c, result) ==
           /\ remaining' = IF current
                           THEN [remaining EXCEPT ![c] = IF accepted THEN Lease ELSE 0]
                           ELSE remaining
-    /\ UNCHANGED <<mode, link, available, pvid, generation, paused, accountingUp>>
+    /\ UNCHANGED <<mode, link, available, pvid, generation, paused, accountingUp, phase>>
 
 Restart(c) ==
     /\ generation' = [generation EXCEPT ![c] = Fresh(c)]
     /\ policy' = [policy EXCEPT ![c] = 0]
     /\ remaining' = [remaining EXCEPT ![c] = 0]
     \* Keep the old capture to check a reply arriving after invalidation.
-    /\ UNCHANGED <<mode, link, available, pvid, pending, paused, accountingUp>>
+    /\ UNCHANGED <<mode, link, available, pvid, pending, paused, accountingUp, phase>>
 
 SetMode(m) ==
     /\ m \in Modes /\ m # mode
     /\ mode' = m /\ generation' = FreshAll
     /\ policy' = EmptyPolicy /\ remaining' = EmptyPolicy
-    /\ UNCHANGED <<link, available, pvid, pending, paused, accountingUp>>
+    /\ UNCHANGED <<link, available, pvid, pending, paused, accountingUp, phase>>
 
 SetLink(value) ==
     /\ value \in BOOLEAN /\ value # link
     /\ link' = value /\ generation' = FreshAll
     /\ policy' = EmptyPolicy /\ remaining' = EmptyPolicy
-    /\ UNCHANGED <<mode, available, pvid, pending, paused, accountingUp>>
+    /\ UNCHANGED <<mode, available, pvid, pending, paused, accountingUp, phase>>
 
 SetPvid(v) ==
     /\ v \in available /\ v # pvid
     /\ pvid' = v
     /\ UNCHANGED <<mode, link, available, policy, remaining,
-                    generation, pending, paused, accountingUp>>
+                    generation, pending, paused, accountingUp, phase>>
 
 DeleteVlan(v) ==
     /\ v \in available \ {1}
@@ -102,29 +109,39 @@ DeleteVlan(v) ==
     /\ pvid' = IF pvid = v THEN 1 ELSE pvid
     \* Invalidate pending work even if deletion is later reversed.
     /\ generation' = FreshAll
-    /\ UNCHANGED <<mode, link, pending, paused, accountingUp>>
+    /\ UNCHANGED <<mode, link, pending, paused, accountingUp, phase>>
 
 CreateVlan(v) ==
     /\ v \in VLANs \ available
     /\ available' = available \cup {v}
     /\ generation' = FreshAll
-    /\ UNCHANGED <<mode, link, pvid, policy, remaining, pending, paused, accountingUp>>
+    /\ UNCHANGED <<mode, link, pvid, policy, remaining, pending, paused, accountingUp, phase>>
 
 StepClock ==
     /\ LET expired == {c \in Clients : remaining[c] = 1}
        IN /\ remaining' = [c \in Clients |-> IF remaining[c] = 0 THEN 0 ELSE remaining[c] - 1]
           /\ policy' = [c \in Clients |-> IF c \in expired THEN 0 ELSE policy[c]]
           /\ generation' = [c \in Clients |-> IF c \in expired THEN Fresh(c) ELSE generation[c]]
-    /\ UNCHANGED <<mode, link, available, pvid, pending, paused, accountingUp>>
+    /\ UNCHANGED <<mode, link, available, pvid, pending, paused, accountingUp, phase>>
 AutomaticTick == /\ ~paused /\ StepClock
 ManualTick == /\ paused /\ StepClock
 TogglePause == /\ paused' = ~paused
                /\ UNCHANGED <<mode, link, available, pvid, policy, remaining,
-                               generation, pending, accountingUp>>
+                               generation, pending, accountingUp, phase>>
 AccountingChange ==
     /\ accountingUp' = ~accountingUp
     /\ UNCHANGED <<mode, link, available, pvid, policy, remaining,
-                    generation, pending, paused>>
+                    generation, pending, paused, phase>>
+
+\* Application shutdown: stop new exchanges, retire every captured request so a
+\* late reply is stale, end every grant (Accounting-Stop), then Accounting-Off.
+\* A reply may still arrive afterwards; it must not grant.
+Shutdown ==
+    /\ phase = "running"
+    /\ phase' = "off"
+    /\ generation' = FreshAll
+    /\ policy' = EmptyPolicy /\ remaining' = EmptyPolicy
+    /\ UNCHANGED <<mode, link, available, pvid, pending, paused, accountingUp>>
 
 Next == \/ \E c \in Clients : Begin(c) \/ Restart(c)
         \/ \E c \in Clients, r \in VLANs \cup {-1, 0, 9999} : Reply(c, r)
@@ -132,6 +149,7 @@ Next == \/ \E c \in Clients : Begin(c) \/ Restart(c)
         \/ \E b \in BOOLEAN : SetLink(b)
         \/ \E v \in VLANs : SetPvid(v) \/ DeleteVlan(v) \/ CreateVlan(v)
         \/ AutomaticTick \/ ManualTick \/ TogglePause \/ AccountingChange
+        \/ Shutdown
 Spec == Init /\ [][Next]_vars
 
 \* These inspect observed transitions, not only a final state shape.

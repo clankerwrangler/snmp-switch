@@ -21,6 +21,8 @@ MUTATIONS += [
 
 MUTATIONS += [
     ('radius_stale_accept', 'RadiusAuthorization', 'RadiusAuthorization.tla', 'current == pending[c] = generation[c] /\\ mode = "auto" /\\ link', 'current == TRUE /\\ mode = "auto" /\\ link'),
+    ('shutdown_keeps_pending_capture', 'RadiusAuthorization', 'RadiusAuthorization.tla', 'phase\' = "off"\n    /\\ generation\' = FreshAll', 'phase\' = "off"\n    /\\ generation\' = generation'),
+    ('begin_during_shutdown', 'RadiusAuthorization', 'RadiusAuthorization.tla', '/\\ phase = "running"\n    /\\ mode = "auto" /\\ link /\\ pending[c] = 0', '/\\ mode = "auto" /\\ link /\\ pending[c] = 0'),
     ('radius_duplicate_reexecution', 'RadiusDynamicAuthorization', 'RadiusDynamicAuthorization.tla', 'IF reply # "none"\n       THEN UNCHANGED <<session, vlan, reply>>', 'IF FALSE\n       THEN UNCHANGED <<session, vlan, reply>>'),
     ('radius_partial_coa_on_nak', 'RadiusDynamicAuthorization', 'RadiusDynamicAuthorization.tla', 'IF Applicable /\\ c \\in Matched\n                  THEN', 'IF c \\in Matched /\\ (Applicable \\/ (operation = "coa" /\\ c \\in canApply /\\ requestedVlan \\in VLANs))\n                  THEN'),
 ]

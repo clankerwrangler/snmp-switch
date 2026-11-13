@@ -235,8 +235,7 @@ def create_app(store=None, configuration=None):
                     await task
             if hasattr(app.state, "engine"):
                 await app.state.engine.close_dynamic()
-                await app.state.engine.close_accounting()
-                await app.state.engine.close_authentication()
+                await app.state.engine.close_radius()
             if adapter is not None:
                 adapter.close()
             if hasattr(app.state, "management"):

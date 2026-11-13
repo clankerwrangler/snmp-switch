@@ -1000,6 +1000,7 @@ class Engine:
         self._account_clock = accounting_elapsed_clock
         self._account_wall = time.time
         self._closed = False
+        self._closing = False  # RADIUS shutdown has begun: no new authentication work
         self._server_health = {}
         self._auth_clock = time.monotonic
         self._das_clock = accounting_elapsed_clock
@@ -1242,7 +1243,8 @@ class Engine:
 
     async def service_authentication(self):
         """Bounded process tasks refer to Runtime attempts; they do not own grants."""
-        active = {attempt.id for attempt in self.state.radius_attempts.values()} if not self.storage_fault and not self._closed else set()
+        stopped = self.storage_fault or self._closed or self._closing
+        active = {attempt.id for attempt in self.state.radius_attempts.values()} if not stopped else set()
         for identity, task in list(self._authentication_tasks.items()):
             if identity not in active and not task.cancelling():
                 task.cancel()
@@ -1253,7 +1255,7 @@ class Engine:
                     pass
                 finally:
                     del self._authentication_tasks[identity]
-        if self.storage_fault or self._closed:
+        if stopped:
             return
         # Avoid empty transactions on every refresh; the real transaction alone allocates IDs.
         deadline = self.state.next_session_deadline()
@@ -1506,13 +1508,18 @@ class Engine:
             delivered, target_id = outcome
             await self.execute("accounting-result", {"id":record_id, "delivered":delivered, "target_id":target_id, "reason":"exhausted", **server_context(target_id)})
 
-    async def close_accounting(self, deadline_seconds=5):
+    async def close_radius(self, deadline_seconds=5):
+        """Shut RADIUS down in one order: stop authentication so no grant can follow,
+        end sessions and queue Accounting-Off, drain accounting, then close."""
+        self._closing = True
+        await self._stop_authentication()
         if not self.storage_fault and not self._closed:
             await self.execute("radius-shutdown")
             deadline = time.monotonic() + deadline_seconds
             while self.state.accounting_outbox and time.monotonic() < deadline:
                 await self.service_accounting()
                 await asyncio.sleep(0.02)
+        self._closed = True
         tasks = list(self._accounting_tasks.values())
         for task in tasks:
             if not task.cancelling():task.cancel()
@@ -1520,7 +1527,11 @@ class Engine:
         self._accounting_tasks.clear()
 
     async def close_authentication(self):
+        """Close without the accounting drain (tests and storage faults)."""
         self._closed = True
+        await self._stop_authentication()
+
+    async def _stop_authentication(self):
         tasks = list(self._authentication_tasks.values())
         for task in tasks:
             if not task.cancelling():
@@ -1862,6 +1873,10 @@ class Engine:
             else:s.accounting_drop(d["reason"], record_id=record["id"], session_id=record["session_id"])
             return {"current": True}
         if action == "radius-shutdown":
+            # Retired attempts make any late reply stale, so no grant follows Accounting-Off.
+            for key in list(s.radius_attempts):
+                s.retire_authentication(key)
+                s.radius_status[key] = dict(status="invalidated", reason="application-shutdown")
             for key in list(s.radius_sessions):s.end_session(key, "application-shutdown")
             s.queue_accounting(8, reason="application-shutdown")
             return
@@ -1973,6 +1988,7 @@ class Engine:
             s.event("authentication-"+d["action"], port_id=key[0], mac=key[1], session_id=session.id)
             return {"session_id": session.id}
         if action == "radius-begin":
+            require(not self._closing, "RADIUS is shutting down", 503)
             return s.begin_authentication(d["port_id"], d["mac"])
         if action == "radius-discover":
             s.process_session_deadlines()
