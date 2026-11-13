@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import secrets
+import sys
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -229,20 +230,33 @@ def create_app(store=None, configuration=None):
             task = asyncio.create_task(background())
             yield
         finally:
+            # Every step runs even if an earlier one fails; the first failure is
+            # raised afterwards so it stays visible, unless startup already failed.
+            in_flight = sys.exc_info()[1]
+            failures = []
+            async def step(close):
+                try:
+                    result = close()
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as error:
+                    failures.append(error)
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
             if hasattr(app.state, "engine"):
-                await app.state.engine.dynamic.close()
-                await app.state.engine.close_radius()
+                await step(app.state.engine.dynamic.close)
+                await step(app.state.engine.close_radius)
             if adapter is not None:
-                adapter.close()
+                await step(adapter.close)
             if hasattr(app.state, "management"):
-                await app.state.management.close()
+                await step(app.state.management.close)
             if owned:
-                store.close()
+                await step(store.close)
                 store = None
+            if failures and in_flight is None:
+                raise failures[0]
 
     def enforce(request, permission):
         manager = app.state.management

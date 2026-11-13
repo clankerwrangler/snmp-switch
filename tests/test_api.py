@@ -1011,6 +1011,43 @@ def test_failed_owned_startup_closes_without_replacing_durable_configuration(tmp
         db.close()
 
 
+def test_shutdown_cleanup_continues_after_a_failed_step(tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+    import switchlab.api as api_module
+    from switchlab.dynamic_authorization import DynamicAuthorization
+    from switchlab.engine import Engine
+    from switchlab.management import Management
+    from switchlab.storage import Store
+    key_path = tmp_path / 'key'
+    key_path.write_bytes(Fernet.generate_key())
+    monkeypatch.setenv('SWITCHLAB_DB', str(tmp_path / 'lab.db'))
+    monkeypatch.setenv('SWITCHLAB_KEY_FILE', str(key_path))
+    stores, closed = [], []
+    class ObservedStore(Store):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            stores.append(self)
+    async def failing_close(self):
+        closed.append('dynamic')
+        raise OSError('Synthetic retirement failure')
+    radius_close, management_close = Engine.close_radius, Management.close
+    async def close_radius(self, *args, **kwargs):
+        closed.append('radius')
+        return await radius_close(self, *args, **kwargs)
+    async def close_management(self):
+        closed.append('management')
+        return await management_close(self)
+    monkeypatch.setattr(api_module, 'Store', ObservedStore)
+    monkeypatch.setattr(DynamicAuthorization, 'close', failing_close)
+    monkeypatch.setattr(Engine, 'close_radius', close_radius)
+    monkeypatch.setattr(Management, 'close', close_management)
+    # The first failure is still reported, after every later step has run.
+    with pytest.raises(OSError, match='Synthetic retirement failure'):
+        with TestClient(api_module.create_app()):
+            pass
+    assert closed == ['dynamic', 'radius', 'management'] and stores[0].closed
+
+
 @pytest.mark.parametrize("intent", [{"access_transfer": "keep"}, {"access_transfer": "none"}, {"group_id": None}])
 def test_api_conversion_missing_profile_is_atomic(store, intent):
     with session(store) as c:

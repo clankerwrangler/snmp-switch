@@ -125,20 +125,28 @@ class DynamicAuthorization:
             self.protocol = protocol;self.error = None
 
     async def close(self):
+        """Persist retirement of in-flight requests, then stop the listener and
+        handlers. If the save fails, everything still stops and the error is
+        raised, but the reservations are kept so a later close can save them."""
         self.closing = True
-        async with self.engine.lock:
-            # Handlers keep these reservations while closing, even when they
-            # acquire the lock first. Failed persistence leaves ownership intact.
-            retired = {fingerprint:self._record(item,None,"retired") for fingerprint,item in self.pending.items() if fingerprint not in self.cache}
-            if retired:self._commit({"das_put":retired})
-        if self.protocol is not None and self.protocol.transport is not None:self.protocol.transport.close()
-        self.protocol = None
-        pending = list(self.pending.items())
-        for _,item in pending:
-            if not item["task"].cancelling():item["task"].cancel()
-        await asyncio.gather(*(item["task"] for _,item in pending),return_exceptions=True)
-        for fingerprint,item in pending:
-            if self.pending.get(fingerprint) is item:del self.pending[fingerprint]
+        retired_saved = False
+        try:
+            async with self.engine.lock:
+                # Handlers keep these reservations while closing, even when they
+                # acquire the lock first.
+                retired = {fingerprint:self._record(item,None,"retired") for fingerprint,item in self.pending.items() if fingerprint not in self.cache}
+                if retired:self._commit({"das_put":retired})
+            retired_saved = True
+        finally:
+            if self.protocol is not None and self.protocol.transport is not None:self.protocol.transport.close()
+            self.protocol = None
+            pending = list(self.pending.items())
+            for _,item in pending:
+                if not item["task"].cancelling():item["task"].cancel()
+            await asyncio.gather(*(item["task"] for _,item in pending),return_exceptions=True)
+            if retired_saved:
+                for fingerprint,item in pending:
+                    if self.pending.get(fingerprint) is item:del self.pending[fingerprint]
 
     # -- Requests -------------------------------------------------------------
 

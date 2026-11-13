@@ -204,6 +204,22 @@ async def test_failed_expired_reservation_retirement_keeps_ownership(store,monke
 
 
 @pytest.mark.asyncio
+async def test_failed_close_retirement_still_stops_listener_and_handlers(store,monkeypatch):
+    engine,protocol,pid,sender,wall,elapsed=configured_engine(store)
+    await engine.lock.acquire()
+    engine.dynamic.receive(protocol,request(code=40),('192.0.2.4',40000))
+    pending_task=next(iter(engine.dynamic.pending.values()))['task']
+    def fail(changes):raise sqlite3.OperationalError('synthetic retirement failure')
+    monkeypatch.setattr(store,'_radius_metadata',fail)
+    engine.lock.release()
+    # The failure stays visible, but the listener and the waiting handler still stop;
+    # the reservation stays for a later close to save.
+    with pytest.raises(sqlite3.OperationalError):await engine.dynamic.close()
+    assert protocol.transport.closed and engine.dynamic.protocol is None
+    assert pending_task.done() and len(engine.dynamic.pending)==1 and not protocol.transport.messages
+
+
+@pytest.mark.asyncio
 async def test_closing_pending_request_retains_tombstone_before_waiter_removal(store):
     engine,protocol,pid,sender,wall,elapsed=configured_engine(store)
     packet=request(code=40)
