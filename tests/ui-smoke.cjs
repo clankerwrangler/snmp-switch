@@ -1407,6 +1407,7 @@ const path = require('node:path');
   await page.getByRole('button',{name:'Sign in'}).click();
   await page.getByRole('heading',{name:'Switch overview',exact:true}).waitFor();
   console.log('Credential browser checks passed: optional filters, version-only fields and payloads, blank-secret edits, protocol changes, short-password login and setup closure.');
+  await require('./browser/refresh-order.cjs')({page});
   await require('./browser/management.cjs')({page,browser,fixtureURL,password:process.env.SWITCHLAB_TEST_PASSWORD});
   if(errors.length)throw new Error(errors.join('\n'));
   } finally { await browser.close(); }

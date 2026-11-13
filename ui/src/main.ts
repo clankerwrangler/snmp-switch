@@ -53,10 +53,14 @@ async function api(path:string,method='GET',data?:unknown){
   return json;
 }
 function toast(message:string,error=false){const el=document.querySelector<HTMLDivElement>('#toast')!;el.textContent=message;el.className=error?'show error':'show';setTimeout(()=>el.className='',4500);}
+// Polls, writes and dialog closes all refresh, and their reads can finish in any order.
+// Show a read only if no read that started later has been shown: an older read must
+// never replace state shown after a change.
+let refreshStarted=0,refreshShown=0;
 async function refresh(){
-  const epoch=sessionEpoch,next=await api('/state'),history=await api('/events?limit=2000');
-  if(!ready||epoch!==sessionEpoch)return;
-  state=next;events=history.events;render();
+  const epoch=sessionEpoch,started=++refreshStarted,next=await api('/state'),history=await api('/events?limit=2000');
+  if(!ready||epoch!==sessionEpoch||started<refreshShown)return;
+  refreshShown=started;state=next;events=history.events;render();
 }
 async function write(path:string,method:string,data:any={},revision?:number){
   const current=revision??state.configuration_revision;
