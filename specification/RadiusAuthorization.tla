@@ -1,5 +1,5 @@
 ----------------------- MODULE RadiusAuthorization -----------------------
-\* Sources: switchlab/engine.py switchlab/radius.py switchlab/api.py
+\* Sources: switchlab/access_state.py switchlab/access_commands.py switchlab/radius_workers.py switchlab/engine.py switchlab/radius.py switchlab/api.py
 EXTENDS Integers, FiniteSets
 
 (***************************************************************************

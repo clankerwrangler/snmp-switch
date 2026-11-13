@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from .models import uid
+from .models import Target, View, uid
 
 
 def _clock_origin():
@@ -31,3 +31,11 @@ class CommandError(Exception):
 def require(condition, message, status=409):
     if not condition:
         raise CommandError(status, message)
+
+
+def event_resource_label(record):
+    """Select the existing public display, never credential or profile contents."""
+    if isinstance(record, Target):
+        address = f"[{record.address}]" if ":" in record.address else record.address
+        return f"{address}:{record.port}"
+    return record.name if isinstance(record, View) else record.label
