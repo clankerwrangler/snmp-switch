@@ -33,11 +33,11 @@ These fragments document the intended fields. They do not enable SNMP by themsel
 
 The UI, API, and switch simulation start with identity unset. The SNMP listener remains unbound, and every notification path, including a test-send button, remains disabled. The status is `identity_required`, with the message **SNMP disabled: configure a system object ID**. This setup condition does not fail application health checks.
 
-In **SNMP**:
+In **SNMP**, **Set up SNMP** performs steps 1, 2 (a read-only v2c community with the iso view), 3 and 5 in one form, stopping at the first step that fails. Step by step:
 
 1. Edit **SNMP identity** and enter the full numeric **System object ID (`sysObjectID`)**. A PEN alone is not a complete value. The field starts empty; no registration certificate or ownership lookup is required.
 2. Add a v2c community with **Access**, or add a v3 group and assign users to it. For v3, configure authentication and encryption in the user form as described in [SNMPv3 security](#snmpv3-security). Select independent read/write views and optional source networks in the community or group form. New incoming access is denied by default. The [credential reference](../TECHNICAL_SPECIFICATION.md#71-credentials) describes security levels and shared policy.
-3. Open **Configure** in **SNMP service**, verify the listener address/port, and select **Enable SNMP**. Fresh Docker configurations use `0.0.0.0:161`; native configurations use `127.0.0.1:161`. Saved settings take precedence. With Compose, the saved port must match `SWITCHLAB_SNMP_PORT`; native managers use the listener directly. The operating system must permit binding that port.
+3. Open **Configure** in **SNMP service**, verify the listener address/port, and select **Enable SNMP**. Fresh Docker configurations use address `0.0.0.0`; native configurations use `127.0.0.1:161`. Saved addresses take precedence. In Docker the container always listens on UDP 161 and `SWITCHLAB_SNMP_PORT` chooses only the host port, so the form shows the port as fixed; natively the saved port is used. The operating system must permit binding that port.
 4. Check **Listener status**. For traps, add a destination in **Trap destinations** and select or create its credential in the destination form. Trap transport does not require incoming access.
 5. Choose **Save configuration** to retain the applied switch settings across reboot or process restart. Unsaved changes are discarded; physical lab clients and connections persist automatically.
 

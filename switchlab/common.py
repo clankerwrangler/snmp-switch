@@ -1,10 +1,26 @@
 """Small pieces shared by the engine and its components."""
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
 from .models import Target, View, uid
+
+
+# The Docker image fixes the container-side listener ports, so only Compose chooses the
+# host ports (SWITCHLAB_SNMP_PORT, SWITCHLAB_COA_PORT) and nothing has to match the UI.
+# Native installs leave these unset and use the configured ports.
+FIXED_PORT_VARIABLES = {"snmp": "SWITCHLAB_SNMP_LISTEN_PORT", "coa": "SWITCHLAB_COA_LISTEN_PORT"}
+
+
+def fixed_port(service):
+    value = os.environ.get(FIXED_PORT_VARIABLES[service])
+    return int(value) if value else None
+
+
+def listen_port(service, configured):
+    return fixed_port(service) or configured
 
 
 def _clock_origin():

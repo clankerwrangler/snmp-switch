@@ -187,8 +187,9 @@ application services remain available.
 
 Compose publishes UDP 3799 on the host's `127.0.0.1` by default; publication does
 not enable or configure the listener. In **Configure**, select **Enable CoA and
-Disconnect listener**, set **Bind IP address** to `0.0.0.0` inside the container,
-and set **UDP port** to match `SWITCHLAB_COA_PORT` in `.env` (default 3799).
+Disconnect listener**. Fresh Docker configurations bind `0.0.0.0` inside the
+container, which always listens on UDP 3799; `SWITCHLAB_COA_PORT` in `.env`
+chooses only the host port.
 Add the trusted clients, then choose **Save configuration** before restarting.
 For LAN access, set `SWITCHLAB_BIND_ADDRESS` to the host's LAN IPv4 address; it
 applies to HTTP, SNMP, and CoA/Disconnect. After changing `.env`, recreate the

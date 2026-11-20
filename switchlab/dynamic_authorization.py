@@ -15,7 +15,7 @@ import json
 import math
 import time
 
-from .common import ACCOUNTING_CLOCK_ORIGIN, CommandError, accounting_elapsed_clock
+from .common import ACCOUNTING_CLOCK_ORIGIN, CommandError, accounting_elapsed_clock, listen_port
 from .models import uid
 from .radius import RadiusError
 
@@ -97,7 +97,7 @@ class DynamicAuthorization:
 
     def binding(self):
         settings = self.engine.state.cfg.radius.dynamic_authorization
-        return settings.enabled, settings.host, settings.port
+        return settings.enabled, settings.host, listen_port("coa", settings.port)
 
     def _stopped(self):
         return self.engine.closed or self.closing or self.engine.storage_fault

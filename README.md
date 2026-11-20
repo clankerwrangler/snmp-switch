@@ -6,46 +6,35 @@ An SNMP switch simulator with a web UI for ports, endpoints, VLANs, MAC learning
 
 ## Run with Docker
 
-Create the encryption key, then start the application from this directory:
+From this directory:
 
-```powershell
-# Windows PowerShell
-.\scripts\init-key.ps1
+```sh
 docker compose up --build -d
 ```
 
+Open **http://localhost:8000** and create the administrator password; there are no default credentials. Then open **SNMP** and choose **Set up SNMP**: enter the system object ID and a read-only community, and Switch Lab enables and saves SNMP in one step. The system object ID is a full numeric OID under a Private Enterprise Number your organization has registered with IANA. Managers can then query the host on UDP 161.
+
+On first start the container creates the encryption key for saved settings in the `switchlab-key` volume, apart from the `switchlab-data` volume that holds the lab and saved configuration. Back up both: saved settings can only be read with their key.
+
+Compose publishes HTTP TCP 8000, SNMP UDP 161, and CoA/Disconnect UDP 3799 on localhost. To change that, copy [`.env.example`](.env.example) to `.env` and run `docker compose up -d` again. It covers:
+
+- **LAN access:** `SWITCHLAB_BIND_ADDRESS` set to an IPv4 address of this host, then open `http://HOST_LAN_ADDRESS:8000` from another device. Connectivity depends on the host firewall and routing. HTTP is unencrypted; HTTPS can be provided by a reverse proxy.
+- **Host ports:** `SWITCHLAB_HTTP_PORT`, `SWITCHLAB_SNMP_PORT` (for example 1161 when the host cannot publish 161) and `SWITCHLAB_COA_PORT`. Inside the container Switch Lab always listens on 8000, 161 and 3799, so nothing in the UI has to match.
+- **Starting after a reboot:** `SWITCHLAB_RESTART=unless-stopped`. By default Switch Lab runs only when you start it (`docker compose up -d`) and stops with `docker compose stop`.
+
+An administrator can optionally enable a shared read-only viewer under **Settings → Manage viewer access**; it starts disabled. See [management access](specification/docs/MANAGEMENT.md). Physical lab edits persist automatically. Switch settings apply to the running configuration; the page header shows **Unsaved changes** until you choose **Save configuration**, which keeps them across reboot or restart.
+
+For SNMPv3, write access, views and trap destinations, use the detailed sections on the **SNMP** page and the [identity and listener setup guide](specification/docs/IDENTITY_SETUP.md). CoA/Disconnect starts disabled; configure and save its listener and trusted clients using the [RADIUS setup guide](specification/docs/RADIUS.md#coa-and-disconnect).
+
+### Upgrading from a version with `secrets/config.key`
+
+Earlier versions kept the key in `secrets/config.key` beside `compose.yaml`. Copy it into the key volume once, before starting the new version:
+
 ```sh
-# Linux/macOS (requires OpenSSL)
-sh scripts/init-key.sh
-docker compose up --build -d
+docker compose run --rm --no-deps -v "$PWD/secrets/config.key:/old.key:ro" --entrypoint cp switchlab /old.key /key/config.key
 ```
 
-Run Switch Lab only during a work or test session. Compose does not restart it automatically. Later sessions reuse the existing image and saved data:
-
-```sh
-docker compose up -d --no-build --pull never switchlab
-```
-
-Stop the application after each session:
-
-```sh
-docker compose stop switchlab
-```
-
-Open **http://localhost:8000** and create the administrator password. Later visits use that password; there are no default credentials. An administrator can optionally enable a shared read-only viewer under **Settings → Manage viewer access**; it starts disabled. See [management access](specification/docs/MANAGEMENT.md). Physical lab edits persist automatically. Switch settings apply to running configuration; choose **Save configuration** to retain them across reboot or process restart. The `switchlab-data` volume stores the lab and startup configuration; restoring it requires both the database and `secrets/config.key`.
-
-Compose publishes HTTP TCP 8000, SNMP UDP 161, and CoA/Disconnect UDP 3799 on localhost by default. For LAN access, create `.env` beside `compose.yaml` with an IPv4 address assigned to the host, then run `docker compose up -d` again:
-
-```dotenv
-SWITCHLAB_BIND_ADDRESS=192.168.1.50
-SWITCHLAB_HTTP_PORT=8000
-```
-
-Replace the example address, then open `http://HOST_LAN_ADDRESS:8000` from another device. `SWITCHLAB_HTTP_PORT` changes the web port; `SWITCHLAB_BIND_ADDRESS` applies to all three published services. Connectivity depends on the host firewall and routing. HTTP is unencrypted; HTTPS can be provided by a reverse proxy.
-
-SNMP starts disabled with no advertised object identity. Configure it in **SNMP** using the [identity and listener setup guide](specification/docs/IDENTITY_SETUP.md). To use a port other than 161, select the same listener port in the UI and `SWITCHLAB_SNMP_PORT` in `.env`, choose **Save configuration**, then recreate the container with `docker compose up -d`. A higher port such as 1161 is available when the host cannot publish 161.
-
-CoA/Disconnect also starts disabled. Configure and save its listener and trusted clients using the [RADIUS setup guide](specification/docs/RADIUS.md#coa-and-disconnect). `SWITCHLAB_COA_PORT` selects the published and container port (default 3799); it does not configure the application listener.
+Without it, a container with saved data stops at start with a message naming the missing key. Earlier versions also listened on the SNMP and CoA ports set in the UI; the container now always listens on 161 and 3799, and `.env` alone chooses the host ports.
 
 ### Native alternative
 
@@ -56,11 +45,10 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 # Linux/macOS: . .venv/bin/activate
 python -m pip install .
-python scripts/init.py
 python -m uvicorn switchlab.api:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-For native LAN access, use the host's LAN address with `--host`. EAP-TLS and PEAP require the managed Linux helper included in Docker; Python-only native installs support MAB. See the [RADIUS setup guide](specification/docs/RADIUS.md). Native data and key paths default to `data/switch.db` and `secrets/config.key`; both are required to restore saved configuration.
+For native LAN access, use the host's LAN address with `--host`. Natively, the SNMP and CoA listeners use the ports set in the UI. EAP-TLS and PEAP require the managed Linux helper included in Docker; Python-only native installs support MAB. See the [RADIUS setup guide](specification/docs/RADIUS.md). Native data and key paths default to `data/switch.db` and `secrets/config.key`; the key is created on first start, and both are required to restore saved configuration.
 
 ## Documentation
 

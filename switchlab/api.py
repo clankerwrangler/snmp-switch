@@ -16,10 +16,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette._utils import get_route_path
+from cryptography.fernet import Fernet
 from pydantic import Field, ValidationError, create_model, model_validator
 
 from .engine import CommandError, Engine
 from .models import Configuration, Credential, CredentialAuth, AccessGroup, PollingAccess, WritingAccess, Endpoint, Identity, Record, SnmpSettings, Source, Switch, Target, View, RadiusSettings, RadiusServer, RadiusMaterial, SupplicantProfile, SupplicantTemplate, AccountingSettings, DynamicSettings, DynamicSender, initial_configuration
+from .common import fixed_port
 from .snmp import SnmpAdapter
 from .storage import Store, StorageFault, RollbackFailed, CommitUncertain
 from .management import Management, RoutePermissions, ROLE_PERMISSIONS, ACTION_PERMISSIONS, PUBLIC_ROUTES, ViewerConflict, SessionCapacity
@@ -162,6 +164,23 @@ class SessionAuthentication(Revision):
     action: Literal["restart", "reauthenticate"]
 
 
+def configuration_key(key_path, database):
+    """The key that encrypts saved settings. A fresh installation gets one on first start;
+    saved settings without their key stop startup, since a new key could not read them."""
+    if key_path.is_file():
+        return key_path.read_bytes().strip()
+    if database.exists() and database.stat().st_size > 0:
+        raise RuntimeError(f"Missing encryption key {key_path}. The saved data at {database} can only be read "
+                           "with the key it was saved with; restore that key file and start again.")
+    key_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    key = Fernet.generate_key()
+    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(key)
+    print(f"Created encryption key {key_path}. Back it up separately from the data.", file=sys.stderr)
+    return key
+
+
 def create_app(store=None, configuration=None):
     buckets = defaultdict(deque)
     route_permissions = RoutePermissions()
@@ -171,10 +190,9 @@ def create_app(store=None, configuration=None):
         nonlocal store
         owned = store is None
         if store is None:
-            key_path = os.environ.get("SWITCHLAB_KEY_FILE", "secrets/config.key")
-            if not Path(key_path).is_file():
-                raise RuntimeError("Missing encryption key. Run python scripts/init.py before starting.")
-            store = Store(os.environ.get("SWITCHLAB_DB", "data/switch.db"), Path(key_path).read_bytes().strip())
+            database = os.environ.get("SWITCHLAB_DB", "data/switch.db")
+            key = configuration_key(Path(os.environ.get("SWITCHLAB_KEY_FILE", "secrets/config.key")), Path(database))
+            store = Store(database, key)
         task = adapter = None
         try:
             app.state.management = Management(store)
@@ -182,6 +200,10 @@ def create_app(store=None, configuration=None):
             cfg = saved or configuration or initial_configuration(int(os.environ.get("SWITCHLAB_PORT_COUNT", "24")))
             if saved is None and configuration is None:
                 cfg.snmp = SnmpSettings(host=os.environ.get("SWITCHLAB_SNMP_DEFAULT_HOST") or cfg.snmp.host)
+                # In a container a loopback listener cannot receive from a published port.
+                if coa_host := os.environ.get("SWITCHLAB_COA_DEFAULT_HOST"):
+                    dynamic = cfg.radius.dynamic_authorization
+                    cfg.radius.dynamic_authorization = type(dynamic).model_validate({**dynamic.model_dump(), "host": coa_host})
             if getattr(store, "startup_warning", None):
                 app.state.startup_warning = store.startup_warning
             # An explicit overlay applies only to a fresh database, never to upgrades.
@@ -480,6 +502,8 @@ def create_app(store=None, configuration=None):
     @app.get("/api/v1/state")
     async def state():
         return {**app.state.engine.snapshot(), "snmp_status": app.state.adapter.status(),
+                # Container-side listener ports fixed by the image (null natively).
+                "fixed_ports": {"snmp": fixed_port("snmp"), "coa": fixed_port("coa")},
                 "warning": ("Storage is faulted (" + app.state.engine.storage_fault + "). Showing the last confirmed snapshot; "
                             "writes and trap sends require a successful restart from the saved database."
                             if app.state.engine.storage_fault else

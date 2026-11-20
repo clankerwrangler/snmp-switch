@@ -4,7 +4,6 @@ Requires Linux Docker Engine, Compose v2, and prebuilt switchlab:0.1.0 and
 switchlab-test images. Ports 8000/tcp and 161/udp must be free on localhost.
 """
 import argparse
-import base64
 import http.cookiejar
 import ipaddress
 import json
@@ -112,7 +111,7 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
             assert result.returncode != 0 and "Timeout" in result.stderr
 
     state = api("/api/v1/state")
-    assert state["snmp"]["port"] == snmp_port
+    assert state["fixed_ports"] == {"snmp": 161, "coa": 3799}  # Compose picks only the host side.
     assert state["snmp"]["host"] == "0.0.0.0"
     if fresh:
         assert state["snmp"]["enabled"] is False
@@ -155,11 +154,11 @@ def probe(host, subnet, expect_closed, snmp_port, next_port, http_port):
         command("/snmp/settings", {"port": next_port}, "PATCH")
         assert api("/api/v1/snmp/status")["ready"]
         assert api("/healthz")["ready"]
-        polling(False)  # Compose still publishes the previous listener port.
+        polling(True)  # A saved port does not move the container's fixed listener.
         command("/switch", {"identity": {"sys_object_id": None}}, "PATCH")
         assert api("/api/v1/state")["snmp"]["port"] == next_port
         command("/switch/save")
-        print(json.dumps({f"listener_port_{snmp_port}_to_{next_port}_saved": "passed"}))
+        print(json.dumps({f"listener_fixed_with_saved_port_{next_port}": "passed"}))
     else:
         command("/switch/save")
     print(json.dumps({"non_loopback_http_and_assets": "passed", "session_login_logout": "passed",
@@ -185,11 +184,7 @@ def check_compose():
         assert address in ipaddress.IPv4Network(subnet)
         with tempfile.TemporaryDirectory(prefix=project + "-") as temporary:
             fixture = Path(temporary)
-            (fixture / "secrets").mkdir(mode=0o700)
-            key = fixture / "secrets/config.key"
-            key.write_bytes(base64.urlsafe_b64encode(os.urandom(32)))
-            key.chmod(0o644)  # The private parent protects the fixture; UID 10001 reads the mount.
-            (fixture / "empty.env").write_text("")
+            (fixture / "empty.env").write_text("")  # No key: the container makes one on first start.
             override = fixture / "fixture.json"
             override.write_text(json.dumps({
                 "networks": {"default": {"external": True, "name": network_name}}}))
@@ -216,8 +211,8 @@ def check_compose():
             def assert_ports(ports, bind, snmp_port="161", http_port="8000", coa_port="3799"):
                 assert {(p["target"], str(p["published"]), p["protocol"], p["host_ip"])
                         for p in ports} == {(8000, str(http_port), "tcp", bind),
-                                           (int(snmp_port), str(snmp_port), "udp", bind),
-                                           (int(coa_port), str(coa_port), "udp", bind)}
+                                           (161, str(snmp_port), "udp", bind),
+                                           (3799, str(coa_port), "udp", bind)}
 
             def remote_probe(closed=False, snmp_port=161, next_port=None, http_port=8000):
                 args = ["docker", "run", "--rm", "--name", probe_name, "--network", network_name,
@@ -268,7 +263,7 @@ assert Path('/proc/sys/net/ipv4/ip_unprivileged_port_start').read_text().strip()
 """
                     run("docker", "exec", container, "python", "-c", check_process)
                     ports = info["NetworkSettings"]["Ports"]
-                    for port, published in (("8000/tcp", http_port), (f"{host_port}/udp", host_port), ("3799/udp", "3799")):
+                    for port, published in (("8000/tcp", http_port), ("161/udp", host_port), ("3799/udp", "3799")):
                         assert ports[port] == [{"HostIp": bind or "127.0.0.1", "HostPort": published}]
                     if bind is None:
                         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

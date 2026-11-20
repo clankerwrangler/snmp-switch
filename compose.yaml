@@ -4,16 +4,17 @@ services:
       context: .
       target: runtime
     image: switchlab:0.1.0
+    # The container always listens on 8000, 161 and 3799; .env only picks the host side.
     ports:
       - target: 8000
         published: "${SWITCHLAB_HTTP_PORT:-8000}"
         host_ip: "${SWITCHLAB_BIND_ADDRESS:-127.0.0.1}"
         protocol: tcp
-      - target: ${SWITCHLAB_SNMP_PORT:-161}
+      - target: 161
         published: "${SWITCHLAB_SNMP_PORT:-161}"
         host_ip: "${SWITCHLAB_BIND_ADDRESS:-127.0.0.1}"
         protocol: udp
-      - target: ${SWITCHLAB_COA_PORT:-3799}
+      - target: 3799
         published: "${SWITCHLAB_COA_PORT:-3799}"
         host_ip: "${SWITCHLAB_BIND_ADDRESS:-127.0.0.1}"
         protocol: udp
@@ -21,8 +22,8 @@ services:
       SWITCHLAB_SECURE_COOKIES: "${SWITCHLAB_SECURE_COOKIES:-0}"
     volumes:
       - switchlab-data:/data
-    secrets:
-      - config_key
+      # The encryption key is created here on first start, apart from the data.
+      - switchlab-key:/key
     sysctls:
       net.ipv4.ip_unprivileged_port_start: "161"
     cap_drop: [ALL]
@@ -31,9 +32,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=32m,mode=1777
-    restart: "no"
-secrets:
-  config_key:
-    file: ./secrets/config.key
+    restart: "${SWITCHLAB_RESTART:-no}"
 volumes:
   switchlab-data:
+  switchlab-key:

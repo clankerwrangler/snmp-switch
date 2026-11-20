@@ -16,6 +16,7 @@ from pysnmp.entity.rfc3413 import cmdrsp, context, ntforg
 from pysnmp.proto import rfc1902 as a, rfc1905
 from pysnmp.proto.api import v2c
 
+from .common import listen_port
 from .mib import Projection, oid, plan_set, SetError
 from .models import incoming_policy
 from .snmp_lifetime import InboundLifetime, UnsupportedLifetime, OwnershipError
@@ -290,7 +291,7 @@ class SnmpAdapter:
                 config.add_vacm_user(self.snmp, 2 if c["version"] == "2c" else 3,
                         wire_name(k) if c["version"] == "2c" else c["username"], c["security_level"], notifySubTree=(1,3,6))
             self.configured = current
-        binding = (s.cfg.snmp.host, s.cfg.snmp.port)
+        binding = (s.cfg.snmp.host, listen_port("snmp", s.cfg.snmp.port))
         policies = [incoming_policy(s.cfg, c) for c in s.cfg.credentials.values() if c.enabled]
         incoming = any(p and (p.polling.enabled or
                        (p.writing.enabled and self.inbound is not None and not self.inbound.error)) for p in policies)
