@@ -1409,6 +1409,7 @@ const path = require('node:path');
   console.log('Credential browser checks passed: optional filters, version-only fields and payloads, blank-secret edits, protocol changes, short-password login and setup closure.');
   await require('./browser/refresh-order.cjs')({page});
   await require('./browser/management.cjs')({page,browser,fixtureURL,password:process.env.SWITCHLAB_TEST_PASSWORD});
+  await require('./browser/quick-setup.cjs')({page});
   if(errors.length)throw new Error(errors.join('\n'));
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exit(1);});
